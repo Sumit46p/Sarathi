@@ -15,7 +15,8 @@ routing, a React dashboard, and a Flutter mobile app.
 - [x] PostGIS database running via Docker (port **5433**)
 - [x] `Vehicle` model with GPS `PointField` + admin map picker
 - [x] Database migrations applied
-- [ ] REST API endpoints (DRF)
+- [x] REST API endpoints (DRF) — CRUD + location update
+- [x] Location simulator script (stands in for Flutter driver app)
 - [ ] React frontend dashboard
 - [ ] OSRM routing integration
 - [ ] Flutter mobile app
@@ -125,7 +126,63 @@ python manage.py runserver
 
 Visit:
 - **http://localhost:8000/admin/** — Django admin (log in with your superuser)
-- Add test vehicles using the **map picker** on the Vehicle form
+- **http://localhost:8000/api/vehicles/** — Browsable API (DRF)
+- Add test vehicles using the **map picker** in admin, or via the API
+
+---
+
+## 🔌 API Endpoints
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/vehicles/` | List all vehicles with current location |
+| POST | `/api/vehicles/` | Create a new vehicle |
+| GET | `/api/vehicles/<id>/` | Detail of one vehicle |
+| POST | `/api/vehicles/<id>/update-location/` | Update GPS location |
+
+**Location format** — all endpoints use plain JSON `{"lat": 26.65, "lng": 87.89}` (not GeoJSON/WKT).
+
+**Example — create a vehicle:**
+```bash
+curl -X POST http://localhost:8000/api/vehicles/ \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Ambulance-01", "vehicle_type": "ambulance", "is_available": true, "location": {"lat": 26.6468, "lng": 87.8942}}'
+```
+
+**Example — update location:**
+```bash
+curl -X POST http://localhost:8000/api/vehicles/1/update-location/ \
+  -H "Content-Type: application/json" \
+  -d '{"lat": 26.65, "lng": 87.90}'
+```
+
+---
+
+## 🚗 Location Simulator
+
+The simulator script performs a **random walk** near Jhapa, Nepal, calling the
+`update-location` endpoint every 4 seconds to simulate a vehicle moving in
+real time. This stands in for the real **Flutter driver app**, which will call
+the same endpoint later.
+
+### Running the simulator
+
+```bash
+# First, create a test vehicle (if you haven't already)
+curl -X POST http://localhost:8000/api/vehicles/ \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Test-Vehicle", "vehicle_type": "ambulance", "is_available": true, "location": {"lat": 26.6468, "lng": 87.8942}}'
+
+# Note the "id" in the response (e.g., 1), then run:
+python scripts/simulate_vehicle.py 1
+
+# Optional: faster updates (every 2 seconds)
+python scripts/simulate_vehicle.py 1 --interval 2
+```
+
+While the simulator runs, verify the location is changing:
+- Visit **http://localhost:8000/api/vehicles/1/** and refresh
+- Or check Django admin → Vehicles → click the vehicle → see the map marker move
 
 ---
 
@@ -136,7 +193,8 @@ Visit:
 | Backend | Django 6.0 + Django REST Framework |
 | Geospatial | GeoDjango + PostGIS + GDAL/GEOS |
 | Database | PostgreSQL 16 + PostGIS 3.4 (Docker) |
-| API | Django REST Framework (planned) |
+| API | Django REST Framework |
+| Simulator | Python + requests (random walk) |
 | Frontend | React (planned) |
 | Routing | OSRM (planned) |
 | Mobile | Flutter (planned) |
@@ -149,14 +207,19 @@ Visit:
 Sarathi/
 ├── manage.py
 ├── requirements.txt
-├── sarthi_backend/        # Django project config
-│   ├── settings.py        # DB, GDAL paths, installed apps
-│   ├── urls.py
+├── scripts/
+│   └── simulate_vehicle.py   # Location simulator (random walk)
+├── sarthi_backend/            # Django project config
+│   ├── settings.py            # DB, GDAL paths, installed apps
+│   ├── urls.py                # Routes /api/ to vehicles.urls
 │   ├── wsgi.py
 │   └── asgi.py
-└── vehicles/              # Vehicle tracking app
-    ├── models.py          # Vehicle model with PointField
-    ├── admin.py           # GIS admin with map picker
+└── vehicles/                  # Vehicle tracking app
+    ├── models.py              # Vehicle model with PointField
+    ├── serializers.py         # DRF serializers ({lat, lng} format)
+    ├── views.py               # API views (list, detail, update-location)
+    ├── urls.py                # /api/vehicles/ URL patterns
+    ├── admin.py               # GIS admin with map picker
     └── migrations/
         └── 0001_initial.py
 ```
