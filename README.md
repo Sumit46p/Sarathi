@@ -17,7 +17,7 @@ routing, a React dashboard, and a Flutter mobile app.
 - [x] Database migrations applied
 - [x] REST API endpoints (DRF) — CRUD + location update
 - [x] Location simulator script (stands in for Flutter driver app)
-- [ ] React frontend dashboard
+- [x] React frontend — live vehicle map with Leaflet
 - [ ] OSRM routing integration
 - [ ] Flutter mobile app
 
@@ -28,6 +28,7 @@ routing, a React dashboard, and a Flutter mobile app.
 | Tool | Version | Notes |
 |------|---------|-------|
 | Python | 3.11+ | Tested with 3.x on Windows |
+| Node.js | 18+ | For the React frontend (Vite) |
 | Docker | Latest | For PostGIS container |
 | GDAL/GEOS | via OSGeo4W | Required for GeoDjango spatial fields |
 | Git | Latest | For version control |
@@ -129,6 +130,16 @@ Visit:
 - **http://localhost:8000/api/vehicles/** — Browsable API (DRF)
 - Add test vehicles using the **map picker** in admin, or via the API
 
+### 9. Set up the React frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Visit **http://localhost:5173** to see the live vehicle map.
+
 ---
 
 ## 🔌 API Endpoints
@@ -182,7 +193,44 @@ python scripts/simulate_vehicle.py 1 --interval 2
 
 While the simulator runs, verify the location is changing:
 - Visit **http://localhost:8000/api/vehicles/1/** and refresh
+- Or watch the markers move on the **live map** at http://localhost:5173
 - Or check Django admin → Vehicles → click the vehicle → see the map marker move
+
+---
+
+## 🗺️ Running the Full Stack
+
+To see everything working together, you need **3 terminals** running simultaneously:
+
+### Terminal 1 — Django API server
+```bash
+cd Sarathi
+.\venv\Scripts\Activate.ps1      # Windows
+python manage.py runserver
+```
+
+### Terminal 2 — React frontend (Vite dev server)
+```bash
+cd Sarathi/frontend
+npm run dev
+```
+
+### Terminal 3 — Vehicle simulator
+```bash
+cd Sarathi
+.\venv\Scripts\Activate.ps1      # Windows
+python scripts/simulate_vehicle.py 1
+```
+
+> **First time?** Before running the simulator, create a test vehicle:
+> ```bash
+> curl -X POST http://localhost:8000/api/vehicles/ \
+>   -H "Content-Type: application/json" \
+>   -d '{"name": "Ambulance-01", "vehicle_type": "ambulance", "is_available": true, "location": {"lat": 26.6468, "lng": 87.8942}}'
+> ```
+
+Then open **http://localhost:5173** — you should see the vehicle marker moving
+on the map every 4 seconds.
 
 ---
 
@@ -195,7 +243,7 @@ While the simulator runs, verify the location is changing:
 | Database | PostgreSQL 16 + PostGIS 3.4 (Docker) |
 | API | Django REST Framework |
 | Simulator | Python + requests (random walk) |
-| Frontend | React (planned) |
+| Frontend | React + TypeScript + Vite + Leaflet |
 | Routing | OSRM (planned) |
 | Mobile | Flutter (planned) |
 
@@ -208,20 +256,28 @@ Sarathi/
 ├── manage.py
 ├── requirements.txt
 ├── scripts/
-│   └── simulate_vehicle.py   # Location simulator (random walk)
-├── sarthi_backend/            # Django project config
-│   ├── settings.py            # DB, GDAL paths, installed apps
-│   ├── urls.py                # Routes /api/ to vehicles.urls
+│   └── simulate_vehicle.py        # Location simulator (random walk)
+├── sarthi_backend/                 # Django project config
+│   ├── settings.py                 # DB, GDAL, CORS, installed apps
+│   ├── urls.py                     # Routes /api/ to vehicles.urls
 │   ├── wsgi.py
 │   └── asgi.py
-└── vehicles/                  # Vehicle tracking app
-    ├── models.py              # Vehicle model with PointField
-    ├── serializers.py         # DRF serializers ({lat, lng} format)
-    ├── views.py               # API views (list, detail, update-location)
-    ├── urls.py                # /api/vehicles/ URL patterns
-    ├── admin.py               # GIS admin with map picker
-    └── migrations/
-        └── 0001_initial.py
+├── vehicles/                       # Vehicle tracking app
+│   ├── models.py                   # Vehicle model with PointField
+│   ├── serializers.py              # DRF serializers ({lat, lng} format)
+│   ├── views.py                    # API views
+│   ├── urls.py                     # /api/vehicles/ URL patterns
+│   ├── admin.py                    # GIS admin with map picker
+│   └── migrations/
+│       └── 0001_initial.py
+└── frontend/                       # React + TypeScript + Vite
+    ├── src/
+    │   ├── api/vehicles.ts          # API client (fetchVehicles)
+    │   ├── components/FleetMap.tsx   # Live Leaflet map
+    │   ├── App.tsx
+    │   └── main.tsx
+    ├── package.json
+    └── vite.config.ts
 ```
 
 ---
