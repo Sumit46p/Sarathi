@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { fetchVehicles, Vehicle } from '../api/vehicles';
+import { fetchVehicles } from '../api/vehicles';
+import type { Vehicle } from '../api/vehicles';
 
 /* ── colour palette per vehicle type ── */
 const TYPE_COLORS: Record<Vehicle['vehicle_type'], string> = {
