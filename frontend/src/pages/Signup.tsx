@@ -8,6 +8,7 @@ const Signup = () => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [organizationType, setOrganizationType] = useState('ambulance');
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
@@ -15,7 +16,7 @@ const Signup = () => {
     e.preventDefault();
     setError('');
     try {
-      await authApi.post('/auth/register/', { username, email, password });
+      await authApi.post('/auth/register/', { username, email, password, organization_type: organizationType });
       // After registration, directly login or redirect to login
       const response = await authApi.post('/auth/login/', { username, password });
       localStorage.setItem('accessToken', response.data.access);
@@ -89,6 +90,19 @@ const Signup = () => {
               minLength={8}
               required 
             />
+          </div>
+          <div className="form-group">
+            <label>Organization Type</label>
+            <select
+              className="input-field"
+              value={organizationType}
+              onChange={(e) => setOrganizationType(e.target.value)}
+              required
+            >
+              <option value="ambulance">Ambulance</option>
+              <option value="logistics">Logistics</option>
+              <option value="municipal">Municipal</option>
+            </select>
           </div>
           <button type="submit" className="btn-primary" style={{ marginTop: '12px' }}>
             Sign Up

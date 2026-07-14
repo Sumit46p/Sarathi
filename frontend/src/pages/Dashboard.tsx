@@ -79,6 +79,7 @@ const Dashboard = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'dispatch' | 'settings'>('dashboard');
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
+  const [userOrgType, setUserOrgType] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Add Vehicle Modal state
@@ -99,10 +100,25 @@ const Dashboard = () => {
   const [dispatchError, setDispatchError] = useState<string | null>(null);
 
   useEffect(() => {
+    fetchUserProfile();
     fetchVehicles();
     const interval = setInterval(fetchVehicles, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const fetchUserProfile = async () => {
+    try {
+      const response = await api.get('/auth/me/');
+      const orgType = response.data.organization_type;
+      setUserOrgType(orgType);
+      if (orgType) {
+        setNewVehicle(prev => ({ ...prev, vehicle_type: orgType }));
+        setDispatchType(orgType);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user profile', error);
+    }
+  };
 
   const fetchVehicles = async () => {
     try {
@@ -134,7 +150,7 @@ const Dashboard = () => {
         location: newVehicle.location,
       });
       setShowAddModal(false);
-      setNewVehicle({ name: '', vehicle_type: 'ambulance', is_available: true, location: null });
+      setNewVehicle({ name: '', vehicle_type: userOrgType || 'ambulance', is_available: true, location: null });
       await fetchVehicles();
     } catch (error) {
       console.error('Failed to add vehicle', error);
@@ -432,6 +448,8 @@ const Dashboard = () => {
                             className="input-field"
                             value={dispatchType}
                             onChange={(e) => setDispatchType(e.target.value)}
+                            disabled={!!userOrgType}
+                            style={userOrgType ? { opacity: 0.7, cursor: 'not-allowed' } : {}}
                           >
                             {VEHICLE_TYPES.map(t => (
                               <option key={t.value} value={t.value}>{t.label}</option>
@@ -621,6 +639,8 @@ const Dashboard = () => {
                 className="input-field"
                 value={newVehicle.vehicle_type}
                 onChange={(e) => setNewVehicle({ ...newVehicle, vehicle_type: e.target.value })}
+                disabled={!!userOrgType}
+                style={userOrgType ? { opacity: 0.7, cursor: 'not-allowed' } : {}}
               >
                 {VEHICLE_TYPES.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>

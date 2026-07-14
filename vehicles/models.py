@@ -19,6 +19,11 @@ class Vehicle(models.Model):
     location = models.PointField(
         help_text='Current GPS location of the vehicle (lng, lat)',
     )
+    owner = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='vehicles',
+    )
 
     def __str__(self):
         return f"{self.name} ({self.get_vehicle_type_display()})"

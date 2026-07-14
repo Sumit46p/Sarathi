@@ -25,8 +25,11 @@ routing, a React dashboard, and a Flutter mobile app.
 - [x] Vehicle CRUD UI (add modal, toggle availability, delete)
 - [x] Nearest-vehicle dispatch endpoint (PostGIS distance)
 - [x] Dispatch UI (map click → assign nearest vehicle → route line)
+- [x] Organization scoping (vehicles isolated per-admin based on org type)
 - [ ] OSRM real-road routing integration
 - [ ] Flutter mobile app
+
+> **Architecture Note:** Vehicles are scoped per-admin/organization. An admin only sees and manages vehicles belonging to their own organization (Ambulance, Logistics, or Municipal). This was a deliberate architecture correction after initial testing revealed cross-org data mixing.
 
 ---
 
@@ -153,14 +156,15 @@ Visit **http://localhost:5173** to see the live vehicle map.
 
 | Method | URL | Description |
 |--------|-----|-------------|
-| GET | `/api/vehicles/` | List all vehicles with current location |
-| POST | `/api/vehicles/` | Create a new vehicle |
+| GET | `/api/auth/me/` | Get current user and organization type |
+| GET | `/api/vehicles/` | List all vehicles for current org |
+| POST | `/api/vehicles/` | Create a new vehicle for current org |
 | GET | `/api/vehicles/<id>/` | Detail of one vehicle |
 | PATCH | `/api/vehicles/<id>/` | Partial update (toggle availability, edit) |
 | DELETE | `/api/vehicles/<id>/` | Remove a vehicle |
 | POST | `/api/vehicles/<id>/update-location/` | Update GPS location |
-| GET | `/api/vehicles/nearest/?lat=..&lng=..&type=..` | Top 5 nearest available vehicles |
-| POST | `/api/dispatch/` | Dispatch nearest vehicle to a location |
+| GET | `/api/vehicles/nearest/?lat=..&lng=..&type=..` | Top 5 nearest available vehicles in org |
+| POST | `/api/dispatch/` | Dispatch nearest vehicle in org |
 
 **Location format** — all endpoints use plain JSON `{"lat": 26.65, "lng": 87.89}` (not GeoJSON/WKT).
 

@@ -2,6 +2,15 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from vehicles.models import Vehicle
+from .models import Profile
+
+class UserSerializer(serializers.ModelSerializer):
+    organization_type = serializers.CharField(source='profile.organization_type', read_only=True)
+
+    class Meta:
+        model = User
+        fields = ('id', 'username', 'email', 'organization_type')
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -10,14 +19,17 @@ class RegisterSerializer(serializers.ModelSerializer):
         style={'input_type': 'password'}
     )
     email = serializers.EmailField(required=True)
+    organization_type = serializers.ChoiceField(
+        choices=Vehicle.VEHICLE_TYPE_CHOICES,
+        write_only=True,
+        required=True
+    )
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password')
+        fields = ('id', 'username', 'email', 'password', 'organization_type')
 
     def validate_password(self, value):
-        # Runs Django's built-in validators: min length, common password
-        # check, similarity to username/email, not-all-numeric
         try:
             validate_password(value)
         except DjangoValidationError as e:
@@ -25,9 +37,11 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        org_type = validated_data.pop('organization_type')
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password']
         )
+        Profile.objects.create(user=user, organization_type=org_type)
         return user
