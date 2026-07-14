@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.gis.geos import Point
-from .models import Vehicle
+from .models import Vehicle, DispatchRequest
 
 
 class LocationField(serializers.Field):
@@ -45,3 +45,32 @@ class LocationUpdateSerializer(serializers.Serializer):
     """Accepts just {"lat": ..., "lng": ...} for the update-location endpoint."""
     lat = serializers.FloatField(min_value=-90, max_value=90)
     lng = serializers.FloatField(min_value=-180, max_value=180)
+
+
+class NearestVehicleSerializer(serializers.Serializer):
+    """Read-only serializer for nearest-vehicle search results."""
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    distance_km = serializers.FloatField()
+    lat = serializers.FloatField()
+    lng = serializers.FloatField()
+
+
+class DispatchRequestInputSerializer(serializers.Serializer):
+    """Validates incoming dispatch requests."""
+    lat = serializers.FloatField(min_value=-90, max_value=90)
+    lng = serializers.FloatField(min_value=-180, max_value=180)
+    vehicle_type = serializers.ChoiceField(choices=Vehicle.VEHICLE_TYPE_CHOICES)
+
+
+class DispatchRequestSerializer(serializers.ModelSerializer):
+    assigned_vehicle_detail = VehicleSerializer(source='assigned_vehicle', read_only=True)
+
+    class Meta:
+        model = DispatchRequest
+        fields = [
+            'id', 'request_lat', 'request_lng', 'vehicle_type',
+            'assigned_vehicle', 'assigned_vehicle_detail',
+            'status', 'created_at',
+        ]
+        read_only_fields = ['id', 'assigned_vehicle', 'status', 'created_at']

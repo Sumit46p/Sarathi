@@ -22,7 +22,10 @@ routing, a React dashboard, and a Flutter mobile app.
 - [x] Location simulator script (stands in for Flutter driver app)
 - [x] React frontend — live vehicle map with Leaflet
 - [x] Cross-platform GDAL/GEOS paths handled (Windows OSGeo4W support)
-- [ ] OSRM routing integration
+- [x] Vehicle CRUD UI (add modal, toggle availability, delete)
+- [x] Nearest-vehicle dispatch endpoint (PostGIS distance)
+- [x] Dispatch UI (map click → assign nearest vehicle → route line)
+- [ ] OSRM real-road routing integration
 - [ ] Flutter mobile app
 
 ---
@@ -153,7 +156,11 @@ Visit **http://localhost:5173** to see the live vehicle map.
 | GET | `/api/vehicles/` | List all vehicles with current location |
 | POST | `/api/vehicles/` | Create a new vehicle |
 | GET | `/api/vehicles/<id>/` | Detail of one vehicle |
+| PATCH | `/api/vehicles/<id>/` | Partial update (toggle availability, edit) |
+| DELETE | `/api/vehicles/<id>/` | Remove a vehicle |
 | POST | `/api/vehicles/<id>/update-location/` | Update GPS location |
+| GET | `/api/vehicles/nearest/?lat=..&lng=..&type=..` | Top 5 nearest available vehicles |
+| POST | `/api/dispatch/` | Dispatch nearest vehicle to a location |
 
 **Location format** — all endpoints use plain JSON `{"lat": 26.65, "lng": 87.89}` (not GeoJSON/WKT).
 
@@ -266,23 +273,24 @@ Sarathi/
 │   ├── urls.py                     # Routes /api/ to vehicles.urls
 │   ├── wsgi.py
 │   └── asgi.py
-├── vehicles/                       # Vehicle tracking app
-│   ├── models.py                   # Vehicle model with PointField
+├── vehicles/                       # Vehicle tracking + dispatch app
+│   ├── models.py                   # Vehicle + DispatchRequest models
 │   ├── serializers.py              # DRF serializers ({lat, lng} format)
-│   ├── views.py                    # API views
-│   ├── urls.py                     # /api/vehicles/ URL patterns
+│   ├── views.py                    # API views (CRUD, nearest, dispatch)
+│   ├── urls.py                     # /api/vehicles/ + /api/dispatch/
 │   ├── admin.py                    # GIS admin with map picker
 │   └── migrations/
-│       └── 0001_initial.py
+│       ├── 0001_initial.py
+│       └── 0002_add_dispatch_request.py
 └── frontend/                       # React + TypeScript + Vite
     ├── src/
-    │   ├── api/vehicles.ts          # API client (fetchVehicles)
+    │   ├── api/auth.ts              # Axios instance with JWT headers
     │   ├── components/
     │   │   ├── FleetMap.tsx         # Live Leaflet map
     │   │   ├── ProtectedRoute.tsx   # Auth route wrapper
     │   │   └── ThemeToggle.tsx      # UI theme switcher
     │   ├── pages/
-    │   │   ├── Dashboard.tsx        # Main fleet view
+    │   │   ├── Dashboard.tsx        # Fleet overview + Dispatch + Settings
     │   │   ├── Login.tsx            # User login page
     │   │   └── Signup.tsx           # User registration
     │   ├── App.tsx
