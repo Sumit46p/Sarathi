@@ -16,8 +16,12 @@ routing, a React dashboard, and a Flutter mobile app.
 - [x] `Vehicle` model with GPS `PointField` + admin map picker
 - [x] Database migrations applied
 - [x] REST API endpoints (DRF) — CRUD + location update
+- [x] JWT Authentication & Accounts app setup
+- [x] Frontend Authentication pages (Login & Signup UI)
+- [x] React Router with Protected Routes for dashboard
 - [x] Location simulator script (stands in for Flutter driver app)
 - [x] React frontend — live vehicle map with Leaflet
+- [x] Cross-platform GDAL/GEOS paths handled (Windows OSGeo4W support)
 - [ ] OSRM routing integration
 - [ ] Flutter mobile app
 
@@ -238,7 +242,7 @@ on the map every 4 seconds.
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Django 6.0 + Django REST Framework |
+| Backend | Django 5.2 + Django REST Framework |
 | Geospatial | GeoDjango + PostGIS + GDAL/GEOS |
 | Database | PostgreSQL 16 + PostGIS 3.4 (Docker) |
 | API | Django REST Framework |
@@ -273,7 +277,14 @@ Sarathi/
 └── frontend/                       # React + TypeScript + Vite
     ├── src/
     │   ├── api/vehicles.ts          # API client (fetchVehicles)
-    │   ├── components/FleetMap.tsx   # Live Leaflet map
+    │   ├── components/
+    │   │   ├── FleetMap.tsx         # Live Leaflet map
+    │   │   ├── ProtectedRoute.tsx   # Auth route wrapper
+    │   │   └── ThemeToggle.tsx      # UI theme switcher
+    │   ├── pages/
+    │   │   ├── Dashboard.tsx        # Main fleet view
+    │   │   ├── Login.tsx            # User login page
+    │   │   └── Signup.tsx           # User registration
     │   ├── App.tsx
     │   └── main.tsx
     ├── package.json

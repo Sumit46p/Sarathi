@@ -22,17 +22,32 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # backend loading), so it lives at the top of settings.
 
 if os.name == 'nt':  # Windows
-    # Adjust these paths if OSGeo4W is installed elsewhere
-    OSGEO4W = r'C:\OSGeo4W'
-    os.environ['OSGEO4W_ROOT'] = OSGEO4W
-    os.environ['GDAL_DATA'] = os.path.join(OSGEO4W, 'share', 'gdal')
-    os.environ['PROJ_LIB'] = os.path.join(OSGEO4W, 'share', 'proj')
-    bin_path = os.path.join(OSGEO4W, 'bin')
-    os.environ['PATH'] = bin_path + ';' + os.environ['PATH']
+    # Dynamically find the OSGeo4W installation path to support different PCs
+    possible_paths = [
+        r'C:\OSGeo4W',  # Typical system-wide install (e.g., friend's PC)
+        os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs', 'OSGeo4W'),  # User-specific install (e.g., your PC)
+        r'C:\Users\lenovo\AppData\Local\Programs\OSGeo4W'  # Fallback
+    ]
+    
+    OSGEO4W = None
+    for p in possible_paths:
+        if p and os.path.isdir(p):
+            OSGEO4W = p
+            break
+            
+    if OSGEO4W:
+        os.environ['OSGEO4W_ROOT'] = OSGEO4W
+        os.environ['GDAL_DATA'] = os.path.join(OSGEO4W, 'share', 'gdal')
+        os.environ['PROJ_LIB'] = os.path.join(OSGEO4W, 'share', 'proj')
+        bin_path = os.path.join(OSGEO4W, 'bin')
+        os.environ['PATH'] = bin_path + ';' + os.environ['PATH']
     
     # Python 3.8+ requires explicitly adding DLL directories for ctypes
     if hasattr(os, 'add_dll_directory'):
-        os.add_dll_directory(bin_path)
+        try:
+            os.add_dll_directory(bin_path)
+        except (FileNotFoundError, OSError):
+            pass
 
     # Workaround for WinError 127: pre-load OSGeo4W's sqlite3.dll so that 
     # Windows doesn't mistakenly load Python's built-in sqlite3.dll when 

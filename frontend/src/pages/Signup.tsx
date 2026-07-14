@@ -22,7 +22,20 @@ const Signup = () => {
       localStorage.setItem('refreshToken', response.data.refresh);
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.username?.[0] || 'Registration failed');
+      const data = err.response?.data;
+      if (data) {
+        if (data.password) {
+          setError(data.password.join(' '));
+        } else if (data.username) {
+          setError(data.username[0]);
+        } else if (data.email) {
+          setError(data.email[0]);
+        } else {
+          setError('Registration failed. Please check your inputs.');
+        }
+      } else {
+        setError('Registration failed. Server error.');
+      }
     }
   };
 
@@ -70,9 +83,10 @@ const Signup = () => {
             <input 
               type="password" 
               className="input-field" 
-              placeholder="Create a strong password"
+              placeholder="Strong password (min 8 chars)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              minLength={8}
               required 
             />
           </div>
