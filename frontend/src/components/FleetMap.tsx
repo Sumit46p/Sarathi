@@ -90,7 +90,7 @@ export default function FleetMap() {
                   boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.8)',
                 }}
               />
-              {TYPE_LABELS[type]}
+              {TYPE_LABELS[type as Vehicle['vehicle_type']]}
             </span>
           ))}
           <span style={{ color: 'var(--text-muted)' }}>

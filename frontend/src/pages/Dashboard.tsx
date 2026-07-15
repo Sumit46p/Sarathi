@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Radio, Settings, LogOut, Truck, Activity, Signal, Plus, Trash2, X, MapPin, Navigation, Users } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
@@ -45,6 +45,8 @@ interface DispatchResult {
     lng: number;
   };
   distance_km: number;
+  duration_min?: number | null;
+  geometry?: Array<[number, number]> | null;
 }
 
 const VEHICLE_TYPES = [
@@ -83,6 +85,43 @@ const MiniMapClickHandler = ({ onMapClick }: { onMapClick: (lat: number, lng: nu
       onMapClick(e.latlng.lat, e.latlng.lng);
     },
   });
+  return null;
+};
+
+// Component to fit map bounds to dispatch route geometry
+const DispatchMapBoundsFitter = ({ 
+  geometry, 
+  requestMarker, 
+  assignedVehicle 
+}: { 
+  geometry: Array<[number, number]> | null | undefined;
+  requestMarker: { lat: number; lng: number } | null;
+  assignedVehicle: { lat: number; lng: number } | null;
+}) => {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    
+    // Only fit bounds if we have geometry or both markers
+    if (!geometry && (!requestMarker || !assignedVehicle)) {
+      return;
+    }
+    
+    // Build array of coordinates to fit
+    const coords = [];
+    if (geometry && geometry.length > 0) {
+      coords.push(...geometry);
+    } else if (requestMarker && assignedVehicle) {
+      coords.push([requestMarker.lat, requestMarker.lng]);
+      coords.push([assignedVehicle.lat, assignedVehicle.lng]);
+    }
+    
+    if (coords.length >= 2) {
+      const bounds = L.latLngBounds(coords as any);
+      map.fitBounds(bounds, { padding: [50, 50], animate: true, duration: 0.8 });
+    }
+  }, [geometry, requestMarker, assignedVehicle, map]);
+  
   return null;
 };
 
@@ -306,16 +345,6 @@ const Dashboard = () => {
     });
   }, []);
 
-  const createStandardIcon = useCallback((available = true) => {
-    const color = available ? 'var(--primary)' : 'var(--danger)';
-    return L.divIcon({
-      className: 'custom-div-icon',
-      html: `<div style="width:12px;height:12px;background:${color};border-radius:50%;border:2px solid white;"></div>`,
-      iconSize: [12, 12],
-      iconAnchor: [6, 6],
-    });
-  }, []);
-
   const createRequestIcon = useCallback(() => {
     return L.divIcon({
       className: 'custom-div-icon',
@@ -324,36 +353,6 @@ const Dashboard = () => {
       iconAnchor: [10, 10],
     });
   }, []);
-
-  // --- Dashboard map (tracking tab) ---
-  const trackingMap = useMemo(() => {
-    return (
-      <MapContainer 
-        center={DEFAULT_CENTER} 
-        zoom={5} 
-        style={{ width: '100%', height: '100%' }}
-      >
-        <MapController center={selectedVehicleId ? mapCenter : null} />
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        />
-        {vehicles.map(v => v.location && (
-          <Marker 
-            key={v.id} 
-            position={[v.location.lat, v.location.lng]}
-            icon={selectedVehicleId === v.id ? createBlinkingIcon(v.is_available) : (selectedVehicleId ? createStandardIcon(v.is_available) : createBlinkingIcon(v.is_available))}
-          >
-            <Popup>
-              <strong>{v.name}</strong><br />
-              Type: {v.vehicle_type}<br />
-              Status: {v.is_available ? '✅ Available' : '❌ Unavailable'}
-            </Popup>
-          </Marker>
-        ))}
-      </MapContainer>
-    );
-  }, [vehicles, selectedVehicleId, mapCenter, createBlinkingIcon, createStandardIcon]);
 
   // Derived Metrics
   const totalVehicles = vehicles.length;
@@ -638,6 +637,11 @@ const Dashboard = () => {
                       setDispatchResult(null);
                       setDispatchError(null);
                     }} />
+                    <DispatchMapBoundsFitter 
+                      geometry={dispatchResult?.geometry || null}
+                      requestMarker={requestMarker}
+                      assignedVehicle={dispatchResult?.assigned_vehicle ? { lat: dispatchResult.assigned_vehicle.lat, lng: dispatchResult.assigned_vehicle.lng } : null}
+                    />
                     <TileLayer
                       url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -668,15 +672,28 @@ const Dashboard = () => {
                         </Popup>
                       </Marker>
                     )}
-                    {/* Dispatch line between request and assigned vehicle */}
-                    {dispatchResult && requestMarker && (
+                    {/* Route line from OSRM geometry if available */}
+                    {dispatchResult?.geometry && dispatchResult.geometry.length > 0 && (
+                      <Polyline
+                        positions={dispatchResult.geometry}
+                        pathOptions={{
+                          color: 'var(--primary)',
+                          weight: 4,
+                          opacity: 0.85,
+                          lineCap: 'round',
+                          lineJoin: 'round',
+                        }}
+                      />
+                    )}
+                    {/* Fallback straight-line if no geometry */}
+                    {dispatchResult && !dispatchResult.geometry && requestMarker && (
                       <Polyline
                         positions={[
                           [requestMarker.lat, requestMarker.lng],
                           [dispatchResult.assigned_vehicle.lat, dispatchResult.assigned_vehicle.lng],
                         ]}
                         pathOptions={{
-                          color: '#6366f1',
+                          color: 'var(--primary)',
                           weight: 3,
                           dashArray: '10, 6',
                           opacity: 0.8,

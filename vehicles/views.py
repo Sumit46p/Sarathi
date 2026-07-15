@@ -221,15 +221,25 @@ def dispatch_vehicle(request):
     ranked = []
     osrm_succeeded = False
     for v in candidates:
-        distance_km, duration_min = get_route_distance(
+        distance_km, duration_min, geometry = get_route_distance(
             v.location.y, v.location.x, lat, lng
         )
         if distance_km is not None:
             osrm_succeeded = True
-            ranked.append({'vehicle': v, 'distance_km': distance_km, 'duration_min': duration_min})
+            ranked.append({
+                'vehicle': v,
+                'distance_km': distance_km,
+                'duration_min': duration_min,
+                'geometry': geometry
+            })
         else:
-            # Fallback for this candidate: straight-line distance, no ETA
-            ranked.append({'vehicle': v, 'distance_km': round(v.distance.km, 2), 'duration_min': None})
+            # Fallback for this candidate: straight-line distance, no ETA, no geometry
+            ranked.append({
+                'vehicle': v,
+                'distance_km': round(v.distance.km, 2),
+                'duration_min': None,
+                'geometry': None
+            })
 
     ranked.sort(key=lambda x: x['distance_km'])
     best = ranked[0]
@@ -263,5 +273,6 @@ def dispatch_vehicle(request):
         },
         'distance_km': best['distance_km'],
         'duration_min': best['duration_min'],
+        'geometry': best['geometry'],
     },
     status=status.HTTP_201_CREATED)
