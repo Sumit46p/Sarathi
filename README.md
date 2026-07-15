@@ -26,6 +26,8 @@ routing, a React dashboard, and a Flutter mobile app.
 - [x] Nearest-vehicle dispatch endpoint (PostGIS distance)
 - [x] Dispatch UI (map click → assign nearest vehicle → route line)
 - [x] Organization scoping (vehicles isolated per-admin based on org type)
+- [x] Driver management (add drivers, assign to vehicles)
+- [x] Vehicle number plates
 - [ ] OSRM real-road routing integration
 - [ ] Flutter mobile app
 
@@ -246,6 +248,17 @@ python scripts/simulate_vehicle.py 1
 
 Then open **http://localhost:5173** — you should see the vehicle marker moving
 on the map every 4 seconds.
+
+---
+
+## 📱 Planned Flutter App Scope (Next Phase)
+
+The mobile application for drivers is the primary focus for the next development phase. Key planned features include:
+- **Authentication**: Driver login linked to their assigned organization.
+- **Duty Toggle**: Simple on/off duty switch indicating availability for dispatch.
+- **Live Location**: Background GPS tracking synced with the Django backend.
+- **Current Assignment**: Clear view of their current vehicle assignment and details.
+- **Dispatch Notifications**: Real-time alerts when assigned to a new emergency or dispatch request, with navigation integration.
 
 ---
 

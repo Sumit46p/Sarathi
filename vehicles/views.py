@@ -4,14 +4,17 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
+from django.utils import timezone
 
-from .models import Vehicle, DispatchRequest
+from .models import Vehicle, DispatchRequest, Driver
 from .serializers import (
     VehicleSerializer,
     LocationUpdateSerializer,
     NearestVehicleSerializer,
     DispatchRequestInputSerializer,
     DispatchRequestSerializer,
+    DriverSerializer,
+    AssignDriverSerializer,
 )
 
 
@@ -43,6 +46,34 @@ class VehicleDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Vehicle.objects.filter(owner=self.request.user)
 
 
+class DriverListCreateView(generics.ListCreateAPIView):
+    """
+    GET  /api/drivers/      — list all drivers
+    POST /api/drivers/      — create a new driver
+    """
+    serializer_class = DriverSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Driver.objects.filter(owner=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+
+class DriverDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET    /api/drivers/<id>/  — detail of one driver
+    PATCH  /api/drivers/<id>/  — partial update
+    DELETE /api/drivers/<id>/  — remove a driver
+    """
+    serializer_class = DriverSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Driver.objects.filter(owner=self.request.user)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def update_location(request, pk):
@@ -68,8 +99,44 @@ def update_location(request, pk):
         serializer.validated_data['lat'],
         srid=4326,
     )
-    vehicle.save(update_fields=['location'])
+    vehicle.last_location_at = timezone.now()
+    vehicle.save(update_fields=['location', 'last_location_at'])
 
+    return Response(VehicleSerializer(vehicle).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def assign_driver(request, pk):
+    """
+    POST /api/vehicles/<id>/assign-driver/
+    Body: {"driver_id": 5} or {"driver_id": null}
+    """
+    try:
+        vehicle = Vehicle.objects.get(pk=pk, owner=request.user)
+    except Vehicle.DoesNotExist:
+        return Response(
+            {'error': 'Vehicle not found or access denied'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    serializer = AssignDriverSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    driver_id = serializer.validated_data.get('driver_id')
+    if driver_id is None:
+        vehicle.driver = None
+    else:
+        try:
+            driver = Driver.objects.get(pk=driver_id, owner=request.user)
+            vehicle.driver = driver
+        except Driver.DoesNotExist:
+            return Response(
+                {'error': 'Driver not found or access denied'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+    vehicle.save(update_fields=['driver'])
     return Response(VehicleSerializer(vehicle).data)
 
 
@@ -153,12 +220,14 @@ def dispatch_vehicle(request):
     nearest.save(update_fields=['is_available'])
 
     # Create dispatch record
+    now = timezone.now()
     dispatch = DispatchRequest.objects.create(
         request_lat=lat,
         request_lng=lng,
         vehicle_type=vehicle_type,
         assigned_vehicle=nearest,
         status='assigned',
+        assigned_at=now,
     )
 
     return Response({

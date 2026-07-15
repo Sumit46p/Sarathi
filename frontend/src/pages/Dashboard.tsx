@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Radio, Settings, LogOut, Truck, Activity, Signal, Plus, Trash2, X, MapPin, Navigation } from 'lucide-react';
+import { LayoutDashboard, Radio, Settings, LogOut, Truck, Activity, Signal, Plus, Trash2, X, MapPin, Navigation, Users } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -15,15 +15,26 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
+interface Driver {
+  id: number;
+  name: string;
+  phone_number: string;
+  license_number: string;
+  is_active: boolean;
+}
+
 interface Vehicle {
   id: number;
   name: string;
   vehicle_type: string;
+  number_plate?: string;
   is_available: boolean;
   location: {
     lat: number;
     lng: number;
   } | null;
+  driver?: number | null;
+  driver_name?: string | null;
 }
 
 interface DispatchResult {
@@ -77,7 +88,8 @@ const MiniMapClickHandler = ({ onMapClick }: { onMapClick: (lat: number, lng: nu
 
 const Dashboard = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'dispatch' | 'settings'>('dashboard');
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'dispatch' | 'drivers' | 'settings'>('dashboard');
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [userOrgType, setUserOrgType] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -87,10 +99,16 @@ const Dashboard = () => {
   const [newVehicle, setNewVehicle] = useState({
     name: '',
     vehicle_type: 'ambulance',
+    number_plate: '',
     is_available: true,
     location: null as { lat: number; lng: number } | null,
   });
   const [addLoading, setAddLoading] = useState(false);
+
+  // Add Driver Modal state
+  const [showAddDriverModal, setShowAddDriverModal] = useState(false);
+  const [newDriver, setNewDriver] = useState({ name: '', phone_number: '', license_number: '' });
+  const [addDriverLoading, setAddDriverLoading] = useState(false);
 
   // Dispatch state
   const [requestMarker, setRequestMarker] = useState<{ lat: number; lng: number } | null>(null);
@@ -102,7 +120,8 @@ const Dashboard = () => {
   useEffect(() => {
     fetchUserProfile();
     fetchVehicles();
-    const interval = setInterval(fetchVehicles, 5000);
+    fetchDrivers();
+    const interval = setInterval(() => { fetchVehicles(); fetchDrivers(); }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -132,10 +151,57 @@ const Dashboard = () => {
     }
   };
 
+  const fetchDrivers = async () => {
+    try {
+      const response = await api.get('/drivers/');
+      setDrivers((prev) => {
+        const isSame = JSON.stringify(prev) === JSON.stringify(response.data);
+        return isSame ? prev : response.data;
+      });
+    } catch (error) {
+      console.error('Failed to fetch drivers', error);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     navigate('/login');
+  };
+
+  // --- Driver CRUD handlers ---
+  const handleAddDriver = async () => {
+    if (!newDriver.name || !newDriver.license_number) return;
+    setAddDriverLoading(true);
+    try {
+      await api.post('/drivers/', newDriver);
+      setShowAddDriverModal(false);
+      setNewDriver({ name: '', phone_number: '', license_number: '' });
+      await fetchDrivers();
+    } catch (error) {
+      console.error('Failed to add driver', error);
+    } finally {
+      setAddDriverLoading(false);
+    }
+  };
+
+  const handleDeleteDriver = async (driverId: number) => {
+    try {
+      await api.delete(`/drivers/${driverId}/`);
+      await fetchDrivers();
+    } catch (error) {
+      console.error('Failed to delete driver', error);
+    }
+  };
+
+  const handleAssignDriver = async (vehicleId: number, driverId: string) => {
+    const dId = driverId === "" ? null : Number(driverId);
+    try {
+      await api.post(`/vehicles/${vehicleId}/assign-driver/`, { driver_id: dId });
+      await fetchVehicles();
+    } catch (error) {
+      console.error('Failed to assign driver', error);
+    }
   };
 
   // --- Vehicle CRUD handlers ---
@@ -146,11 +212,12 @@ const Dashboard = () => {
       await api.post('/vehicles/', {
         name: newVehicle.name,
         vehicle_type: newVehicle.vehicle_type,
+        number_plate: newVehicle.number_plate || null,
         is_available: newVehicle.is_available,
         location: newVehicle.location,
       });
       setShowAddModal(false);
-      setNewVehicle({ name: '', vehicle_type: userOrgType || 'ambulance', is_available: true, location: null });
+      setNewVehicle({ name: '', vehicle_type: userOrgType || 'ambulance', number_plate: '', is_available: true, location: null });
       await fetchVehicles();
     } catch (error) {
       console.error('Failed to add vehicle', error);
@@ -319,6 +386,13 @@ const Dashboard = () => {
             Dispatch
           </div>
           <div 
+            className={`nav-item ${activeTab === 'drivers' ? 'active' : ''}`}
+            onClick={() => setActiveTab('drivers')}
+          >
+            <Users size={20} />
+            Drivers
+          </div>
+          <div 
             className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
             onClick={() => setActiveTab('settings')}
           >
@@ -383,13 +457,25 @@ const Dashboard = () => {
                         <Truck size={24} />
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{vehicle.name}</h3>
+                        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{vehicle.name} {vehicle.number_plate && <span style={{fontSize: '0.8rem', background: 'var(--surface-border)', padding: '2px 6px', borderRadius: '4px', marginLeft: '8px'}}>{vehicle.number_plate}</span>}</h3>
                         <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                           {vehicle.vehicle_type} • <span style={{ color: vehicle.is_available ? '#10b981' : 'var(--danger)' }}>{vehicle.is_available ? 'Available' : 'Unavailable'}</span>
                         </p>
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                      {/* Driver Assignment */}
+                      <select 
+                        className="input-field" 
+                        style={{ padding: '6px 12px', width: '150px', fontSize: '0.85rem', minHeight: 'auto' }}
+                        value={vehicle.driver || ""}
+                        onChange={(e) => handleAssignDriver(vehicle.id, e.target.value)}
+                      >
+                        <option value="">Unassigned</option>
+                        {drivers.map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
                       {/* Toggle switch */}
                       <label className="toggle-switch" title={vehicle.is_available ? 'Set Unavailable' : 'Set Available'}>
                         <input
@@ -597,6 +683,52 @@ const Dashboard = () => {
             </>
           )}
 
+          {/* ======================== DRIVERS TAB ======================== */}
+          {activeTab === 'drivers' && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h1 style={{ margin: 0 }}>Drivers</h1>
+                <button
+                  className="btn-primary"
+                  style={{ width: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontSize: '0.9rem' }}
+                  onClick={() => setShowAddDriverModal(true)}
+                >
+                  <Plus size={18} />
+                  Add Driver
+                </button>
+              </div>
+              <div className="vehicle-list">
+                {drivers.map(driver => (
+                  <div key={driver.id} className="vehicle-card glass-panel" style={{ justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
+                      <div className="vehicle-icon" style={{ background: 'var(--surface-border)' }}>
+                        <Users size={24} color="var(--text-main)" />
+                      </div>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{driver.name}</h3>
+                        <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                          📞 {driver.phone_number} | 🪪 {driver.license_number}
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                      <button
+                        className="icon-btn-danger"
+                        title="Delete driver"
+                        onClick={() => handleDeleteDriver(driver.id)}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {drivers.length === 0 && (
+                  <p style={{ color: 'var(--text-muted)' }}>No drivers found in the system.</p>
+                )}
+              </div>
+            </>
+          )}
+
           {/* ======================== SETTINGS TAB ======================== */}
           {activeTab === 'settings' && (
             <div>
@@ -630,6 +762,17 @@ const Dashboard = () => {
                 placeholder="e.g. Ambulance-07"
                 value={newVehicle.name}
                 onChange={(e) => setNewVehicle({ ...newVehicle, name: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Number Plate</label>
+              <input
+                className="input-field"
+                type="text"
+                placeholder="e.g. BA-1-PA-1234"
+                value={newVehicle.number_plate}
+                onChange={(e) => setNewVehicle({ ...newVehicle, number_plate: e.target.value })}
               />
             </div>
 
@@ -694,6 +837,66 @@ const Dashboard = () => {
               style={{ marginTop: '8px', opacity: (!newVehicle.name || !newVehicle.location) ? 0.5 : 1 }}
             >
               {addLoading ? 'Adding...' : 'Add Vehicle'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================== ADD DRIVER MODAL ======================== */}
+      {showAddDriverModal && (
+        <div className="modal-overlay" onClick={() => setShowAddDriverModal(false)}>
+          <div className="modal-content glass-panel" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ margin: 0 }}>Add New Driver</h2>
+              <button
+                className="icon-btn-danger"
+                onClick={() => setShowAddDriverModal(false)}
+                style={{ background: 'transparent', border: 'none' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="form-group">
+              <label>Full Name</label>
+              <input
+                className="input-field"
+                type="text"
+                placeholder="e.g. John Doe"
+                value={newDriver.name}
+                onChange={(e) => setNewDriver({ ...newDriver, name: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Phone Number</label>
+              <input
+                className="input-field"
+                type="text"
+                placeholder="e.g. 9841000000"
+                value={newDriver.phone_number}
+                onChange={(e) => setNewDriver({ ...newDriver, phone_number: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>License Number</label>
+              <input
+                className="input-field"
+                type="text"
+                placeholder="e.g. 01-02-003344"
+                value={newDriver.license_number}
+                onChange={(e) => setNewDriver({ ...newDriver, license_number: e.target.value })}
+              />
+            </div>
+
+            <button
+              className="btn-primary"
+              onClick={handleAddDriver}
+              disabled={!newDriver.name || !newDriver.license_number || addDriverLoading}
+              style={{ marginTop: '8px', opacity: (!newDriver.name || !newDriver.license_number) ? 0.5 : 1 }}
+            >
+              {addDriverLoading ? 'Adding...' : 'Add Driver'}
             </button>
           </div>
         </div>

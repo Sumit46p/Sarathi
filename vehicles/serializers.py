@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.gis.geos import Point
-from .models import Vehicle, DispatchRequest
+from .models import Vehicle, DispatchRequest, Driver
 
 
 class LocationField(serializers.Field):
@@ -32,13 +32,21 @@ class LocationField(serializers.Field):
         return Point(lng, lat, srid=4326)
 
 
+class DriverSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Driver
+        fields = ['id', 'name', 'phone_number', 'license_number', 'is_active']
+        read_only_fields = ['id']
+
+
 class VehicleSerializer(serializers.ModelSerializer):
     location = LocationField()
+    driver_name = serializers.CharField(source='driver.name', read_only=True, default=None)
 
     class Meta:
         model = Vehicle
-        fields = ['id', 'name', 'vehicle_type', 'is_available', 'location']
-        read_only_fields = ['id']
+        fields = ['id', 'name', 'vehicle_type', 'number_plate', 'is_available', 'location', 'driver', 'driver_name']
+        read_only_fields = ['id', 'driver_name']
 
 
 class LocationUpdateSerializer(serializers.Serializer):
@@ -63,14 +71,30 @@ class DispatchRequestInputSerializer(serializers.Serializer):
     vehicle_type = serializers.ChoiceField(choices=Vehicle.VEHICLE_TYPE_CHOICES)
 
 
+class AssignDriverSerializer(serializers.Serializer):
+    """Validates driver assignment payload."""
+    driver_id = serializers.IntegerField(allow_null=True, required=False)
+
+
 class DispatchRequestSerializer(serializers.ModelSerializer):
-    assigned_vehicle_detail = VehicleSerializer(source='assigned_vehicle', read_only=True)
+    assigned_vehicle_name = serializers.CharField(
+        source='assigned_vehicle.name', read_only=True, default=None
+    )
+    response_time_seconds = serializers.FloatField(read_only=True)
+    trip_duration_seconds = serializers.FloatField(read_only=True)
 
     class Meta:
         model = DispatchRequest
         fields = [
-            'id', 'request_lat', 'request_lng', 'vehicle_type',
-            'assigned_vehicle', 'assigned_vehicle_detail',
-            'status', 'created_at',
+            'id',
+            'request_lat', 'request_lng',
+            'vehicle_type',
+            'assigned_vehicle', 'assigned_vehicle_name',
+            'status',
+            # timestamps
+            'created_at', 'assigned_at', 'accepted_at',
+            'en_route_at', 'arrived_at', 'completed_at',
+            # computed
+            'response_time_seconds', 'trip_duration_seconds',
         ]
-        read_only_fields = ['id', 'assigned_vehicle', 'status', 'created_at']
+        read_only_fields = fields  # all driven by the backend
