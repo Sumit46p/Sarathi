@@ -11,6 +11,7 @@ const Signup = () => {
   const [organizationType, setOrganizationType] = useState('ambulance');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,43 +54,51 @@ const Signup = () => {
         </div>
         <h2 className="auth-title">Create Account</h2>
         <p className="auth-subtitle">Join Sarathi to manage fleet operations</p>
-        
+
         {error && <div style={{ color: 'var(--danger)', marginBottom: '16px', textAlign: 'center' }}>{error}</div>}
-        
+
         <form onSubmit={handleSignup}>
           <div className="form-group">
             <label>Username</label>
-            <input 
-              type="text" 
-              className="input-field" 
+            <input
+              type="text"
+              className="input-field"
               placeholder="Choose a username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              required 
+              required
             />
           </div>
           <div className="form-group">
             <label>Email Address</label>
-            <input 
-              type="email" 
-              className="input-field" 
+            <input
+              type="email"
+              className="input-field"
               placeholder="Enter your email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required 
+              required
             />
           </div>
           <div className="form-group">
             <label>Password</label>
-            <input 
-              type="password" 
-              className="input-field" 
+            <input
+              type={showPassword ? "text" : "password"}
+              className="input-field"
               placeholder="Strong password (min 8 chars)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               minLength={8}
-              required 
+              required
             />
+            <button
+              type="button"
+              className="eye-btn"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
+
           </div>
           <div className="form-group">
             <label>Organization Type</label>

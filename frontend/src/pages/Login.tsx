@@ -9,6 +9,7 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,31 +37,38 @@ const Login = () => {
         </div>
         <h2 className="auth-title">Welcome Back</h2>
         <p className="auth-subtitle">Login to access the Sarathi Admin Dashboard</p>
-        
+
         {error && <div style={{ color: 'var(--danger)', marginBottom: '16px', textAlign: 'center' }}>{error}</div>}
-        
+
         <form onSubmit={handleLogin}>
           <div className="form-group">
             <label>Username</label>
-            <input 
-              type="text" 
-              className="input-field" 
+            <input
+              type="text"
+              className="input-field"
               placeholder="Enter your username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              required 
+              required
             />
           </div>
           <div className="form-group">
             <label>Password</label>
-            <input 
-              type="password" 
-              className="input-field" 
+            <input
+              type={showPassword ? "text" : "password"}
+              className="input-field"
               placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required 
+              required
             />
+            <button
+              type="button"
+              className="eye-btn"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
           </div>
           <button type="submit" className="btn-primary" style={{ marginTop: '12px' }}>
             Sign In

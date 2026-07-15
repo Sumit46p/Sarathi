@@ -11,25 +11,38 @@ routing, a React dashboard, and a Flutter mobile app.
 
 ## ✅ Current Status
 
+### Core Platform
 - [x] Django project scaffolded (`sarthi_backend`)
-- [x] PostGIS database running via Docker (port **5433**)
-- [x] `Vehicle` model with GPS `PointField` + admin map picker
-- [x] Database migrations applied
-- [x] REST API endpoints (DRF) — CRUD + location update
-- [x] JWT Authentication & Accounts app setup
-- [x] Frontend Authentication pages (Login & Signup UI)
-- [x] React Router with Protected Routes for dashboard
-- [x] Location simulator script (stands in for Flutter driver app)
-- [x] React frontend — live vehicle map with Leaflet
-- [x] Cross-platform GDAL/GEOS paths handled (Windows OSGeo4W support)
-- [x] Vehicle CRUD UI (add modal, toggle availability, delete)
-- [x] Nearest-vehicle dispatch endpoint (PostGIS distance)
-- [x] Dispatch UI (map click → assign nearest vehicle → route line)
-- [x] Organization scoping (vehicles isolated per-admin based on org type)
-- [x] Driver management (add drivers, assign to vehicles)
+- [x] PostGIS database running via Docker
+- [x] Vehicle model with GPS PointField + admin map picker
+- [x] JWT Authentication & Accounts app
+- [x] Frontend auth pages (Login & Signup)
+- [x] React Router with Protected Routes
+- [x] Organization scoping (per-admin/org data isolation)
+
+### Fleet & Dispatch
+- [x] Vehicle CRUD (API + dashboard UI)
 - [x] Vehicle number plates
-- [ ] OSRM real-road routing integration
-- [ ] Flutter mobile app
+- [x] Driver management (add drivers, assign to vehicles)
+- [x] Nearest-vehicle dispatch (straight-line PostGIS distance)
+- [x] Dispatch UI (map click → assign → route line)
+- [x] Location simulator (stands in for Flutter app)
+- [x] Live vehicle map (Leaflet, polling)
+- [ ] OSRM real-road routing (upgrade from straight-line distance)
+
+### Not Yet Started (from original proposal scope)
+- [ ] Maintenance monitoring + scheduled service alerts
+- [ ] Expense tracking (fuel, maintenance, operational costs)
+- [ ] Operational analytics/reporting dashboard (Chart.js/Recharts)
+- [ ] Real-time WebSocket notifications (Django Channels) — currently using polling instead
+- [ ] Redis caching layer
+- [ ] Role-based access control *within* an organization (currently one admin = one org, no dispatcher/viewer sub-roles)
+- [ ] Flutter driver mobile app
+- [ ] Firebase Cloud Messaging push notifications
+- [ ] Docker Compose full-stack deployment (Nginx + Gunicorn)
+- [ ] Unit / integration testing
+- [ ] User Acceptance Testing (UAT) with a partner organization
+- [ ] Performance benchmarking (sub-2s dispatch @ 50 concurrent updates/sec)
 
 > **Architecture Note:** Vehicles are scoped per-admin/organization. An admin only sees and manages vehicles belonging to their own organization (Ambulance, Logistics, or Municipal). This was a deliberate architecture correction after initial testing revealed cross-org data mixing.
 
