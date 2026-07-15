@@ -134,6 +134,18 @@ class DispatchRequest(models.Model):
         default='pending',
         db_index=True,
     )
+    distance_km = models.FloatField(
+        null=True, blank=True,
+        help_text='Real road distance to assigned vehicle at dispatch time (OSRM)',
+    )
+    duration_min = models.FloatField(
+        null=True, blank=True,
+        help_text='Estimated travel time at dispatch time (OSRM), in minutes',
+    )
+    used_osrm = models.BooleanField(
+        default=False,
+        help_text='True if distance/duration came from OSRM; False if straight-line fallback',
+    )
 
     # --- Lifecycle timestamps (all nullable for back-compat) ---
     created_at    = models.DateTimeField(auto_now_add=True)

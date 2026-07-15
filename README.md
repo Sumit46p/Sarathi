@@ -28,7 +28,7 @@ routing, a React dashboard, and a Flutter mobile app.
 - [x] Dispatch UI (map click → assign → route line)
 - [x] Location simulator (stands in for Flutter app)
 - [x] Live vehicle map (Leaflet, polling)
-- [ ] OSRM real-road routing (upgrade from straight-line distance)
+- [x] OSRM real-road routing (upgrade from straight-line distance)
 
 ### Not Yet Started (from original proposal scope)
 - [ ] Maintenance monitoring + scheduled service alerts
@@ -285,7 +285,7 @@ The mobile application for drivers is the primary focus for the next development
 | API | Django REST Framework |
 | Simulator | Python + requests (random walk) |
 | Frontend | React + TypeScript + Vite + Leaflet |
-| Routing | OSRM (planned) |
+| Routing | OSRM ✓ |
 | Mobile | Flutter (planned) |
 
 ---

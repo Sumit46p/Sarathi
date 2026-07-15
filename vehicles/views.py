@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
 from django.utils import timezone
+from .osrm import get_route_distance
 
 from .models import Vehicle, DispatchRequest, Driver
 from .serializers import (
@@ -188,9 +189,10 @@ def dispatch_vehicle(request):
     POST /api/dispatch/
     Body: {"lat": ..., "lng": ..., "vehicle_type": "ambulance"}
 
-    Finds the nearest available vehicle of the requested type (scoped to request.user),
-    marks it as unavailable, creates a DispatchRequest record, and returns the
-    assigned vehicle + distance.
+    Two-stage dispatch:
+      1. PostGIS straight-line distance narrows candidates to top 5
+      2. OSRM real-road distance ranks those 5 to pick the true nearest
+    Falls back to straight-line ranking if OSRM is unreachable.
     """
     serializer = DispatchRequestInputSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -201,25 +203,43 @@ def dispatch_vehicle(request):
 
     request_point = Point(lng, lat, srid=4326)
 
-    nearest = (
+    # Stage 1: PostGIS straight-line pre-filter (fast, approximate)
+    candidates = list(
         Vehicle.objects
         .filter(owner=request.user, is_available=True, vehicle_type=vehicle_type)
         .annotate(distance=Distance('location', request_point))
-        .order_by('distance')
-        .first()
+        .order_by('distance')[:5]
     )
 
-    if nearest is None:
+    if not candidates:
         return Response(
             {'error': f'No available {vehicle_type} vehicles found in your organization'},
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # Stage 2: OSRM real-road ranking on the shortlist
+    ranked = []
+    osrm_succeeded = False
+    for v in candidates:
+        distance_km, duration_min = get_route_distance(
+            v.location.y, v.location.x, lat, lng
+        )
+        if distance_km is not None:
+            osrm_succeeded = True
+            ranked.append({'vehicle': v, 'distance_km': distance_km, 'duration_min': duration_min})
+        else:
+            # Fallback for this candidate: straight-line distance, no ETA
+            ranked.append({'vehicle': v, 'distance_km': round(v.distance.km, 2), 'duration_min': None})
+
+    ranked.sort(key=lambda x: x['distance_km'])
+    best = ranked[0]
+    nearest = best['vehicle']
+
     # Mark vehicle as unavailable
     nearest.is_available = False
     nearest.save(update_fields=['is_available'])
 
-    # Create dispatch record
+    # Create dispatch record with the computed distance/duration saved once
     now = timezone.now()
     dispatch = DispatchRequest.objects.create(
         request_lat=lat,
@@ -228,6 +248,9 @@ def dispatch_vehicle(request):
         assigned_vehicle=nearest,
         status='assigned',
         assigned_at=now,
+        distance_km=best['distance_km'],
+        duration_min=best['duration_min'],
+        used_osrm=osrm_succeeded,
     )
 
     return Response({
@@ -238,5 +261,7 @@ def dispatch_vehicle(request):
             'lat': nearest.location.y,
             'lng': nearest.location.x,
         },
-        'distance_km': round(nearest.distance.km, 2),
-    }, status=status.HTTP_201_CREATED)
+        'distance_km': best['distance_km'],
+        'duration_min': best['duration_min'],
+    },
+    status=status.HTTP_201_CREATED)

@@ -91,10 +91,9 @@ class DispatchRequestSerializer(serializers.ModelSerializer):
             'vehicle_type',
             'assigned_vehicle', 'assigned_vehicle_name',
             'status',
-            # timestamps
             'created_at', 'assigned_at', 'accepted_at',
             'en_route_at', 'arrived_at', 'completed_at',
-            # computed
             'response_time_seconds', 'trip_duration_seconds',
+            'distance_km', 'duration_min', 'used_osrm',   # ← added
         ]
-        read_only_fields = fields  # all driven by the backend
+        read_only_fields = fields
