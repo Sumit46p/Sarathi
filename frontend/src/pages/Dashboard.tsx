@@ -365,8 +365,8 @@ const Dashboard = () => {
       {/* Sidebar */}
       <div className="sidebar">
         <div className="sidebar-header">
-          <h2 style={{ margin: 0, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Truck size={28} />
+          <h2 style={{ margin: 0, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.1rem' }}>
+            <Truck size={26} strokeWidth={2.5} />
             Sarathi
           </h2>
         </div>
@@ -417,8 +417,8 @@ const Dashboard = () => {
         <div className="content-area">
           {/* ======================== DASHBOARD TAB ======================== */}
           {activeTab === 'dashboard' && (
-            <>
-              <h1 style={{ marginTop: 0, marginBottom: '24px' }}>Fleet Overview</h1>
+            <div className="tab-content">
+              <h1 style={{ marginBottom: '28px' }}>Fleet Overview</h1>
               
               <div className="metrics-row">
                 <div className="metric-card glass-panel">
@@ -427,8 +427,8 @@ const Dashboard = () => {
                   <p className="metric-label">Total Vehicles</p>
                 </div>
                 <div className="metric-card glass-panel">
-                  <Activity size={24} color="#10b981" style={{ marginBottom: '8px' }} />
-                  <p className="metric-value" style={{ color: '#10b981' }}>{activeVehicles}</p>
+                  <Activity size={24} color="var(--success)" style={{ marginBottom: '8px' }} />
+                  <p className="metric-value" style={{ color: 'var(--success)' }}>{activeVehicles}</p>
                   <p className="metric-label">Active & Available</p>
                 </div>
                 <div className="metric-card glass-panel">
@@ -451,23 +451,28 @@ const Dashboard = () => {
               </div>
               <div className="vehicle-list">
                 {vehicles.map(vehicle => (
-                  <div key={vehicle.id} className="vehicle-card glass-panel" style={{ justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, minWidth: 0 }}>
-                      <div className="vehicle-icon">
+                  <div key={vehicle.id} className="vehicle-card glass-panel" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', flex: 1, minWidth: 0, width: '100%' }}>
+                      <div className="vehicle-icon" style={{ marginTop: '2px', flexShrink: 0 }}>
                         <Truck size={24} />
                       </div>
-                      <div style={{ minWidth: 0 }}>
-                        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{vehicle.name} {vehicle.number_plate && <span style={{fontSize: '0.8rem', background: 'var(--surface-border)', padding: '2px 6px', borderRadius: '4px', marginLeft: '8px'}}>{vehicle.number_plate}</span>}</h3>
-                        <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                          {vehicle.vehicle_type} • <span style={{ color: vehicle.is_available ? '#10b981' : 'var(--danger)' }}>{vehicle.is_available ? 'Available' : 'Unavailable'}</span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>{vehicle.name}</h3>
+                        {vehicle.number_plate && (
+                          <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                            {vehicle.number_plate}
+                          </p>
+                        )}
+                        <p style={{ margin: '6px 0 0 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                          {vehicle.vehicle_type.charAt(0).toUpperCase() + vehicle.vehicle_type.slice(1)} • <span style={{ color: vehicle.is_available ? 'var(--success)' : 'var(--danger)', fontWeight: 500 }}>{vehicle.is_available ? 'Available' : 'Unavailable'}</span>
                         </p>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, marginTop: '12px', width: '100%' }}>
                       {/* Driver Assignment */}
                       <select 
                         className="input-field" 
-                        style={{ padding: '6px 12px', width: '150px', fontSize: '0.85rem', minHeight: 'auto' }}
+                        style={{ padding: '6px 10px', flex: 1, minWidth: '140px', fontSize: '0.85rem', minHeight: 'auto' }}
                         value={vehicle.driver || ""}
                         onChange={(e) => handleAssignDriver(vehicle.id, e.target.value)}
                       >
@@ -477,7 +482,7 @@ const Dashboard = () => {
                         ))}
                       </select>
                       {/* Toggle switch */}
-                      <label className="toggle-switch" title={vehicle.is_available ? 'Set Unavailable' : 'Set Available'}>
+                      <label className="toggle-switch" title={vehicle.is_available ? 'Set Unavailable' : 'Set Available'} style={{ marginLeft: 'auto' }}>
                         <input
                           type="checkbox"
                           checked={vehicle.is_available}
@@ -494,19 +499,20 @@ const Dashboard = () => {
                         <Trash2 size={16} />
                       </button>
                     </div>
-                  </div>
+                    </div>
+                
                 ))}
                 {vehicles.length === 0 && (
                   <p style={{ color: 'var(--text-muted)' }}>No vehicles found in the system.</p>
                 )}
               </div>
-            </>
+            </div>
           )}
 
           {/* ======================== DISPATCH TAB ======================== */}
           {activeTab === 'dispatch' && (
-            <>
-              <h1 style={{ marginTop: 0, marginBottom: '24px' }}>Dispatch Center</h1>
+            <div className="tab-content">
+              <h1 style={{ marginBottom: '28px' }}>Dispatch Center</h1>
               <div className="dispatch-layout">
                 {/* Left Panel */}
                 <div className="dispatch-panel">
@@ -568,7 +574,7 @@ const Dashboard = () => {
                   {/* Dispatch Result */}
                   {dispatchResult && (
                     <div className="glass-panel dispatch-result" style={{ padding: '20px', marginBottom: '16px' }}>
-                      <h3 style={{ margin: '0 0 12px 0', color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h3 style={{ margin: '0 0 12px 0', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         ✅ Vehicle Dispatched
                       </h3>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -601,13 +607,13 @@ const Dashboard = () => {
                           className={`vehicle-card glass-panel interactive-card ${selectedVehicleId === vehicle.id ? 'selected' : ''}`}
                           onClick={() => setSelectedVehicleId(vehicle.id)}
                         >
-                          <div className="vehicle-icon" style={{ background: vehicle.is_available ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: vehicle.is_available ? '#10b981' : 'var(--danger)' }}>
+                          <div className="vehicle-icon" style={{ background: vehicle.is_available ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', color: vehicle.is_available ? 'var(--success)' : 'var(--danger)' }}>
                             <Truck size={24} />
                           </div>
                           <div>
                             <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{vehicle.name}</h3>
                             <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                              {vehicle.vehicle_type} • <span style={{ color: vehicle.is_available ? '#10b981' : 'var(--danger)' }}>{vehicle.is_available ? 'Available' : 'Dispatched'}</span>
+                              {vehicle.vehicle_type} • <span style={{ color: vehicle.is_available ? 'var(--success)' : 'var(--danger)' }}>{vehicle.is_available ? 'Available' : 'Dispatched'}</span>
                             </p>
                           </div>
                         </div>
@@ -680,14 +686,14 @@ const Dashboard = () => {
                   </MapContainer>
                 </div>
               </div>
-            </>
+            </div>
           )}
 
           {/* ======================== DRIVERS TAB ======================== */}
           {activeTab === 'drivers' && (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h1 style={{ margin: 0 }}>Drivers</h1>
+            <div className="tab-content">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
+                <h1>Drivers</h1>
                 <button
                   className="btn-primary"
                   style={{ width: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontSize: '0.9rem' }}
@@ -726,13 +732,13 @@ const Dashboard = () => {
                   <p style={{ color: 'var(--text-muted)' }}>No drivers found in the system.</p>
                 )}
               </div>
-            </>
+            </div>
           )}
 
           {/* ======================== SETTINGS TAB ======================== */}
           {activeTab === 'settings' && (
-            <div>
-              <h1 style={{ marginTop: 0, marginBottom: '24px' }}>Settings</h1>
+            <div className="tab-content">
+              <h1 style={{ marginBottom: '20px' }}>Settings</h1>
               <p style={{ color: 'var(--text-muted)' }}>Configuration options will be available here.</p>
             </div>
           )}

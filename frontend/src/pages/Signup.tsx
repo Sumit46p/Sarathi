@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authApi } from '../api/auth';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Eye, EyeOff } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
 const Signup = () => {
@@ -48,8 +48,8 @@ const Signup = () => {
       </div>
       <div className="auth-card glass-panel">
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-          <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <UserPlus size={32} color="var(--primary)" />
+          <div style={{ width: '56px', height: '56px', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <UserPlus size={28} color="var(--primary)" strokeWidth={2} />
           </div>
         </div>
         <h2 className="auth-title">Create Account</h2>
@@ -82,24 +82,41 @@ const Signup = () => {
           </div>
           <div className="form-group">
             <label>Password</label>
-            <input
-              type={showPassword ? "text" : "password"}
-              className="input-field"
-              placeholder="Strong password (min 8 chars)"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
-              required
-            />
-            <button
-              type="button"
-              className="eye-btn"
-              onClick={() => setShowPassword(!showPassword)}
-            >
-              {showPassword ? "🙈" : "👁️"}
-            </button>
-
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                className="input-field"
+                placeholder="Strong password (min 8 chars)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                minLength={8}
+                required
+              />
+              <button
+                type="button"
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  padding: 0,
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 36,
+                  height: 36,
+                }}
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
+
           <div className="form-group">
             <label>Organization Type</label>
             <select

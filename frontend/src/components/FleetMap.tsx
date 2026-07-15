@@ -4,17 +4,17 @@ import 'leaflet/dist/leaflet.css';
 import { fetchVehicles } from '../api/vehicles';
 import type { Vehicle } from '../api/vehicles';
 
-/* ── colour palette per vehicle type ── */
+/* ── Muted color palette per vehicle type ── */
 const TYPE_COLORS: Record<Vehicle['vehicle_type'], string> = {
-  ambulance: '#e74c3c',   // red
-  logistics: '#2980b9',   // blue
-  municipal: '#27ae60',   // green
+  ambulance: '#dc2626',   // muted red
+  logistics: '#2563eb',   // muted blue
+  municipal: '#059669',   // muted green
 };
 
 const TYPE_LABELS: Record<Vehicle['vehicle_type'], string> = {
-  ambulance: '🚑 Ambulance',
-  logistics: '🚚 Logistics',
-  municipal: '🏛️ Municipal',
+  ambulance: 'Ambulance',
+  logistics: 'Logistics',
+  municipal: 'Municipal',
 };
 
 /* ── polling interval (ms) ── */
@@ -40,8 +40,8 @@ export default function FleetMap() {
       }
     };
 
-    load();                                       // fetch on mount
-    const timer = setInterval(load, POLL_INTERVAL); // re-fetch every 4s
+    load();
+    const timer = setInterval(load, POLL_INTERVAL);
 
     return () => {
       active = false;
@@ -51,7 +51,7 @@ export default function FleetMap() {
 
   return (
     <div style={{ width: '100%', height: '100vh', position: 'relative' }}>
-      {/* ── header bar ── */}
+      {/* Header bar */}
       <div
         style={{
           position: 'absolute',
@@ -59,109 +59,107 @@ export default function FleetMap() {
           left: 0,
           right: 0,
           zIndex: 1000,
-          background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-          color: '#fff',
-          padding: '12px 24px',
+          background: 'var(--surface)',
+          borderBottom: '1px solid var(--surface-border)',
+          color: 'var(--text-main)',
+          padding: '14px 24px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          fontFamily: "'Inter', system-ui, sans-serif",
-          boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 22 }}>🚑</span>
-          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 1 }}>
-            Sarthi — Live Fleet Map
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: 0.5 }}>
+            Sarthi Fleet Map
           </span>
         </div>
 
-        {/* legend */}
-        <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 20, fontSize: 12.5, fontWeight: 500 }}>
           {Object.entries(TYPE_COLORS).map(([type, color]) => (
-            <span key={type} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
               <span
                 style={{
-                  width: 10,
-                  height: 10,
+                  width: 12,
+                  height: 12,
                   borderRadius: '50%',
                   background: color,
                   display: 'inline-block',
+                  boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.8)',
                 }}
               />
-              {type}
+              {TYPE_LABELS[type]}
             </span>
           ))}
-          <span style={{ opacity: 0.6 }}>
-            {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''}
+          <span style={{ color: 'var(--text-muted)' }}>
+            {vehicles.length} {vehicles.length === 1 ? 'vehicle' : 'vehicles'}
           </span>
         </div>
       </div>
 
-      {/* ── error banner ── */}
+      {/* Error banner */}
       {error && (
         <div
           style={{
             position: 'absolute',
-            top: 52,
+            top: 60,
             left: '50%',
             transform: 'translateX(-50%)',
-            zIndex: 1000,
-            background: '#e74c3c',
+            zIndex: 999,
+            background: 'var(--danger)',
             color: '#fff',
-            padding: '8px 20px',
-            borderRadius: 6,
-            fontSize: 14,
-            fontFamily: "'Inter', system-ui, sans-serif",
+            padding: '10px 18px',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 500,
+            animation: 'slideUp 0.25s ease',
           }}
         >
           {error}
         </div>
       )}
 
-      {/* ── map ── */}
+      {/* Map */}
       <MapContainer
         center={[26.5, 87.9]}
         zoom={12}
         style={{ width: '100%', height: '100%' }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
 
         {vehicles.map((v) => (
           <CircleMarker
             key={v.id}
             center={[v.location.lat, v.location.lng]}
-            radius={10}
+            radius={8}
             pathOptions={{
-              color: '#fff',
-              weight: 2,
-              fillColor: TYPE_COLORS[v.vehicle_type] ?? '#888',
-              fillOpacity: 0.9,
+              color: TYPE_COLORS[v.vehicle_type] ?? '#6b7280',
+              weight: 2.5,
+              fillColor: TYPE_COLORS[v.vehicle_type] ?? '#6b7280',
+              fillOpacity: 0.85,
             }}
           >
             <Popup>
-              <div style={{ fontFamily: "'Inter', system-ui, sans-serif", minWidth: 140 }}>
-                <strong style={{ fontSize: 15 }}>{v.name}</strong>
-                <br />
-                <span style={{ color: TYPE_COLORS[v.vehicle_type] }}>
-                  {TYPE_LABELS[v.vehicle_type] ?? v.vehicle_type}
-                </span>
-                <br />
-                <span
-                  style={{
-                    color: v.is_available ? '#27ae60' : '#e74c3c',
-                    fontWeight: 600,
-                  }}
-                >
-                  {v.is_available ? '✅ Available' : '🚫 Unavailable'}
-                </span>
-                <br />
-                <span style={{ fontSize: 11, color: '#888' }}>
+              <div style={{ 
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+                minWidth: 160,
+                padding: '6px 0'
+              }}>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: 'var(--text-main)' }}>
+                  {v.name}
+                </div>
+                <div style={{ fontSize: 12, marginBottom: 6 }}>
+                  <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>Type: <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{TYPE_LABELS[v.vehicle_type]}</span></div>
+                  <div style={{ color: 'var(--text-muted)' }}>Status: <span style={{ color: v.is_available ? 'var(--success)' : 'var(--danger)', fontWeight: 500 }}>{v.is_available ? 'Available' : 'Unavailable'}</span></div>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--surface-border)' }}>
                   {v.location.lat.toFixed(5)}, {v.location.lng.toFixed(5)}
-                </span>
+                </div>
               </div>
             </Popup>
           </CircleMarker>
