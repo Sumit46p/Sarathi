@@ -1,14 +1,18 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Radio, Settings, LogOut, Truck, Activity, Signal, Plus, Trash2, X, MapPin, Navigation, Users } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
+import {
+  Activity, AlertCircle, CheckCircle2, ChevronRight, CircleDot,
+  Gauge, LayoutDashboard, LogOut, MapPin, Navigation, Phone, Plus,
+  Radio, RefreshCw, Search, Settings, ShieldCheck, Trash2, Truck,
+  UserRound, Users, X,
+} from 'lucide-react';
+import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { api } from '../api/auth';
 import ThemeToggle from '../components/ThemeToggle';
 
-// Fix leafet default icon issue
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -29,178 +33,149 @@ interface Vehicle {
   vehicle_type: string;
   number_plate?: string;
   is_available: boolean;
-  location: {
-    lat: number;
-    lng: number;
-  } | null;
+  location: { lat: number; lng: number } | null;
   driver?: number | null;
   driver_name?: string | null;
 }
 
 interface DispatchResult {
-  assigned_vehicle: {
-    id: number;
-    name: string;
-    lat: number;
-    lng: number;
-  };
+  assigned_vehicle: { id: number; name: string; lat: number; lng: number };
   distance_km: number;
   duration_min?: number | null;
   geometry?: Array<[number, number]> | null;
 }
+
+type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings';
+type StatusFilter = 'all' | 'available' | 'unavailable';
 
 const VEHICLE_TYPES = [
   { value: 'ambulance', label: 'Ambulance' },
   { value: 'logistics', label: 'Logistics' },
   { value: 'municipal', label: 'Municipal' },
 ];
+const NEPAL_CENTER: [number, number] = [28.2, 84.0];
+const NEPAL_BOUNDS = L.latLngBounds([26.347, 80.058], [30.447, 88.201]);
+const MAP_OPTIONS = {
+  maxBounds: NEPAL_BOUNDS,
+  maxBoundsViscosity: 1,
+  minZoom: 7,
+} as const;
 
-const DEFAULT_CENTER = [28.6139, 77.2090] as [number, number];
-
-// Component to handle map panning
-const MapController = ({ center }: { center: [number, number] | null }) => {
+function MapController({ center }: { center: [number, number] | null }) {
   const map = useMap();
   useEffect(() => {
-    if (center) {
-      map.setView(center, 14, { animate: true, duration: 1.5 });
-    }
+    if (center && NEPAL_BOUNDS.contains(center)) map.setView(center, 14, { animate: true, duration: 0.7 });
   }, [center, map]);
   return null;
-};
+}
 
-// Component to capture clicks on the dispatch map
-const DispatchMapClickHandler = ({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) => {
+function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
   useMapEvents({
-    click(e) {
-      onMapClick(e.latlng.lat, e.latlng.lng);
+    click(event) {
+      if (NEPAL_BOUNDS.contains(event.latlng)) onMapClick(event.latlng.lat, event.latlng.lng);
     },
   });
   return null;
-};
+}
 
-// Component to capture clicks on the mini-map in the add-vehicle modal
-const MiniMapClickHandler = ({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) => {
-  useMapEvents({
-    click(e) {
-      onMapClick(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-};
-
-// Component to fit map bounds to dispatch route geometry
-const DispatchMapBoundsFitter = ({ 
-  geometry, 
-  requestMarker, 
-  assignedVehicle 
-}: { 
+function DispatchMapBoundsFitter({ geometry, requestMarker, assignedVehicle }: {
   geometry: Array<[number, number]> | null | undefined;
   requestMarker: { lat: number; lng: number } | null;
   assignedVehicle: { lat: number; lng: number } | null;
-}) => {
+}) {
   const map = useMap();
   useEffect(() => {
-    if (!map) return;
-    
-    // Only fit bounds if we have geometry or both markers
-    if (!geometry && (!requestMarker || !assignedVehicle)) {
-      return;
+    const coordinates: Array<[number, number]> = [];
+    if (geometry?.length) coordinates.push(...geometry.filter(point => NEPAL_BOUNDS.contains(point)));
+    else if (requestMarker && assignedVehicle) {
+      coordinates.push([requestMarker.lat, requestMarker.lng], [assignedVehicle.lat, assignedVehicle.lng]);
     }
-    
-    // Build array of coordinates to fit
-    const coords = [];
-    if (geometry && geometry.length > 0) {
-      coords.push(...geometry);
-    } else if (requestMarker && assignedVehicle) {
-      coords.push([requestMarker.lat, requestMarker.lng]);
-      coords.push([assignedVehicle.lat, assignedVehicle.lng]);
+    if (coordinates.length >= 2) {
+      map.fitBounds(L.latLngBounds(coordinates), { padding: [56, 56], animate: true, duration: 0.7, maxZoom: 15 });
     }
-    
-    if (coords.length >= 2) {
-      const bounds = L.latLngBounds(coords as any);
-      map.fitBounds(bounds, { padding: [50, 50], animate: true, duration: 0.8 });
-    }
-  }, [geometry, requestMarker, assignedVehicle, map]);
-  
+  }, [assignedVehicle, geometry, map, requestMarker]);
   return null;
-};
+}
 
-const Dashboard = () => {
+const formatType = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+
+export default function Dashboard() {
+  const navigate = useNavigate();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'dispatch' | 'drivers' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [userOrgType, setUserOrgType] = useState<string | null>(null);
-  const navigate = useNavigate();
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [vehicleQuery, setVehicleQuery] = useState('');
+  const [driverQuery, setDriverQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  // Add Vehicle Modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [newVehicle, setNewVehicle] = useState({
-    name: '',
-    vehicle_type: 'ambulance',
-    number_plate: '',
-    is_available: true,
+    name: '', vehicle_type: 'ambulance', number_plate: '', is_available: true,
     location: null as { lat: number; lng: number } | null,
   });
   const [addLoading, setAddLoading] = useState(false);
+  const [vehicleFormError, setVehicleFormError] = useState<string | null>(null);
 
-  // Add Driver Modal state
   const [showAddDriverModal, setShowAddDriverModal] = useState(false);
   const [newDriver, setNewDriver] = useState({ name: '', phone_number: '', license_number: '' });
   const [addDriverLoading, setAddDriverLoading] = useState(false);
+  const [driverFormError, setDriverFormError] = useState<string | null>(null);
 
-  // Dispatch state
   const [requestMarker, setRequestMarker] = useState<{ lat: number; lng: number } | null>(null);
   const [dispatchType, setDispatchType] = useState('ambulance');
   const [dispatchResult, setDispatchResult] = useState<DispatchResult | null>(null);
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchUserProfile();
-    fetchVehicles();
-    fetchDrivers();
-    const interval = setInterval(() => { fetchVehicles(); fetchDrivers(); }, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchUserProfile = async () => {
-    try {
-      const response = await api.get('/auth/me/');
-      const orgType = response.data.organization_type;
-      setUserOrgType(orgType);
-      if (orgType) {
-        setNewVehicle(prev => ({ ...prev, vehicle_type: orgType }));
-        setDispatchType(orgType);
-      }
-    } catch (error) {
-      console.error('Failed to fetch user profile', error);
-    }
-  };
-
-  const fetchVehicles = async () => {
+  const fetchVehicles = useCallback(async () => {
     try {
       const response = await api.get('/vehicles/');
-      setVehicles((prev) => {
-        const isSame = JSON.stringify(prev) === JSON.stringify(response.data);
-        return isSame ? prev : response.data;
-      });
+      setVehicles(previous => JSON.stringify(previous) === JSON.stringify(response.data) ? previous : response.data);
+      setDataError(null);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error('Failed to fetch vehicles', error);
+      setDataError('Fleet data could not be refreshed. Existing data is still shown.');
     }
-  };
+  }, []);
 
-  const fetchDrivers = async () => {
+  const fetchDrivers = useCallback(async () => {
     try {
       const response = await api.get('/drivers/');
-      setDrivers((prev) => {
-        const isSame = JSON.stringify(prev) === JSON.stringify(response.data);
-        return isSame ? prev : response.data;
-      });
+      setDrivers(previous => JSON.stringify(previous) === JSON.stringify(response.data) ? previous : response.data);
     } catch (error) {
       console.error('Failed to fetch drivers', error);
+      setDataError('Driver data could not be refreshed. Existing data is still shown.');
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const profile = await api.get('/auth/me/');
+        if (!mounted) return;
+        const orgType = profile.data.organization_type;
+        setUserOrgType(orgType);
+        if (orgType) {
+          setNewVehicle(previous => ({ ...previous, vehicle_type: orgType }));
+          setDispatchType(orgType);
+        }
+      } catch (error) {
+        console.error('Failed to fetch user profile', error);
+      }
+      await Promise.all([fetchVehicles(), fetchDrivers()]);
+      if (mounted) setInitialLoading(false);
+    };
+    load();
+    const interval = window.setInterval(() => { fetchVehicles(); fetchDrivers(); }, 5000);
+    return () => { mounted = false; window.clearInterval(interval); };
+  }, [fetchDrivers, fetchVehicles]);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
@@ -208,10 +183,10 @@ const Dashboard = () => {
     navigate('/login');
   };
 
-  // --- Driver CRUD handlers ---
   const handleAddDriver = async () => {
     if (!newDriver.name || !newDriver.license_number) return;
     setAddDriverLoading(true);
+    setDriverFormError(null);
     try {
       await api.post('/drivers/', newDriver);
       setShowAddDriverModal(false);
@@ -219,34 +194,27 @@ const Dashboard = () => {
       await fetchDrivers();
     } catch (error) {
       console.error('Failed to add driver', error);
-    } finally {
-      setAddDriverLoading(false);
-    }
+      setDriverFormError('Driver could not be added. Check the details and try again.');
+    } finally { setAddDriverLoading(false); }
   };
 
   const handleDeleteDriver = async (driverId: number) => {
-    try {
-      await api.delete(`/drivers/${driverId}/`);
-      await fetchDrivers();
-    } catch (error) {
-      console.error('Failed to delete driver', error);
-    }
+    if (!window.confirm('Delete this driver? This action cannot be undone.')) return;
+    try { await api.delete(`/drivers/${driverId}/`); await fetchDrivers(); }
+    catch (error) { console.error('Failed to delete driver', error); setDataError('Driver could not be deleted.'); }
   };
 
   const handleAssignDriver = async (vehicleId: number, driverId: string) => {
-    const dId = driverId === "" ? null : Number(driverId);
     try {
-      await api.post(`/vehicles/${vehicleId}/assign-driver/`, { driver_id: dId });
+      await api.post(`/vehicles/${vehicleId}/assign-driver/`, { driver_id: driverId === '' ? null : Number(driverId) });
       await fetchVehicles();
-    } catch (error) {
-      console.error('Failed to assign driver', error);
-    }
+    } catch (error) { console.error('Failed to assign driver', error); setDataError('Driver assignment could not be updated.'); }
   };
 
-  // --- Vehicle CRUD handlers ---
   const handleAddVehicle = async () => {
     if (!newVehicle.name || !newVehicle.location) return;
     setAddLoading(true);
+    setVehicleFormError(null);
     try {
       await api.post('/vehicles/', {
         name: newVehicle.name,
@@ -260,672 +228,170 @@ const Dashboard = () => {
       await fetchVehicles();
     } catch (error) {
       console.error('Failed to add vehicle', error);
-    } finally {
-      setAddLoading(false);
-    }
+      setVehicleFormError('Vehicle could not be added. Check the details and map location.');
+    } finally { setAddLoading(false); }
   };
 
   const handleToggleAvailability = async (vehicle: Vehicle) => {
-    try {
-      await api.patch(`/vehicles/${vehicle.id}/`, {
-        is_available: !vehicle.is_available,
-      });
-      await fetchVehicles();
-    } catch (error) {
-      console.error('Failed to toggle availability', error);
-    }
+    try { await api.patch(`/vehicles/${vehicle.id}/`, { is_available: !vehicle.is_available }); await fetchVehicles(); }
+    catch (error) { console.error('Failed to toggle availability', error); setDataError('Vehicle status could not be updated.'); }
   };
 
   const handleDeleteVehicle = async (vehicleId: number) => {
-    try {
-      await api.delete(`/vehicles/${vehicleId}/`);
-      await fetchVehicles();
-    } catch (error) {
-      console.error('Failed to delete vehicle', error);
-    }
+    if (!window.confirm('Delete this vehicle? This action cannot be undone.')) return;
+    try { await api.delete(`/vehicles/${vehicleId}/`); await fetchVehicles(); }
+    catch (error) { console.error('Failed to delete vehicle', error); setDataError('Vehicle could not be deleted.'); }
   };
 
-  // --- Dispatch handler ---
   const handleDispatch = async () => {
     if (!requestMarker) return;
-    setDispatchLoading(true);
-    setDispatchError(null);
-    setDispatchResult(null);
+    setDispatchLoading(true); setDispatchError(null); setDispatchResult(null);
     try {
-      const response = await api.post('/dispatch/', {
-        lat: requestMarker.lat,
-        lng: requestMarker.lng,
-        vehicle_type: dispatchType,
-      });
+      const response = await api.post('/dispatch/', { lat: requestMarker.lat, lng: requestMarker.lng, vehicle_type: dispatchType });
       setDispatchResult(response.data);
-      await fetchVehicles(); // Refresh to show updated is_available
-    } catch (error: any) {
-      const msg = error.response?.data?.error || 'Dispatch failed';
-      setDispatchError(msg);
-    } finally {
-      setDispatchLoading(false);
-    }
+      await fetchVehicles();
+    } catch (error: unknown) {
+      const responseError = error as { response?: { data?: { error?: string } } };
+      setDispatchError(responseError.response?.data?.error || 'Dispatch failed. Try another location or vehicle type.');
+    } finally { setDispatchLoading(false); }
   };
 
-  const clearDispatch = () => {
-    setRequestMarker(null);
-    setDispatchResult(null);
-    setDispatchError(null);
-  };
+  const clearDispatch = () => { setRequestMarker(null); setDispatchResult(null); setDispatchError(null); };
+  const switchTab = (tab: Tab) => { setActiveTab(tab); if (tab === 'dispatch') clearDispatch(); };
 
-  const selectedVehicle = useMemo(() => 
-    vehicles.find(v => v.id === selectedVehicleId), 
-  [vehicles, selectedVehicleId]);
-
-  const mapCenter = useMemo(() => {
-    if (selectedVehicle?.location) {
-      return [selectedVehicle.location.lat, selectedVehicle.location.lng] as [number, number];
-    }
-    return DEFAULT_CENTER;
-  }, [selectedVehicle]);
-
-  // --- Icon creators ---
-  const createBlinkingIcon = useCallback((available = true) => {
-    const color = available ? 'var(--primary)' : 'var(--danger)';
-    const rgbaColor = available ? 'rgba(99, 102, 241, 0.7)' : 'rgba(239, 68, 68, 0.7)';
-    const rgbaTransparent = available ? 'rgba(99, 102, 241, 0)' : 'rgba(239, 68, 68, 0)';
-    const animName = available ? 'pulse-available' : 'pulse-unavailable';
-    return L.divIcon({
-      className: 'custom-div-icon',
-      html: `<div style="width:16px;height:16px;background:${color};border-radius:50%;border:2px solid white;animation:${animName} 2s infinite;"></div>
-        <style>
-          @keyframes ${animName} {
-            0% { transform: scale(0.8); box-shadow: 0 0 0 0 ${rgbaColor}; }
-            70% { transform: scale(1); box-shadow: 0 0 0 15px ${rgbaTransparent}; }
-            100% { transform: scale(0.8); box-shadow: 0 0 0 0 ${rgbaTransparent}; }
-          }
-        </style>`,
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
-    });
-  }, []);
-
-  const createRequestIcon = useCallback(() => {
-    return L.divIcon({
-      className: 'custom-div-icon',
-      html: `<div style="width:20px;height:20px;background:#f59e0b;border-radius:50%;border:3px solid white;box-shadow:0 0 12px rgba(245,158,11,0.6);"></div>`,
-      iconSize: [20, 20],
-      iconAnchor: [10, 10],
-    });
-  }, []);
-
-  // Derived Metrics
   const totalVehicles = vehicles.length;
-  const activeVehicles = vehicles.filter(v => v.is_available).length;
-  const offlineVehicles = totalVehicles - activeVehicles;
+  const availableVehicles = vehicles.filter(vehicle => vehicle.is_available).length;
+  const unavailableVehicles = totalVehicles - availableVehicles;
+  const activeDrivers = drivers.filter(driver => driver.is_active).length;
+  const selectedVehicle = vehicles.find(vehicle => vehicle.id === selectedVehicleId);
+  const selectedCenter = selectedVehicle?.location ? [selectedVehicle.location.lat, selectedVehicle.location.lng] as [number, number] : null;
+
+  const filteredVehicles = useMemo(() => vehicles.filter(vehicle => {
+    const query = vehicleQuery.toLowerCase().trim();
+    const matchesQuery = !query || [vehicle.name, vehicle.number_plate, vehicle.driver_name, vehicle.vehicle_type]
+      .some(value => value?.toLowerCase().includes(query));
+    const matchesStatus = statusFilter === 'all' || (statusFilter === 'available' ? vehicle.is_available : !vehicle.is_available);
+    return matchesQuery && matchesStatus;
+  }), [statusFilter, vehicleQuery, vehicles]);
+
+  const filteredDrivers = useMemo(() => drivers.filter(driver => {
+    const query = driverQuery.toLowerCase().trim();
+    return !query || [driver.name, driver.phone_number, driver.license_number].some(value => value.toLowerCase().includes(query));
+  }), [driverQuery, drivers]);
+
+  const createVehicleIcon = useCallback((available: boolean) => L.divIcon({
+    className: 'fleet-marker-wrap',
+    html: `<span class="fleet-marker ${available ? 'is-available' : 'is-unavailable'}"><span></span></span>`,
+    iconSize: [28, 28], iconAnchor: [14, 14],
+  }), []);
+  const requestIcon = useMemo(() => L.divIcon({
+    className: 'fleet-marker-wrap', html: '<span class="request-marker"><span></span></span>', iconSize: [32, 32], iconAnchor: [16, 16],
+  }), []);
+
+  const pageMeta: Record<Tab, { title: string; eyebrow: string }> = {
+    dashboard: { title: 'Fleet overview', eyebrow: 'Operations' },
+    dispatch: { title: 'Dispatch center', eyebrow: 'Live response' },
+    drivers: { title: 'Driver management', eyebrow: 'Workforce' },
+    settings: { title: 'Workspace settings', eyebrow: 'Configuration' },
+  };
+
+  const renderEmpty = (title: string, text: string) => (
+    <div className="empty-state"><div className="empty-icon"><Truck size={20} /></div><h3>{title}</h3><p>{text}</p></div>
+  );
 
   return (
     <div className="dashboard-layout">
-      {/* Sidebar */}
-      <div className="sidebar">
-        <div className="sidebar-header">
-          <h2 style={{ margin: 0, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.1rem' }}>
-            <Truck size={26} strokeWidth={2.5} />
-            Sarathi
-          </h2>
-        </div>
-        <div className="sidebar-nav">
-          <div 
-            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
-          >
-            <LayoutDashboard size={20} />
-            Dashboard
-          </div>
-          <div 
-            className={`nav-item ${activeTab === 'dispatch' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('dispatch'); clearDispatch(); }}
-          >
-            <Radio size={20} />
-            Dispatch
-          </div>
-          <div 
-            className={`nav-item ${activeTab === 'drivers' ? 'active' : ''}`}
-            onClick={() => setActiveTab('drivers')}
-          >
-            <Users size={20} />
-            Drivers
-          </div>
-          <div 
-            className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            <Settings size={20} />
-            Settings
-          </div>
-        </div>
-      </div>
+      <aside className="sidebar" aria-label="Primary navigation">
+        <div className="sidebar-header"><div className="brand-mark"><Navigation size={18} /></div><div><strong>Sarthi</strong><span>Fleet operations</span></div></div>
+        <nav className="sidebar-nav">
+          <p className="nav-label">Workspace</p>
+          <button id="nav-overview" className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => switchTab('dashboard')}><LayoutDashboard size={17} /><span>Overview</span></button>
+          <button id="nav-dispatch" className={`nav-item ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => switchTab('dispatch')}><Radio size={17} /><span>Dispatch</span><span className="nav-live-dot" /></button>
+          <button id="nav-drivers" className={`nav-item ${activeTab === 'drivers' ? 'active' : ''}`} onClick={() => switchTab('drivers')}><Users size={17} /><span>Drivers</span></button>
+          <p className="nav-label nav-label-secondary">System</p>
+          <button id="nav-settings" className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => switchTab('settings')}><Settings size={17} /><span>Settings</span></button>
+        </nav>
+        <div className="sidebar-status"><span className="status-dot available" /><div><strong>System operational</strong><span>{availableVehicles} units dispatch-ready</span></div></div>
+      </aside>
 
-      {/* Main Content */}
-      <div className="main-content">
-        <div className="topbar">
-          <div style={{ display: 'flex', gap: '12px' }}>
+      <main className="main-content">
+        <header className="topbar">
+          <div className="topbar-title"><span>{pageMeta[activeTab].eyebrow}</span><h1>{pageMeta[activeTab].title}</h1></div>
+          <div className="topbar-actions">
+            <div className="sync-status"><RefreshCw size={13} />{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Connecting'}</div>
             <ThemeToggle />
-            <button onClick={handleLogout} className="btn-primary" style={{ width: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'transparent', border: '1px solid var(--surface-border)', color: 'var(--text-main)' }}>
-              <LogOut size={16} />
-              Logout
-            </button>
+            <button id="logout-button" className="icon-button" onClick={handleLogout} title="Log out" aria-label="Log out"><LogOut size={17} /></button>
           </div>
+        </header>
+
+        {dataError && <div className="global-alert" role="alert"><AlertCircle size={16} /><span>{dataError}</span><button onClick={() => setDataError(null)} aria-label="Dismiss alert"><X size={15} /></button></div>}
+
+        <div className={`content-area ${activeTab === 'dispatch' ? 'dispatch-content' : ''}`}>
+          {activeTab === 'dashboard' && <section className="tab-content" aria-labelledby="overview-heading">
+            <div className="page-heading"><div><h2 id="overview-heading">Fleet readiness</h2><p>Live operational status across your Nepal fleet.</p></div><button id="add-vehicle-button" className="button button-primary" onClick={() => { setVehicleFormError(null); setShowAddModal(true); }}><Plus size={16} />Add vehicle</button></div>
+            <div className="metrics-grid">
+              <article className="metric-card"><div className="metric-heading"><span>Fleet size</span><Truck size={17} /></div><strong>{initialLoading ? '—' : totalVehicles}</strong><p>Total registered vehicles</p></article>
+              <article className="metric-card"><div className="metric-heading"><span>Dispatch ready</span><Activity size={17} /></div><strong>{initialLoading ? '—' : availableVehicles}</strong><p><span className="trend-positive"><CircleDot size={12} />Available now</span></p></article>
+              <article className="metric-card"><div className="metric-heading"><span>In service</span><Gauge size={17} /></div><strong>{initialLoading ? '—' : unavailableVehicles}</strong><p>Assigned or unavailable</p></article>
+              <article className="metric-card"><div className="metric-heading"><span>Drivers</span><Users size={17} /></div><strong>{initialLoading ? '—' : drivers.length}</strong><p>{activeDrivers} marked active</p></article>
+            </div>
+
+            <div className="section-toolbar"><div><h2>Vehicles</h2><span>{filteredVehicles.length} of {vehicles.length} units</span></div><div className="toolbar-controls"><div className="search-field"><Search size={15} /><input id="vehicle-search" value={vehicleQuery} onChange={event => setVehicleQuery(event.target.value)} placeholder="Search fleet" aria-label="Search vehicles" /></div><div className="segmented-control" aria-label="Filter vehicle status">{(['all', 'available', 'unavailable'] as StatusFilter[]).map(filter => <button key={filter} className={statusFilter === filter ? 'active' : ''} onClick={() => setStatusFilter(filter)}>{formatType(filter)}</button>)}</div></div></div>
+
+            {initialLoading ? <div className="list-skeleton">{[1, 2, 3].map(item => <div className="skeleton-row" key={item} />)}</div> : filteredVehicles.length === 0 ? renderEmpty(vehicles.length ? 'No matching vehicles' : 'No vehicles registered', vehicles.length ? 'Adjust your search or availability filter.' : 'Add your first vehicle to begin fleet operations.') :
+              <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Vehicle</th><th>Type</th><th>Driver</th><th>Status</th><th>Location</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredVehicles.map(vehicle => <tr key={vehicle.id}>
+                <td><div className="primary-cell"><div className="entity-icon"><Truck size={17} /></div><div><strong>{vehicle.name}</strong><span className="mono">{vehicle.number_plate || 'No registration'}</span></div></div></td>
+                <td><span className="type-label">{formatType(vehicle.vehicle_type)}</span></td>
+                <td><select className="table-select" value={vehicle.driver || ''} onChange={event => handleAssignDriver(vehicle.id, event.target.value)} aria-label={`Assign driver to ${vehicle.name}`}><option value="">Unassigned</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></td>
+                <td><span className={`status-badge ${vehicle.is_available ? 'available' : 'unavailable'}`}><span />{vehicle.is_available ? 'Available' : 'In service'}</span></td>
+                <td>{vehicle.location ? <span className="coordinate"><MapPin size={13} />{vehicle.location.lat.toFixed(3)}, {vehicle.location.lng.toFixed(3)}</span> : <span className="muted">Not reported</span>}</td>
+                <td><div className="row-actions"><label className="toggle-switch" title={vehicle.is_available ? 'Set unavailable' : 'Set available'}><input type="checkbox" checked={vehicle.is_available} onChange={() => handleToggleAvailability(vehicle)} /><span className="toggle-slider" /></label><button className="icon-button danger" onClick={() => handleDeleteVehicle(vehicle.id)} title="Delete vehicle" aria-label={`Delete ${vehicle.name}`}><Trash2 size={15} /></button></div></td>
+              </tr>)}</tbody></table></div>}
+          </section>}
+
+          {activeTab === 'dispatch' && <section className="tab-content dispatch-workspace" aria-labelledby="dispatch-heading">
+            <div className="dispatch-rail">
+              <div className="dispatch-rail-header"><div><span className="live-label"><span />Live dispatch</span><h2 id="dispatch-heading">New request</h2></div>{requestMarker && <button className="text-button" onClick={clearDispatch}>Clear</button>}</div>
+              <div className="dispatch-step"><span className={`step-number ${requestMarker ? 'complete' : ''}`}>{requestMarker ? <CheckCircle2 size={16} /> : '1'}</span><div><strong>Set incident location</strong><p>{requestMarker ? `${requestMarker.lat.toFixed(5)}, ${requestMarker.lng.toFixed(5)}` : 'Select a point inside Nepal on the map.'}</p></div></div>
+              <div className="dispatch-step"><span className={`step-number ${requestMarker ? 'active' : ''}`}>2</span><div className="step-content"><strong>Choose response unit</strong><label htmlFor="dispatch-type">Vehicle type</label><select id="dispatch-type" className="input-field" value={dispatchType} onChange={event => setDispatchType(event.target.value)} disabled={!!userOrgType}>{VEHICLE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div></div>
+              <button id="dispatch-nearest-button" className="button button-primary dispatch-button" onClick={handleDispatch} disabled={!requestMarker || dispatchLoading}>{dispatchLoading ? <><RefreshCw className="spin" size={16} />Finding nearest unit</> : <><Navigation size={16} />Dispatch nearest vehicle</>}</button>
+
+              {dispatchResult && <div className="dispatch-result" role="status"><div className="result-title"><CheckCircle2 size={18} /><div><strong>Vehicle dispatched</strong><span>Route confirmed</span></div></div><div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Assigned unit</span><strong>{dispatchResult.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div><div className="result-metrics"><div><span>Distance</span><strong>{dispatchResult.distance_km} km</strong></div><div><span>ETA</span><strong>{dispatchResult.duration_min ? `${Math.round(dispatchResult.duration_min)} min` : 'Route set'}</strong></div></div></div>}
+              {dispatchError && <div className="inline-alert error" role="alert"><AlertCircle size={16} /><span>{dispatchError}</span></div>}
+
+              <div className="rail-section"><div className="rail-section-title"><h3>Fleet units</h3><span>{availableVehicles} ready</span></div><div className="unit-list">{vehicles.length === 0 ? <p className="muted">No fleet units available.</p> : vehicles.map(vehicle => <button key={vehicle.id} className={`unit-row ${selectedVehicleId === vehicle.id ? 'selected' : ''}`} onClick={() => setSelectedVehicleId(vehicle.id)} disabled={!vehicle.location}><span className={`unit-status ${vehicle.is_available ? 'available' : 'unavailable'}`} /><div><strong>{vehicle.name}</strong><span>{vehicle.driver_name || 'Unassigned'} · {formatType(vehicle.vehicle_type)}</span></div><ChevronRight size={15} /></button>)}</div></div>
+            </div>
+
+            <div className="dispatch-map-shell"><div className="map-top-overlay"><span><MapPin size={14} />Nepal operations area</span><span className="map-legend"><i className="available" />Available <i className="unavailable" />In service <i className="request" />Request</span></div>
+              <MapContainer center={NEPAL_CENTER} zoom={7} {...MAP_OPTIONS} style={{ width: '100%', height: '100%' }}>
+                <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" attribution='&copy; OpenStreetMap &copy; CARTO' />
+                <MapController center={selectedCenter} />
+                <MapClickHandler onMapClick={(lat, lng) => { setRequestMarker({ lat, lng }); setDispatchResult(null); setDispatchError(null); }} />
+                <DispatchMapBoundsFitter geometry={dispatchResult?.geometry} requestMarker={requestMarker} assignedVehicle={dispatchResult?.assigned_vehicle || null} />
+                {vehicles.map(vehicle => vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={createVehicleIcon(vehicle.is_available)}><Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={vehicle.is_available ? 'available-text' : 'unavailable-text'}>{vehicle.is_available ? 'Available' : 'In service'}</span></div></Popup></Marker>)}
+                {requestMarker && <Marker position={[requestMarker.lat, requestMarker.lng]} icon={requestIcon}><Popup><div className="map-popup"><strong>Dispatch request</strong><span>{requestMarker.lat.toFixed(5)}, {requestMarker.lng.toFixed(5)}</span></div></Popup></Marker>}
+                {dispatchResult?.geometry?.length ? <Polyline positions={dispatchResult.geometry} pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : dispatchResult && requestMarker && <Polyline positions={[[requestMarker.lat, requestMarker.lng], [dispatchResult.assigned_vehicle.lat, dispatchResult.assigned_vehicle.lng]]} pathOptions={{ color: '#2563eb', weight: 4, dashArray: '8 7', opacity: 0.85 }} />}
+              </MapContainer>
+              <div className="map-hint"><CircleDot size={13} />Click the map to place a request</div>
+            </div>
+          </section>}
+
+          {activeTab === 'drivers' && <section className="tab-content" aria-labelledby="drivers-heading">
+            <div className="page-heading"><div><h2 id="drivers-heading">Driver directory</h2><p>Manage credentials and assignment-ready personnel.</p></div><button id="add-driver-button" className="button button-primary" onClick={() => { setDriverFormError(null); setShowAddDriverModal(true); }}><Plus size={16} />Add driver</button></div>
+            <div className="section-toolbar"><div><h2>All drivers</h2><span>{filteredDrivers.length} records</span></div><div className="search-field"><Search size={15} /><input id="driver-search" value={driverQuery} onChange={event => setDriverQuery(event.target.value)} placeholder="Search drivers" aria-label="Search drivers" /></div></div>
+            {initialLoading ? <div className="list-skeleton">{[1, 2, 3].map(item => <div className="skeleton-row" key={item} />)}</div> : filteredDrivers.length === 0 ? renderEmpty(drivers.length ? 'No matching drivers' : 'No drivers registered', drivers.length ? 'Try a different name, phone, or license number.' : 'Add a driver to begin assigning fleet units.') : <div className="driver-grid">{filteredDrivers.map(driver => {
+              const assignmentCount = vehicles.filter(vehicle => vehicle.driver === driver.id).length;
+              return <article className="driver-card" key={driver.id}><div className="driver-card-head"><div className="avatar">{driver.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase()}</div><span className={`status-badge ${driver.is_active ? 'available' : 'neutral'}`}><span />{driver.is_active ? 'Active' : 'Inactive'}</span><button className="icon-button danger" onClick={() => handleDeleteDriver(driver.id)} title="Delete driver" aria-label={`Delete ${driver.name}`}><Trash2 size={15} /></button></div><h3>{driver.name}</h3><div className="driver-detail"><Phone size={14} /><span>{driver.phone_number || 'No phone number'}</span></div><div className="driver-detail"><ShieldCheck size={14} /><span className="mono">{driver.license_number}</span></div><div className="driver-card-foot"><span>{assignmentCount ? `${assignmentCount} assigned vehicle${assignmentCount > 1 ? 's' : ''}` : 'No vehicle assigned'}</span><UserRound size={15} /></div></article>;
+            })}</div>}
+          </section>}
+
+          {activeTab === 'settings' && <section className="tab-content" aria-labelledby="settings-heading"><div className="page-heading"><div><h2 id="settings-heading">Workspace settings</h2><p>Configuration for your Sarthi operations workspace.</p></div></div><div className="settings-panel"><div className="settings-icon"><Settings size={20} /></div><div><h3>Configuration is not available yet</h3><p>No settings API is currently exposed. This section is intentionally read-only to avoid changing backend behavior.</p></div></div></section>}
         </div>
-        
-        <div className="content-area">
-          {/* ======================== DASHBOARD TAB ======================== */}
-          {activeTab === 'dashboard' && (
-            <div className="tab-content">
-              <h1 style={{ marginBottom: '28px' }}>Fleet Overview</h1>
-              
-              <div className="metrics-row">
-                <div className="metric-card glass-panel">
-                  <Truck size={24} color="var(--primary)" style={{ marginBottom: '8px' }} />
-                  <p className="metric-value">{totalVehicles}</p>
-                  <p className="metric-label">Total Vehicles</p>
-                </div>
-                <div className="metric-card glass-panel">
-                  <Activity size={24} color="var(--success)" style={{ marginBottom: '8px' }} />
-                  <p className="metric-value" style={{ color: 'var(--success)' }}>{activeVehicles}</p>
-                  <p className="metric-label">Active & Available</p>
-                </div>
-                <div className="metric-card glass-panel">
-                  <Signal size={24} color="var(--danger)" style={{ marginBottom: '8px' }} />
-                  <p className="metric-value" style={{ color: 'var(--danger)' }}>{offlineVehicles}</p>
-                  <p className="metric-label">Unavailable / Offline</p>
-                </div>
-              </div>
+      </main>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h2 style={{ margin: 0 }}>All Vehicles</h2>
-                <button
-                  className="btn-primary"
-                  style={{ width: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontSize: '0.9rem' }}
-                  onClick={() => setShowAddModal(true)}
-                >
-                  <Plus size={18} />
-                  Add Vehicle
-                </button>
-              </div>
-              <div className="vehicle-list">
-                {vehicles.map(vehicle => (
-                  <div key={vehicle.id} className="vehicle-card glass-panel" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', flex: 1, minWidth: 0, width: '100%' }}>
-                      <div className="vehicle-icon" style={{ marginTop: '2px', flexShrink: 0 }}>
-                        <Truck size={24} />
-                      </div>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>{vehicle.name}</h3>
-                        {vehicle.number_plate && (
-                          <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                            {vehicle.number_plate}
-                          </p>
-                        )}
-                        <p style={{ margin: '6px 0 0 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                          {vehicle.vehicle_type.charAt(0).toUpperCase() + vehicle.vehicle_type.slice(1)} • <span style={{ color: vehicle.is_available ? 'var(--success)' : 'var(--danger)', fontWeight: 500 }}>{vehicle.is_available ? 'Available' : 'Unavailable'}</span>
-                        </p>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, marginTop: '12px', width: '100%' }}>
-                      {/* Driver Assignment */}
-                      <select 
-                        className="input-field" 
-                        style={{ padding: '6px 10px', flex: 1, minWidth: '140px', fontSize: '0.85rem', minHeight: 'auto' }}
-                        value={vehicle.driver || ""}
-                        onChange={(e) => handleAssignDriver(vehicle.id, e.target.value)}
-                      >
-                        <option value="">Unassigned</option>
-                        {drivers.map(d => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
-                      {/* Toggle switch */}
-                      <label className="toggle-switch" title={vehicle.is_available ? 'Set Unavailable' : 'Set Available'} style={{ marginLeft: 'auto' }}>
-                        <input
-                          type="checkbox"
-                          checked={vehicle.is_available}
-                          onChange={() => handleToggleAvailability(vehicle)}
-                        />
-                        <span className="toggle-slider"></span>
-                      </label>
-                      {/* Delete button */}
-                      <button
-                        className="icon-btn-danger"
-                        title="Delete vehicle"
-                        onClick={() => handleDeleteVehicle(vehicle.id)}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                    </div>
-                
-                ))}
-                {vehicles.length === 0 && (
-                  <p style={{ color: 'var(--text-muted)' }}>No vehicles found in the system.</p>
-                )}
-              </div>
-            </div>
-          )}
+      {showAddModal && <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowAddModal(false); }}><div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="vehicle-modal-title"><div className="modal-header"><div><span>Fleet inventory</span><h2 id="vehicle-modal-title">Add vehicle</h2></div><button className="icon-button" onClick={() => setShowAddModal(false)} aria-label="Close vehicle form"><X size={17} /></button></div><div className="modal-body"><div className="form-grid"><div className="form-group"><label htmlFor="vehicle-name">Vehicle name</label><input id="vehicle-name" className="input-field" value={newVehicle.name} onChange={event => setNewVehicle({ ...newVehicle, name: event.target.value })} placeholder="Ambulance 07" autoFocus /></div><div className="form-group"><label htmlFor="vehicle-plate">Number plate</label><input id="vehicle-plate" className="input-field" value={newVehicle.number_plate} onChange={event => setNewVehicle({ ...newVehicle, number_plate: event.target.value })} placeholder="BA 1 PA 1234" /></div></div><div className="form-grid"><div className="form-group"><label htmlFor="vehicle-type">Vehicle type</label><select id="vehicle-type" className="input-field" value={newVehicle.vehicle_type} onChange={event => setNewVehicle({ ...newVehicle, vehicle_type: event.target.value })} disabled={!!userOrgType}>{VEHICLE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div><div className="form-group"><label>Initial status</label><label className="availability-control"><input type="checkbox" checked={newVehicle.is_available} onChange={event => setNewVehicle({ ...newVehicle, is_available: event.target.checked })} /><span className="toggle-switch"><span className="toggle-slider" /></span><span>{newVehicle.is_available ? 'Available' : 'Unavailable'}</span></label></div></div><div className="form-group"><div className="label-row"><label>Operating location</label><span>Select a point within Nepal</span></div><div className="mini-map"><MapContainer center={NEPAL_CENTER} zoom={7} {...MAP_OPTIONS} style={{ width: '100%', height: '100%' }}><TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" attribution='&copy; OpenStreetMap &copy; CARTO' /><MapClickHandler onMapClick={(lat, lng) => setNewVehicle(previous => ({ ...previous, location: { lat, lng } }))} />{newVehicle.location && <Marker position={[newVehicle.location.lat, newVehicle.location.lng]} />}</MapContainer></div>{newVehicle.location ? <p className="location-confirm"><CheckCircle2 size={14} />Location set: <span className="mono">{newVehicle.location.lat.toFixed(5)}, {newVehicle.location.lng.toFixed(5)}</span></p> : <p className="field-hint"><MapPin size={14} />A location is required before adding the vehicle.</p>}</div>{vehicleFormError && <div className="inline-alert error"><AlertCircle size={16} />{vehicleFormError}</div>}</div><div className="modal-footer"><button className="button button-secondary" onClick={() => setShowAddModal(false)}>Cancel</button><button id="submit-vehicle-button" className="button button-primary" onClick={handleAddVehicle} disabled={!newVehicle.name || !newVehicle.location || addLoading}>{addLoading ? <><RefreshCw className="spin" size={15} />Adding vehicle</> : 'Add vehicle'}</button></div></div></div>}
 
-          {/* ======================== DISPATCH TAB ======================== */}
-          {activeTab === 'dispatch' && (
-            <div className="tab-content">
-              <h1 style={{ marginBottom: '28px' }}>Dispatch Center</h1>
-              <div className="dispatch-layout">
-                {/* Left Panel */}
-                <div className="dispatch-panel">
-                  {/* Dispatch Controls */}
-                  <div className="glass-panel" style={{ padding: '20px', marginBottom: '16px' }}>
-                    <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <MapPin size={20} color="var(--primary)" />
-                      Dispatch Request
-                    </h3>
-                    {!requestMarker ? (
-                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
-                        Click anywhere on the map to set a request location.
-                      </p>
-                    ) : (
-                      <>
-                        <div style={{ marginBottom: '12px' }}>
-                          <p style={{ margin: '0 0 4px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Request Location</p>
-                          <p style={{ margin: 0, fontFamily: 'monospace', fontSize: '0.9rem' }}>
-                            {requestMarker.lat.toFixed(5)}, {requestMarker.lng.toFixed(5)}
-                          </p>
-                        </div>
-                        <div className="form-group" style={{ marginBottom: '16px' }}>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Vehicle Type</label>
-                          <select
-                            className="input-field"
-                            value={dispatchType}
-                            onChange={(e) => setDispatchType(e.target.value)}
-                            disabled={!!userOrgType}
-                            style={userOrgType ? { opacity: 0.7, cursor: 'not-allowed' } : {}}
-                          >
-                            {VEHICLE_TYPES.map(t => (
-                              <option key={t.value} value={t.value}>{t.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            className="btn-primary"
-                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                            onClick={handleDispatch}
-                            disabled={dispatchLoading}
-                          >
-                            <Navigation size={16} />
-                            {dispatchLoading ? 'Dispatching...' : 'Dispatch Nearest Vehicle'}
-                          </button>
-                          <button
-                            className="btn-primary"
-                            style={{ width: 'auto', padding: '10px 16px', background: 'transparent', border: '1px solid var(--surface-border)', color: 'var(--text-main)' }}
-                            onClick={clearDispatch}
-                            title="Clear"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Dispatch Result */}
-                  {dispatchResult && (
-                    <div className="glass-panel dispatch-result" style={{ padding: '20px', marginBottom: '16px' }}>
-                      <h3 style={{ margin: '0 0 12px 0', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        ✅ Vehicle Dispatched
-                      </h3>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div>
-                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>Assigned Vehicle</p>
-                          <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>{dispatchResult.assigned_vehicle.name}</p>
-                        </div>
-                        <div>
-                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>Distance</p>
-                          <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--primary)' }}>{dispatchResult.distance_km} km</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Dispatch Error */}
-                  {dispatchError && (
-                    <div className="glass-panel" style={{ padding: '20px', borderColor: 'var(--danger)' }}>
-                      <p style={{ margin: 0, color: 'var(--danger)', fontSize: '0.9rem' }}>⚠️ {dispatchError}</p>
-                    </div>
-                  )}
-
-                  {/* Vehicle List in Dispatch */}
-                  <div style={{ marginTop: '8px' }}>
-                    <h3 style={{ margin: '0 0 12px 0', color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Active Vehicles</h3>
-                    <div className="driver-list" style={{ maxHeight: 'calc(100vh - 520px)' }}>
-                      {vehicles.map(vehicle => (
-                        <div 
-                          key={vehicle.id} 
-                          className={`vehicle-card glass-panel interactive-card ${selectedVehicleId === vehicle.id ? 'selected' : ''}`}
-                          onClick={() => setSelectedVehicleId(vehicle.id)}
-                        >
-                          <div className="vehicle-icon" style={{ background: vehicle.is_available ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', color: vehicle.is_available ? 'var(--success)' : 'var(--danger)' }}>
-                            <Truck size={24} />
-                          </div>
-                          <div>
-                            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{vehicle.name}</h3>
-                            <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                              {vehicle.vehicle_type} • <span style={{ color: vehicle.is_available ? 'var(--success)' : 'var(--danger)' }}>{vehicle.is_available ? 'Available' : 'Dispatched'}</span>
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                      {vehicles.length === 0 && (
-                        <p style={{ color: 'var(--text-muted)' }}>No vehicles found.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dispatch Map */}
-                <div className="driver-map">
-                  <MapContainer 
-                    center={DEFAULT_CENTER} 
-                    zoom={5} 
-                    style={{ width: '100%', height: '100%' }}
-                  >
-                    <MapController center={selectedVehicleId ? mapCenter : null} />
-                    <DispatchMapClickHandler onMapClick={(lat, lng) => {
-                      setRequestMarker({ lat, lng });
-                      setDispatchResult(null);
-                      setDispatchError(null);
-                    }} />
-                    <DispatchMapBoundsFitter 
-                      geometry={dispatchResult?.geometry || null}
-                      requestMarker={requestMarker}
-                      assignedVehicle={dispatchResult?.assigned_vehicle ? { lat: dispatchResult.assigned_vehicle.lat, lng: dispatchResult.assigned_vehicle.lng } : null}
-                    />
-                    <TileLayer
-                      url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                    />
-                    {/* Vehicle markers */}
-                    {vehicles.map(v => v.location && (
-                      <Marker 
-                        key={v.id} 
-                        position={[v.location.lat, v.location.lng]}
-                        icon={createBlinkingIcon(v.is_available)}
-                      >
-                        <Popup>
-                          <strong>{v.name}</strong><br />
-                          Type: {v.vehicle_type}<br />
-                          Status: {v.is_available ? '✅ Available' : '🔴 Dispatched'}
-                        </Popup>
-                      </Marker>
-                    ))}
-                    {/* Request marker */}
-                    {requestMarker && (
-                      <Marker
-                        position={[requestMarker.lat, requestMarker.lng]}
-                        icon={createRequestIcon()}
-                      >
-                        <Popup>
-                          <strong>Dispatch Request</strong><br />
-                          {requestMarker.lat.toFixed(5)}, {requestMarker.lng.toFixed(5)}
-                        </Popup>
-                      </Marker>
-                    )}
-                    {/* Route line from OSRM geometry if available */}
-                    {dispatchResult?.geometry && dispatchResult.geometry.length > 0 && (
-                      <Polyline
-                        positions={dispatchResult.geometry}
-                        pathOptions={{
-                          color: 'var(--primary)',
-                          weight: 4,
-                          opacity: 0.85,
-                          lineCap: 'round',
-                          lineJoin: 'round',
-                        }}
-                      />
-                    )}
-                    {/* Fallback straight-line if no geometry */}
-                    {dispatchResult && !dispatchResult.geometry && requestMarker && (
-                      <Polyline
-                        positions={[
-                          [requestMarker.lat, requestMarker.lng],
-                          [dispatchResult.assigned_vehicle.lat, dispatchResult.assigned_vehicle.lng],
-                        ]}
-                        pathOptions={{
-                          color: 'var(--primary)',
-                          weight: 3,
-                          dashArray: '10, 6',
-                          opacity: 0.8,
-                        }}
-                      />
-                    )}
-                  </MapContainer>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ======================== DRIVERS TAB ======================== */}
-          {activeTab === 'drivers' && (
-            <div className="tab-content">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
-                <h1>Drivers</h1>
-                <button
-                  className="btn-primary"
-                  style={{ width: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontSize: '0.9rem' }}
-                  onClick={() => setShowAddDriverModal(true)}
-                >
-                  <Plus size={18} />
-                  Add Driver
-                </button>
-              </div>
-              <div className="vehicle-list">
-                {drivers.map(driver => (
-                  <div key={driver.id} className="vehicle-card glass-panel" style={{ justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
-                      <div className="vehicle-icon" style={{ background: 'var(--surface-border)' }}>
-                        <Users size={24} color="var(--text-main)" />
-                      </div>
-                      <div>
-                        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{driver.name}</h3>
-                        <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                          📞 {driver.phone_number} | 🪪 {driver.license_number}
-                        </p>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-                      <button
-                        className="icon-btn-danger"
-                        title="Delete driver"
-                        onClick={() => handleDeleteDriver(driver.id)}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {drivers.length === 0 && (
-                  <p style={{ color: 'var(--text-muted)' }}>No drivers found in the system.</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ======================== SETTINGS TAB ======================== */}
-          {activeTab === 'settings' && (
-            <div className="tab-content">
-              <h1 style={{ marginBottom: '20px' }}>Settings</h1>
-              <p style={{ color: 'var(--text-muted)' }}>Configuration options will be available here.</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ======================== ADD VEHICLE MODAL ======================== */}
-      {showAddModal && (
-        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-          <div className="modal-content glass-panel" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ margin: 0 }}>Add New Vehicle</h2>
-              <button
-                className="icon-btn-danger"
-                onClick={() => setShowAddModal(false)}
-                style={{ background: 'transparent', border: 'none' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="form-group">
-              <label>Vehicle Name</label>
-              <input
-                className="input-field"
-                type="text"
-                placeholder="e.g. Ambulance-07"
-                value={newVehicle.name}
-                onChange={(e) => setNewVehicle({ ...newVehicle, name: e.target.value })}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Number Plate</label>
-              <input
-                className="input-field"
-                type="text"
-                placeholder="e.g. BA-1-PA-1234"
-                value={newVehicle.number_plate}
-                onChange={(e) => setNewVehicle({ ...newVehicle, number_plate: e.target.value })}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Vehicle Type</label>
-              <select
-                className="input-field"
-                value={newVehicle.vehicle_type}
-                onChange={(e) => setNewVehicle({ ...newVehicle, vehicle_type: e.target.value })}
-                disabled={!!userOrgType}
-                style={userOrgType ? { opacity: 0.7, cursor: 'not-allowed' } : {}}
-              >
-                {VEHICLE_TYPES.map(t => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-                <span>Available</span>
-                <label className="toggle-switch" style={{ marginBottom: 0 }}>
-                  <input
-                    type="checkbox"
-                    checked={newVehicle.is_available}
-                    onChange={(e) => setNewVehicle({ ...newVehicle, is_available: e.target.checked })}
-                  />
-                  <span className="toggle-slider"></span>
-                </label>
-              </label>
-            </div>
-
-            <div className="form-group">
-              <label>Location <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(click on map)</span></label>
-              <div style={{ height: '200px', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
-                <MapContainer
-                  center={DEFAULT_CENTER}
-                  zoom={5}
-                  style={{ width: '100%', height: '100%' }}
-                >
-                  <MiniMapClickHandler onMapClick={(lat, lng) => setNewVehicle(prev => ({ ...prev, location: { lat, lng } }))} />
-                  <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                    attribution='&copy; OpenStreetMap &copy; CARTO'
-                  />
-                  {newVehicle.location && (
-                    <Marker position={[newVehicle.location.lat, newVehicle.location.lng]} />
-                  )}
-                </MapContainer>
-              </div>
-              {newVehicle.location && (
-                <p style={{ margin: '6px 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                  {newVehicle.location.lat.toFixed(5)}, {newVehicle.location.lng.toFixed(5)}
-                </p>
-              )}
-            </div>
-
-            <button
-              className="btn-primary"
-              onClick={handleAddVehicle}
-              disabled={!newVehicle.name || !newVehicle.location || addLoading}
-              style={{ marginTop: '8px', opacity: (!newVehicle.name || !newVehicle.location) ? 0.5 : 1 }}
-            >
-              {addLoading ? 'Adding...' : 'Add Vehicle'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ======================== ADD DRIVER MODAL ======================== */}
-      {showAddDriverModal && (
-        <div className="modal-overlay" onClick={() => setShowAddDriverModal(false)}>
-          <div className="modal-content glass-panel" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ margin: 0 }}>Add New Driver</h2>
-              <button
-                className="icon-btn-danger"
-                onClick={() => setShowAddDriverModal(false)}
-                style={{ background: 'transparent', border: 'none' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="form-group">
-              <label>Full Name</label>
-              <input
-                className="input-field"
-                type="text"
-                placeholder="e.g. John Doe"
-                value={newDriver.name}
-                onChange={(e) => setNewDriver({ ...newDriver, name: e.target.value })}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Phone Number</label>
-              <input
-                className="input-field"
-                type="text"
-                placeholder="e.g. 9841000000"
-                value={newDriver.phone_number}
-                onChange={(e) => setNewDriver({ ...newDriver, phone_number: e.target.value })}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>License Number</label>
-              <input
-                className="input-field"
-                type="text"
-                placeholder="e.g. 01-02-003344"
-                value={newDriver.license_number}
-                onChange={(e) => setNewDriver({ ...newDriver, license_number: e.target.value })}
-              />
-            </div>
-
-            <button
-              className="btn-primary"
-              onClick={handleAddDriver}
-              disabled={!newDriver.name || !newDriver.license_number || addDriverLoading}
-              style={{ marginTop: '8px', opacity: (!newDriver.name || !newDriver.license_number) ? 0.5 : 1 }}
-            >
-              {addDriverLoading ? 'Adding...' : 'Add Driver'}
-            </button>
-          </div>
-        </div>
-      )}
+      {showAddDriverModal && <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowAddDriverModal(false); }}><div className="modal-content modal-compact" role="dialog" aria-modal="true" aria-labelledby="driver-modal-title"><div className="modal-header"><div><span>Driver directory</span><h2 id="driver-modal-title">Add driver</h2></div><button className="icon-button" onClick={() => setShowAddDriverModal(false)} aria-label="Close driver form"><X size={17} /></button></div><div className="modal-body"><div className="form-group"><label htmlFor="driver-name">Full name</label><input id="driver-name" className="input-field" value={newDriver.name} onChange={event => setNewDriver({ ...newDriver, name: event.target.value })} placeholder="Full legal name" autoFocus /></div><div className="form-group"><label htmlFor="driver-phone">Phone number</label><input id="driver-phone" className="input-field" value={newDriver.phone_number} onChange={event => setNewDriver({ ...newDriver, phone_number: event.target.value })} placeholder="98XXXXXXXX" /></div><div className="form-group"><label htmlFor="driver-license">License number</label><input id="driver-license" className="input-field" value={newDriver.license_number} onChange={event => setNewDriver({ ...newDriver, license_number: event.target.value })} placeholder="01-02-003344" /></div>{driverFormError && <div className="inline-alert error"><AlertCircle size={16} />{driverFormError}</div>}</div><div className="modal-footer"><button className="button button-secondary" onClick={() => setShowAddDriverModal(false)}>Cancel</button><button id="submit-driver-button" className="button button-primary" onClick={handleAddDriver} disabled={!newDriver.name || !newDriver.license_number || addDriverLoading}>{addDriverLoading ? <><RefreshCw className="spin" size={15} />Adding driver</> : 'Add driver'}</button></div></div></div>}
     </div>
   );
-};
-
-export default Dashboard;
+}

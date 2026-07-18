@@ -1,6 +1,4 @@
-import axios from 'axios';
-
-const API_BASE = 'http://127.0.0.1:8000/api';
+import { api } from './auth';
 
 export interface Vehicle {
   id: number;
@@ -14,6 +12,6 @@ export interface Vehicle {
 }
 
 export async function fetchVehicles(): Promise<Vehicle[]> {
-  const { data } = await axios.get<Vehicle[]>(`${API_BASE}/vehicles/`);
+  const { data } = await api.get<Vehicle[]>('/vehicles/');
   return data;
 }

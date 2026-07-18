@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, MapPinned, Navigation, RefreshCw } from 'lucide-react';
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchVehicles } from '../api/vehicles';
 import type { Vehicle } from '../api/vehicles';
 
-/* ── Muted color palette per vehicle type ── */
 const TYPE_COLORS: Record<Vehicle['vehicle_type'], string> = {
-  ambulance: '#dc2626',   // muted red
-  logistics: '#2563eb',   // muted blue
-  municipal: '#059669',   // muted green
+  ambulance: '#dc2626',
+  logistics: '#2563eb',
+  municipal: '#059669',
 };
 
 const TYPE_LABELS: Record<Vehicle['vehicle_type'], string> = {
@@ -17,12 +18,33 @@ const TYPE_LABELS: Record<Vehicle['vehicle_type'], string> = {
   municipal: 'Municipal',
 };
 
-/* ── polling interval (ms) ── */
 const POLL_INTERVAL = 4000;
+const NEPAL_CENTER: [number, number] = [28.2, 84.0];
+const NEPAL_BOUNDS = L.latLngBounds([26.347, 80.058], [30.447, 88.201]);
+
+function VehicleBounds({ vehicles }: { vehicles: Vehicle[] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const points = vehicles
+      .filter(vehicle => NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]))
+      .map(vehicle => [vehicle.location.lat, vehicle.location.lng] as [number, number]);
+
+    if (points.length > 1) {
+      map.fitBounds(L.latLngBounds(points), { padding: [70, 70], maxZoom: 13, animate: true, duration: 0.6 });
+    } else if (points.length === 1) {
+      map.setView(points[0], 12, { animate: true, duration: 0.6 });
+    }
+  }, [map, vehicles]);
+
+  return null;
+}
 
 export default function FleetMap() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -33,138 +55,83 @@ export default function FleetMap() {
         if (active) {
           setVehicles(data);
           setError(null);
+          setLastUpdated(new Date());
         }
-      } catch (err) {
-        if (active) setError('Cannot reach API — is Django running?');
-        console.error(err);
+      } catch (requestError) {
+        if (active) setError('Fleet positions could not be refreshed.');
+        console.error(requestError);
+      } finally {
+        if (active) setLoading(false);
       }
     };
 
     load();
-    const timer = setInterval(load, POLL_INTERVAL);
-
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
+    const timer = window.setInterval(load, POLL_INTERVAL);
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
 
+  const nepalVehicles = useMemo(
+    () => vehicles.filter(vehicle => NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng])),
+    [vehicles],
+  );
+
   return (
-    <div style={{ width: '100%', height: '100vh', position: 'relative' }}>
-      {/* Header bar */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 1000,
-          background: 'var(--surface)',
-          borderBottom: '1px solid var(--surface-border)',
-          color: 'var(--text-main)',
-          padding: '14px 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: 0.5 }}>
-            Sarthi Fleet Map
-          </span>
+    <main className="fleet-map-page">
+      <header className="fleet-map-header">
+        <div className="fleet-map-brand">
+          <div className="brand-mark"><Navigation size={18} /></div>
+          <div><strong>Sarthi live fleet</strong><span>Nepal operations · {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Connecting'}</span></div>
         </div>
-
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: 20, fontSize: 12.5, fontWeight: 500 }}>
+        <div className="fleet-map-legend" aria-label="Vehicle type legend">
           {Object.entries(TYPE_COLORS).map(([type, color]) => (
-            <span key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
-              <span
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%',
-                  background: color,
-                  display: 'inline-block',
-                  boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.8)',
-                }}
-              />
-              {TYPE_LABELS[type as Vehicle['vehicle_type']]}
-            </span>
+            <span key={type}><i className="legend-dot" style={{ background: color }} />{TYPE_LABELS[type as Vehicle['vehicle_type']]}</span>
           ))}
-          <span style={{ color: 'var(--text-muted)' }}>
-            {vehicles.length} {vehicles.length === 1 ? 'vehicle' : 'vehicles'}
-          </span>
+          <span className="fleet-map-count"><MapPinned size={13} />{nepalVehicles.length} visible</span>
         </div>
-      </div>
+      </header>
 
-      {/* Error banner */}
-      {error && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 60,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 999,
-            background: 'var(--danger)',
-            color: '#fff',
-            padding: '10px 18px',
-            borderRadius: 8,
-            fontSize: 13,
-            fontWeight: 500,
-            animation: 'slideUp 0.25s ease',
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {loading && <div className="map-notice loading" role="status"><RefreshCw className="spin" size={14} />Loading fleet positions</div>}
+      {error && <div className="map-notice error" role="alert"><AlertCircle size={14} />{error}</div>}
+      {!loading && !error && nepalVehicles.length === 0 && <div className="map-empty-overlay">No vehicle locations are currently reported inside Nepal.</div>}
 
-      {/* Map */}
       <MapContainer
-        center={[26.5, 87.9]}
-        zoom={12}
+        center={NEPAL_CENTER}
+        zoom={7}
+        minZoom={7}
+        maxBounds={NEPAL_BOUNDS}
+        maxBoundsViscosity={1}
         style={{ width: '100%', height: '100%' }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          attribution='&copy; OpenStreetMap &copy; CARTO'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
-
-        {vehicles.map((v) => (
+        <VehicleBounds vehicles={nepalVehicles} />
+        {nepalVehicles.map(vehicle => (
           <CircleMarker
-            key={v.id}
-            center={[v.location.lat, v.location.lng]}
+            key={vehicle.id}
+            center={[vehicle.location.lat, vehicle.location.lng]}
             radius={8}
             pathOptions={{
-              color: TYPE_COLORS[v.vehicle_type] ?? '#6b7280',
+              color: '#ffffff',
               weight: 2.5,
-              fillColor: TYPE_COLORS[v.vehicle_type] ?? '#6b7280',
-              fillOpacity: 0.85,
+              fillColor: TYPE_COLORS[vehicle.vehicle_type] ?? '#64748b',
+              fillOpacity: vehicle.is_available ? 1 : 0.65,
             }}
           >
             <Popup>
-              <div style={{ 
-                fontFamily: 'system-ui, -apple-system, sans-serif',
-                minWidth: 160,
-                padding: '6px 0'
-              }}>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: 'var(--text-main)' }}>
-                  {v.name}
-                </div>
-                <div style={{ fontSize: 12, marginBottom: 6 }}>
-                  <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>Type: <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{TYPE_LABELS[v.vehicle_type]}</span></div>
-                  <div style={{ color: 'var(--text-muted)' }}>Status: <span style={{ color: v.is_available ? 'var(--success)' : 'var(--danger)', fontWeight: 500 }}>{v.is_available ? 'Available' : 'Unavailable'}</span></div>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--surface-border)' }}>
-                  {v.location.lat.toFixed(5)}, {v.location.lng.toFixed(5)}
-                </div>
+              <div className="map-popup">
+                <strong>{vehicle.name}</strong>
+                <span>{TYPE_LABELS[vehicle.vehicle_type]}</span>
+                <span className={vehicle.is_available ? 'available-text' : 'unavailable-text'}>
+                  {vehicle.is_available ? 'Available' : 'In service'}
+                </span>
+                <span className="mono">{vehicle.location.lat.toFixed(5)}, {vehicle.location.lng.toFixed(5)}</span>
               </div>
             </Popup>
           </CircleMarker>
         ))}
       </MapContainer>
-    </div>
+    </main>
   );
 }
