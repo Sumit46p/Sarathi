@@ -23,12 +23,16 @@ routing, a React dashboard, and a Flutter mobile app.
 ### Fleet & Dispatch
 - [x] Vehicle CRUD (API + dashboard UI)
 - [x] Vehicle number plates
-- [x] Driver management (add drivers, assign to vehicles)
+### Fleet & Dispatch
+- [x] Vehicle CRUD (API + dashboard UI)
+- [x] Vehicle number plates
+- [x] Driver management (fully integrated, secure API)
 - [x] Nearest-vehicle dispatch (straight-line PostGIS distance)
 - [x] Dispatch UI (map click → assign → route line)
 - [x] Location simulator (stands in for Flutter app)
 - [x] Live vehicle map (Leaflet, polling)
 - [x] OSRM real-road routing (upgrade from straight-line distance)
+- [x] Authentication & Authorization (token refresh flow)
 
 ### Not Yet Started (from original proposal scope)
 - [ ] Maintenance monitoring + scheduled service alerts
