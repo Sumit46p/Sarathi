@@ -72,7 +72,7 @@ SECRET_KEY = 'django-insecure-su$t5h7_k!hque+q3r4y2#uys#1-0^69%wsl5vxjj9muj!r!&$
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.0.2.2', '10.0.2.1']
 
 
 # Application definition
@@ -92,6 +92,7 @@ INSTALLED_APPS = [
     # Local apps
     'vehicles',
     'accounts',
+    'drivers',
 ]
 
 MIDDLEWARE = [
@@ -195,8 +196,16 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
 }
 
-# ---------- CORS (allow React dev server) ----------
+# ---------- CORS (allow React dev server + Android emulator) ----------
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
 ]
+
+# Allow Android emulator (10.0.2.2) without a specific origin header
+CORS_ALLOW_ALL_ORIGINS = True  # Restrict in production
+
+# ---------- Media files (uploaded documents) ----------
+import os
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'

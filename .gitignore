@@ -1,33 +1,114 @@
-# Python
+# Python / Django
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.Python
+*.egg-info/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg
+MANIFEST
+*.manifest
+*.spec
 
-# Virtual environment
+# Virtual environments
 venv/
 env/
 .venv/
+*.venv/
+.ENV/
+env.bak/
+venv.bak/
 
 # Django
+*.sqlite3
 db.sqlite3
-*.log
 media/
+staticfiles/
+local_settings.py
 
-# Environment variables
+# Environment / secrets
 .env
+.env.*
+!.env.example
+*.env
+*.local
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
 
-# IDE
+# Logs / caches / coverage
+*.log
+logs/
+pip-log.txt
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+*.tmp
+*.temp
+
+# IDE / editors
 .vscode/
 .idea/
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.iml
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Distribution
+# Node / frontend
+node_modules/
 dist/
-build/
-*.egg-info/
+dist-ssr/
+*.tsbuildinfo
+.eslintcache
+.parcel-cache/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Flutter / mobile
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+coverage/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/key.properties
+android/local.properties
+ios/Flutter/.last_build_id
+*.jks
+*.keystore
+google-services.json
+google-services*.json
+GoogleService-Info.plist
+firebase_options.dart
