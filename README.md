@@ -35,7 +35,7 @@ routing, a React dashboard, and a Flutter mobile app.
 - [x] Authentication & Authorization (token refresh flow)
 
 ### Not Yet Started (from original proposal scope)
-- [ ] Maintenance monitoring + scheduled service alerts
+- [x] Maintenance monitoring + scheduled service alerts
 - [ ] Expense tracking (fuel, maintenance, operational costs)
 - [ ] Operational analytics/reporting dashboard (Chart.js/Recharts)
 - [ ] Real-time WebSocket notifications (Django Channels) — currently using polling instead
