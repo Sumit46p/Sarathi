@@ -7,12 +7,13 @@ from django.contrib.gis.db.models.functions import Distance
 from django.utils import timezone
 from .osrm import get_route_distance
 
-from .models import Vehicle, DispatchRequest, Driver
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord
 from .serializers import (
     VehicleSerializer,
     LocationUpdateSerializer,
     NearestVehicleSerializer,
     DispatchRequestInputSerializer,
+    MaintenanceRecordSerializer,
     DispatchRequestSerializer,
     DriverSerializer,
     AssignDriverSerializer,
@@ -276,3 +277,47 @@ def dispatch_vehicle(request):
         'geometry': best['geometry'],
     },
     status=status.HTTP_201_CREATED)
+
+class MaintenanceRecordListCreateView(generics.ListCreateAPIView):
+    """
+    GET  /api/maintenance/      — list all maintenance records
+    POST /api/maintenance/      — create a new maintenance record
+    """
+    serializer_class = MaintenanceRecordSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return MaintenanceRecord.objects.filter(owner=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+class MaintenanceRecordDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET    /api/maintenance/<id>/  — detail of one maintenance record
+    PATCH  /api/maintenance/<id>/  — partial update
+    DELETE /api/maintenance/<id>/  — remove a maintenance record
+    """
+    serializer_class = MaintenanceRecordSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return MaintenanceRecord.objects.filter(owner=self.request.user)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def upcoming_maintenance(request):
+    """
+    GET /api/maintenance/upcoming/
+    Returns maintenance records where next_service_due is in the next 30 days
+    """
+    today = timezone.now().date()
+    thirty_days_later = today + timezone.timedelta(days=30)
+
+    records = MaintenanceRecord.objects.filter(
+        owner=request.user,
+        next_service_due__range=[today, thirty_days_later]
+    ).order_by('next_service_due')
+
+    serializer = MaintenanceRecordSerializer(records, many=True)
+    return Response(serializer.data)

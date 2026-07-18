@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.gis.geos import Point
-from .models import Vehicle, DispatchRequest, Driver
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord
 
 
 class LocationField(serializers.Field):
@@ -97,3 +97,13 @@ class DispatchRequestSerializer(serializers.ModelSerializer):
             'distance_km', 'duration_min', 'used_osrm',   # ← added
         ]
         read_only_fields = fields
+
+
+class MaintenanceRecordSerializer(serializers.ModelSerializer):
+    """Serializer for vehicle maintenance records."""
+    vehicle_name = serializers.CharField(source='vehicle.name', read_only=True)
+
+    class Meta:
+        model = MaintenanceRecord
+        fields = ['id', 'vehicle', 'vehicle_name', 'service_type', 'service_date', 'notes', 'next_service_due', 'owner']
+        read_only_fields = ['id', 'vehicle_name', 'owner']

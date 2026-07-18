@@ -199,3 +199,35 @@ class DispatchRequest(models.Model):
             models.Index(fields=['status', 'created_at']),
             models.Index(fields=['vehicle_type', 'status']),
         ]
+
+
+class MaintenanceRecord(models.Model):
+    """Tracks maintenance history and schedules for a vehicle."""
+
+    SERVICE_TYPE_CHOICES = [
+        ('oil_change', 'Oil Change'),
+        ('tire_rotation', 'Tire Rotation'),
+        ('brake_service', 'Brake Service'),
+        ('engine_check', 'Engine Check-up'),
+        ('other', 'Other'),
+    ]
+
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='maintenance_records')
+    service_type = models.CharField(max_length=50, choices=SERVICE_TYPE_CHOICES)
+    service_date = models.DateField()
+    notes = models.TextField(blank=True)
+    next_service_due = models.DateField(null=True, blank=True)
+    owner = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='maintenance_records',
+    )
+
+    def __str__(self):
+        return f"{self.get_service_type_display()} for {self.vehicle.name} on {self.service_date}"
+
+    class Meta:
+        ordering = ['-service_date']
+        indexes = [
+            models.Index(fields=['vehicle', 'service_date']),
+        ]

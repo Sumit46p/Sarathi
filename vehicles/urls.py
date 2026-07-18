@@ -12,4 +12,7 @@ urlpatterns = [
     path('drivers/', views.DriverListCreateView.as_view(), name='driver-list'),
     path('drivers/<int:pk>/', views.DriverDetailView.as_view(), name='driver-detail'),
     path('dispatch/', views.dispatch_vehicle, name='dispatch'),
+    path('maintenance/', views.MaintenanceRecordListCreateView.as_view(), name='maintenance-list'),
+    path('maintenance/<int:pk>/', views.MaintenanceRecordDetailView.as_view(), name='maintenance-detail'),
+    path('maintenance/upcoming/', views.upcoming_maintenance, name='maintenance-upcoming'),
 ]
