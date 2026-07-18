@@ -8,11 +8,13 @@ interface MaintenanceRecord {
   id: number;
   vehicle: number;
   vehicle_name: string;
-  service_type: string;
-  service_date: string;
-  notes: string;
-  next_service_due: string;
+  maintenance_type: string;
+  description: string;
+  due_date: string;
+  completed: boolean;
+  completed_at: string | null;
   owner: number;
+  is_overdue: boolean;
 }
 
 const NEPAL_BOUNDS = L.latLngBounds([26.347, 80.058], [30.447, 88.201]);
@@ -38,10 +40,9 @@ export default function MaintenanceTab() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newRecord, setNewRecord] = useState({
     vehicle: '',
-    service_type: 'oil_change',
-    service_date: new Date().toISOString().split('T')[0],
-    notes: '',
-    next_service_due: '',
+    maintenance_type: 'oil_change',
+    due_date: new Date().toISOString().split('T')[0],
+    description: '',
   });
   const [addLoading, setAddLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -76,10 +77,9 @@ export default function MaintenanceTab() {
       setShowAddModal(false);
       setNewRecord({
         vehicle: '',
-        service_type: 'oil_change',
-        service_date: new Date().toISOString().split('T')[0],
-        notes: '',
-        next_service_due: '',
+        maintenance_type: 'oil_change',
+        due_date: new Date().toISOString().split('T')[0],
+        description: '',
       });
       await fetchMaintenance();
     } catch (error) {
@@ -116,8 +116,8 @@ export default function MaintenanceTab() {
       <div className="map-container">
         <MapContainer center={[28.2, 84.0]} zoom={7} {...MAP_OPTIONS} style={{ width: '100%', height: '400px' }}>
           <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
-          <Marker position={[27.9916, 86.7719]}><Popup>Lipulekh Pass (5,316m)</Popup></Marker>
-          <Marker position={[27.9916, 86.7719]}><Popup>Limpiyadhura Pass (5,106m)</Popup></Marker>
+          <Marker position={[30.198, 81.036]}><Popup>Lipulekh Pass</Popup></Marker>
+          <Marker position={[30.183, 80.950]}><Popup>Limpiyadhura</Popup></Marker>
         </MapContainer>
       </div>
       
@@ -125,8 +125,8 @@ export default function MaintenanceTab() {
         <div className="upcoming-alerts">
           <h3>Upcoming service</h3>
           {upcoming.map(rec => (
-            <div key={rec.id} className="alert-row">
-              <Wrench size={16} /> {rec.vehicle_name} due for {rec.service_type.replace('_', ' ')} on {rec.next_service_due}
+            <div key={rec.id} className={`alert-row ${rec.is_overdue ? 'overdue' : ''}`}>
+              <Wrench size={16} /> {rec.vehicle_name} due for {rec.maintenance_type.replace('_', ' ')} on {rec.due_date}
             </div>
           ))}
         </div>
@@ -145,11 +145,11 @@ export default function MaintenanceTab() {
           </thead>
           <tbody>
             {records.map(rec => (
-              <tr key={rec.id}>
+              <tr key={rec.id} className={rec.is_overdue ? 'overdue' : ''}>
                 <td>{rec.vehicle_name}</td>
-                <td>{rec.service_type.replace('_', ' ')}</td>
-                <td>{rec.service_date}</td>
-                <td>{rec.next_service_due}</td>
+                <td>{rec.maintenance_type.replace('_', ' ')}</td>
+                <td>{rec.due_date}</td>
+                <td>{rec.completed ? 'Completed' : 'Pending'}</td>
                 <td><button className="icon-button danger" onClick={() => handleDeleteRecord(rec.id)} title="Delete record" aria-label={`Delete ${rec.vehicle_name} record`}><Trash2 size={15} /></button></td>
               </tr>
             ))}
@@ -177,25 +177,21 @@ export default function MaintenanceTab() {
               </div>
               <div className="form-group">
                 <label htmlFor="service-type">Service type</label>
-                <select id="service-type" className="input-field" value={newRecord.service_type} onChange={event => setNewRecord({ ...newRecord, service_type: event.target.value })}>
+                <select id="service-type" className="input-field" value={newRecord.maintenance_type} onChange={event => setNewRecord({ ...newRecord, maintenance_type: event.target.value })}>
                   <option value="oil_change">Oil Change</option>
                   <option value="tire_rotation">Tire Rotation</option>
-                  <option value="brake_service">Brake Service</option>
-                  <option value="engine_check">Engine Check-up</option>
+                  <option value="inspection">Inspection</option>
+                  <option value="repair">Repair</option>
                   <option value="other">Other</option>
                 </select>
               </div>
               <div className="form-group">
-                <label htmlFor="service-date">Service date</label>
-                <input id="service-date" type="date" className="input-field" value={newRecord.service_date} onChange={event => setNewRecord({ ...newRecord, service_date: event.target.value })} required />
+                <label htmlFor="due-date">Due date</label>
+                <input id="due-date" type="date" className="input-field" value={newRecord.due_date} onChange={event => setNewRecord({ ...newRecord, due_date: event.target.value })} required />
               </div>
               <div className="form-group">
-                <label htmlFor="next-due">Next service due</label>
-                <input id="next-due" type="date" className="input-field" value={newRecord.next_service_due} onChange={event => setNewRecord({ ...newRecord, next_service_due: event.target.value })} />
-              </div>
-              <div className="form-group">
-                <label htmlFor="notes">Notes</label>
-                <textarea id="notes" className="input-field" value={newRecord.notes} onChange={event => setNewRecord({ ...newRecord, notes: event.target.value })} rows={3} />
+                <label htmlFor="description">Description</label>
+                <textarea id="description" className="input-field" value={newRecord.description} onChange={event => setNewRecord({ ...newRecord, description: event.target.value })} rows={3} />
               </div>
               {formError && <div className="inline-alert error"><AlertCircle size={16} />{formError}</div>}
             </div>

@@ -23,9 +23,6 @@ routing, a React dashboard, and a Flutter mobile app.
 ### Fleet & Dispatch
 - [x] Vehicle CRUD (API + dashboard UI)
 - [x] Vehicle number plates
-### Fleet & Dispatch
-- [x] Vehicle CRUD (API + dashboard UI)
-- [x] Vehicle number plates
 - [x] Driver management (fully integrated, secure API)
 - [x] Nearest-vehicle dispatch (straight-line PostGIS distance)
 - [x] Dispatch UI (map click → assign → route line)
@@ -184,6 +181,12 @@ Visit **http://localhost:5173** to see the live vehicle map.
 | POST | `/api/vehicles/<id>/update-location/` | Update GPS location |
 | GET | `/api/vehicles/nearest/?lat=..&lng=..&type=..` | Top 5 nearest available vehicles in org |
 | POST | `/api/dispatch/` | Dispatch nearest vehicle in org |
+| GET | `/api/maintenance/` | List all maintenance records for current user |
+| POST | `/api/maintenance/` | Create a new maintenance record |
+| GET | `/api/maintenance/<id>/` | Detail of one maintenance record |
+| PATCH | `/api/maintenance/<id>/` | Partial update (e.g. mark completed=true) |
+| DELETE | `/api/maintenance/<id>/` | Remove a maintenance record |
+| GET | `/api/maintenance/upcoming/` | Records due in the next 30 days |
 
 **Location format** — all endpoints use plain JSON `{"lat": 26.65, "lng": 87.89}` (not GeoJSON/WKT).
 

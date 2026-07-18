@@ -304,20 +304,29 @@ class MaintenanceRecordDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return MaintenanceRecord.objects.filter(owner=self.request.user)
 
+    def perform_update(self, serializer):
+        # Auto-set completed_at when completed is marked True
+        completed = serializer.validated_data.get('completed', None)
+        if completed:
+            serializer.save(completed_at=timezone.now())
+        else:
+            serializer.save()
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def upcoming_maintenance(request):
     """
     GET /api/maintenance/upcoming/
-    Returns maintenance records where next_service_due is in the next 30 days
+    Returns maintenance records where due_date is in the next 30 days
     """
     today = timezone.now().date()
     thirty_days_later = today + timezone.timedelta(days=30)
 
     records = MaintenanceRecord.objects.filter(
         owner=request.user,
-        next_service_due__range=[today, thirty_days_later]
-    ).order_by('next_service_due')
+        due_date__range=[today, thirty_days_later]
+    ).order_by('due_date')
 
     serializer = MaintenanceRecordSerializer(records, many=True)
     return Response(serializer.data)

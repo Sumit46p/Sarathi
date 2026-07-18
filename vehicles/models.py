@@ -204,19 +204,20 @@ class DispatchRequest(models.Model):
 class MaintenanceRecord(models.Model):
     """Tracks maintenance history and schedules for a vehicle."""
 
-    SERVICE_TYPE_CHOICES = [
+    MAINTENANCE_TYPE_CHOICES = [
         ('oil_change', 'Oil Change'),
         ('tire_rotation', 'Tire Rotation'),
-        ('brake_service', 'Brake Service'),
-        ('engine_check', 'Engine Check-up'),
+        ('inspection', 'Inspection'),
+        ('repair', 'Repair'),
         ('other', 'Other'),
     ]
 
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='maintenance_records')
-    service_type = models.CharField(max_length=50, choices=SERVICE_TYPE_CHOICES)
-    service_date = models.DateField()
-    notes = models.TextField(blank=True)
-    next_service_due = models.DateField(null=True, blank=True)
+    maintenance_type = models.CharField(max_length=50, choices=MAINTENANCE_TYPE_CHOICES)
+    description = models.TextField(blank=True)
+    due_date = models.DateField()
+    completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
     owner = models.ForeignKey(
         'auth.User',
         on_delete=models.CASCADE,
@@ -224,10 +225,10 @@ class MaintenanceRecord(models.Model):
     )
 
     def __str__(self):
-        return f"{self.get_service_type_display()} for {self.vehicle.name} on {self.service_date}"
+        return f"{self.get_maintenance_type_display()} for {self.vehicle.name} due {self.due_date}"
 
     class Meta:
-        ordering = ['-service_date']
+        ordering = ['due_date']
         indexes = [
-            models.Index(fields=['vehicle', 'service_date']),
+            models.Index(fields=['vehicle', 'due_date']),
         ]

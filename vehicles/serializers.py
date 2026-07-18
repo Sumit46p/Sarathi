@@ -102,8 +102,17 @@ class DispatchRequestSerializer(serializers.ModelSerializer):
 class MaintenanceRecordSerializer(serializers.ModelSerializer):
     """Serializer for vehicle maintenance records."""
     vehicle_name = serializers.CharField(source='vehicle.name', read_only=True)
+    is_overdue = serializers.SerializerMethodField()
 
     class Meta:
         model = MaintenanceRecord
-        fields = ['id', 'vehicle', 'vehicle_name', 'service_type', 'service_date', 'notes', 'next_service_due', 'owner']
-        read_only_fields = ['id', 'vehicle_name', 'owner']
+        fields = [
+            'id', 'vehicle', 'vehicle_name', 'maintenance_type',
+            'description', 'due_date', 'completed', 'completed_at',
+            'owner', 'is_overdue',
+        ]
+        read_only_fields = ['id', 'vehicle_name', 'owner', 'completed_at', 'is_overdue']
+
+    def get_is_overdue(self, obj):
+        from django.utils import timezone
+        return not obj.completed and obj.due_date < timezone.now().date()
