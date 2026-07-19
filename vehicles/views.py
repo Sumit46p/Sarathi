@@ -4,8 +4,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
+from django.db.models import Q
 from django.utils import timezone
 from .osrm import get_route_distance
+import threading
 
 from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord
 from .serializers import (
@@ -17,6 +19,7 @@ from .serializers import (
     DispatchRequestSerializer,
     DriverSerializer,
     AssignDriverSerializer,
+    DriverMeSerializer,
 )
 
 
@@ -45,7 +48,36 @@ class VehicleDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Vehicle.objects.filter(owner=self.request.user)
+        user = self.request.user
+        return Vehicle.objects.filter(
+            Q(owner=user) | Q(driver__user=user)
+        )
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        is_owner = instance.owner == request.user
+        is_assigned_driver = (
+            instance.driver is not None
+            and instance.driver.user is not None
+            and instance.driver.user == request.user
+        )
+
+        if not (is_owner or is_assigned_driver):
+            return Response(
+                {'error': 'Vehicle not found or access denied'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if is_assigned_driver and not is_owner:
+            allowed_fields = {'is_available'}
+            requested_fields = set(request.data.keys())
+            if not requested_fields.issubset(allowed_fields):
+                return Response(
+                    {'error': 'Assigned drivers may only update is_available'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        return super().update(request, *args, **kwargs)
 
 
 class DriverListCreateView(generics.ListCreateAPIView):
@@ -76,6 +108,264 @@ class DriverDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Driver.objects.filter(owner=self.request.user)
 
 
+def safe_route_geometry(vehicle, dispatch, deadline=3.0):
+    """Best-effort live route geometry from vehicle to dispatch request.
+
+    Runs OSRM in a separate thread with a hard deadline so an unreachable
+    router can never block the API response. Returns None on any failure or
+    timeout (the client falls back to a straight line).
+    """
+    if vehicle.location is None:
+        return None
+
+    result = {}
+
+    def _compute():
+        try:
+            _, _, geom = get_route_distance(
+                vehicle.location.y, vehicle.location.x,
+                dispatch.request_lat, dispatch.request_lng,
+            )
+            result['geom'] = geom
+        except Exception:
+            result['geom'] = None
+
+    thread = threading.Thread(target=_compute, daemon=True)
+    thread.start()
+    thread.join(timeout=deadline)
+    return result.get('geom')
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def driver_me(request):
+    """
+    GET /api/drivers/me/
+    Returns the Driver record linked to the current authenticated user,
+    plus their currently assigned vehicle (if any).
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    assigned_vehicle = None
+    if driver.assigned_vehicles.exists():
+        v = driver.assigned_vehicles.first()
+        assigned_vehicle = {
+            'id': v.id,
+            'name': v.name,
+            'vehicle_type': v.vehicle_type,
+            'number_plate': v.number_plate,
+            'is_available': v.is_available,
+            'location': {'lat': v.location.y, 'lng': v.location.x} if v.location else None,
+        }
+
+    data = {
+        'id': driver.id,
+        'name': driver.name,
+        'phone_number': driver.phone_number,
+        'license_number': driver.license_number,
+        'is_active': driver.is_active,
+        'is_on_duty': driver.is_on_duty,
+        'assigned_vehicle': assigned_vehicle,
+    }
+    serializer = DriverMeSerializer(data)
+    return Response(serializer.data)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def driver_duty(request):
+    """
+    PATCH /api/drivers/me/duty/
+    Body: {"is_on_duty": true|false}
+    Sets the driver's duty status. Availability of the assigned vehicle is
+    derived (driver on duty AND not admin-blocked) via the Vehicle signal.
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    on_duty = request.data.get('is_on_duty')
+    if not isinstance(on_duty, bool):
+        return Response(
+            {'error': 'is_on_duty must be a boolean'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    driver.is_on_duty = on_duty
+    driver.save(update_fields=['is_on_duty'])
+
+    assigned_vehicle = None
+    if driver.assigned_vehicles.exists():
+        v = driver.assigned_vehicles.first()
+        assigned_vehicle = {
+            'id': v.id,
+            'name': v.name,
+            'vehicle_type': v.vehicle_type,
+            'number_plate': v.number_plate,
+            'is_available': v.is_available,
+            'location': {'lat': v.location.y, 'lng': v.location.x} if v.location else None,
+        }
+
+    data = {
+        'id': driver.id,
+        'name': driver.name,
+        'phone_number': driver.phone_number,
+        'license_number': driver.license_number,
+        'is_active': driver.is_active,
+        'is_on_duty': driver.is_on_duty,
+        'assigned_vehicle': assigned_vehicle,
+    }
+    return Response(DriverMeSerializer(data).data)
+
+
+ACTIVE_DISPATCH_STATUSES = ['assigned', 'accepted', 'en_route', 'arrived']
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def driver_dispatch(request):
+    """
+    GET /api/drivers/me/dispatch/
+    Returns the active DispatchRequest (if any) for the driver's assigned
+    vehicle, including route geometry for the map.
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    vehicle = driver.assigned_vehicles.first()
+    if vehicle is None:
+        return Response(
+            {'error': 'No vehicle is assigned to this driver'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    dispatch = (
+        DispatchRequest.objects
+        .filter(assigned_vehicle=vehicle, status__in=ACTIVE_DISPATCH_STATUSES)
+        .first()
+    )
+    if dispatch is None:
+        return Response(
+            {'error': 'No active dispatch for this driver'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    data = DispatchRequestSerializer(dispatch).data
+    data['geometry'] = safe_route_geometry(vehicle, dispatch)
+    return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def driver_dispatch_transition(request):
+    """
+    POST /api/drivers/me/dispatch/transition/
+    Body: {"status": "accepted"|"en_route"|"arrived"|"completed"}
+    Advances the active dispatch through its state machine.
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    vehicle = driver.assigned_vehicles.first()
+    if vehicle is None:
+        return Response(
+            {'error': 'No vehicle is assigned to this driver'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    dispatch = (
+        DispatchRequest.objects
+        .filter(assigned_vehicle=vehicle, status__in=ACTIVE_DISPATCH_STATUSES)
+        .first()
+    )
+    if dispatch is None:
+        return Response(
+            {'error': 'No active dispatch for this driver'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    new_status = request.data.get('status')
+    if new_status not in DispatchRequest.VALID_TRANSITIONS.get(dispatch.status, []):
+        return Response(
+            {'error': f"Invalid transition from '{dispatch.status}' to '{new_status}'"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        dispatch.transition_to(new_status)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = DispatchRequestSerializer(dispatch).data
+    data['geometry'] = safe_route_geometry(vehicle, dispatch)
+    return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def dispatch_transition(request, pk):
+    """
+    POST /api/vehicles/<pk>/dispatch/transition/
+    Body: {"status": "accepted"|"en_route"|"arrived"|"completed"|"cancelled"}
+    Owner-scoped (admin) advance of the active dispatch for this vehicle.
+    Lets the dispatcher accept/reject from the dashboard; first acceptor wins.
+    """
+    try:
+        vehicle = Vehicle.objects.get(pk=pk, owner=request.user)
+    except Vehicle.DoesNotExist:
+        return Response(
+            {'error': 'Vehicle not found or access denied'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    dispatch = (
+        DispatchRequest.objects
+        .filter(assigned_vehicle=vehicle, status__in=ACTIVE_DISPATCH_STATUSES)
+        .first()
+    )
+    if dispatch is None:
+        return Response(
+            {'error': 'No active dispatch for this vehicle'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    new_status = request.data.get('status')
+    if new_status not in DispatchRequest.VALID_TRANSITIONS.get(dispatch.status, []):
+        return Response(
+            {'error': f"Invalid transition from '{dispatch.status}' to '{new_status}'"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        dispatch.transition_to(new_status)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = DispatchRequestSerializer(dispatch).data
+    data['geometry'] = safe_route_geometry(vehicle, dispatch)
+    return Response(data)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def update_location(request, pk):
@@ -84,12 +374,26 @@ def update_location(request, pk):
     Body: {"lat": 26.54, "lng": 87.89}
 
     Updates the vehicle's GPS location and returns the updated vehicle.
+    Allowed for the vehicle owner or the assigned driver.
     """
     try:
-        vehicle = Vehicle.objects.get(pk=pk, owner=request.user)
+        vehicle = Vehicle.objects.get(pk=pk)
     except Vehicle.DoesNotExist:
         return Response(
-            {'error': f'Vehicle {pk} not found or access denied'},
+            {'error': f'Vehicle {pk} not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    is_owner = vehicle.owner == request.user
+    is_assigned_driver = (
+        vehicle.driver is not None
+        and vehicle.driver.user is not None
+        and vehicle.driver.user == request.user
+    )
+
+    if not (is_owner or is_assigned_driver):
+        return Response(
+            {'error': 'Vehicle not found or access denied'},
             status=status.HTTP_404_NOT_FOUND,
         )
 

@@ -1,5 +1,8 @@
 from rest_framework import serializers
 from django.contrib.gis.geos import Point
+from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.contrib.auth.password_validation import validate_password
 from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord
 
 
@@ -33,10 +36,34 @@ class LocationField(serializers.Field):
 
 
 class DriverSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(write_only=True, required=True)
+    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+
     class Meta:
         model = Driver
-        fields = ['id', 'name', 'phone_number', 'license_number', 'is_active']
-        read_only_fields = ['id']
+        fields = ['id', 'name', 'phone_number', 'license_number', 'is_active', 'is_on_duty', 'user', 'username', 'password']
+        read_only_fields = ['id', 'user', 'is_active', 'is_on_duty']
+
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError('A user with this username already exists')
+        return value
+
+    def validate_password(self, value):
+        try:
+            validate_password(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        return value
+
+    def create(self, validated_data):
+        username = validated_data.pop('username')
+        password = validated_data.pop('password')
+        driver = Driver(**validated_data)
+        user = User.objects.create_user(username=username, password=password)
+        driver.user = user
+        driver.save()
+        return driver
 
 
 class VehicleSerializer(serializers.ModelSerializer):
@@ -45,8 +72,8 @@ class VehicleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Vehicle
-        fields = ['id', 'name', 'vehicle_type', 'number_plate', 'is_available', 'location', 'driver', 'driver_name']
-        read_only_fields = ['id', 'driver_name']
+        fields = ['id', 'name', 'vehicle_type', 'number_plate', 'is_available', 'admin_blocked', 'location', 'driver', 'driver_name']
+        read_only_fields = ['id', 'driver_name', 'is_available']
 
 
 class LocationUpdateSerializer(serializers.Serializer):
@@ -97,6 +124,25 @@ class DispatchRequestSerializer(serializers.ModelSerializer):
             'distance_km', 'duration_min', 'used_osrm',   # ← added
         ]
         read_only_fields = fields
+
+
+class AssignedVehicleSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    vehicle_type = serializers.CharField()
+    number_plate = serializers.CharField()
+    is_available = serializers.BooleanField()
+    location = serializers.DictField()
+
+
+class DriverMeSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    phone_number = serializers.CharField()
+    license_number = serializers.CharField()
+    is_active = serializers.BooleanField()
+    is_on_duty = serializers.BooleanField()
+    assigned_vehicle = AssignedVehicleSerializer(allow_null=True)
 
 
 class MaintenanceRecordSerializer(serializers.ModelSerializer):

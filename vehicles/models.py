@@ -8,10 +8,22 @@ class Driver(models.Model):
     phone_number = models.CharField(max_length=20)
     license_number = models.CharField(max_length=50, unique=True)
     is_active = models.BooleanField(default=True)
+    is_on_duty = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='Driver duty status. When True the assigned vehicle is available.',
+    )
     owner = models.ForeignKey(
         'auth.User',
         on_delete=models.CASCADE,
         related_name='drivers',
+    )
+    user = models.OneToOneField(
+        'auth.User',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='driver_profile',
     )
 
     def __str__(self):
@@ -34,6 +46,10 @@ class Vehicle(models.Model):
     )
     number_plate = models.CharField(max_length=20, unique=True, null=True, blank=True)
     is_available = models.BooleanField(default=True)
+    admin_blocked = models.BooleanField(
+        default=False,
+        help_text='Admin override. When True the vehicle is unavailable regardless of driver duty.',
+    )
     driver = models.ForeignKey(
         Driver,
         on_delete=models.SET_NULL,
@@ -68,6 +84,18 @@ class Vehicle(models.Model):
         if self.last_location_at is None:
             return True
         return (timezone.now() - self.last_location_at).total_seconds() > 300
+
+    def recompute_availability(self) -> None:
+        """Derive `is_available` from driver duty + admin block.
+
+        available = driver on duty AND vehicle not admin-blocked.
+        Uses a queryset update to avoid re-firing the post_save signal
+        (which would recurse).
+        """
+        on_duty = bool(self.driver and self.driver.is_on_duty)
+        is_available = on_duty and not self.admin_blocked
+        Vehicle.objects.filter(pk=self.pk).update(is_available=is_available)
+        self.is_available = is_available
 
     class Meta:
         ordering = ['name']
