@@ -1,26 +1,210 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Central service that talks to the Sarathi Django + PostgreSQL backend.
-/// Base URL points to the local Django dev server (same machine as the emulator).
-/// For a physical device on the same WiFi, replace with your PC's LAN IP.
 class ApiService {
-  // ── Configuration ──────────────────────────────────────────────────────────
-  // Android emulator loopback → host PC's localhost
-  static const String _baseUrl = 'http://10.0.2.2:8000';
+  static const String _baseUrl = 'http://10.47.169.138:8000';
+  static const _storage = FlutterSecureStorage();
 
-  // Shared JSON headers
   static const Map<String, String> _jsonHeaders = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };
 
-  // ── Driver Registration ────────────────────────────────────────────────────
-  /// Called immediately after Firebase Auth creates a new user account.
-  /// Persists full driver profile to PostgreSQL via Django.
-  ///
-  /// Returns `true` on success, `false` on any failure (non-blocking).
+  static Future<Map<String, String>> _authHeaders() async {
+    final token = await _storage.read(key: 'access_token');
+    if (token != null) {
+      return {
+        ..._jsonHeaders,
+        'Authorization': 'Bearer $token',
+      };
+    }
+    return _jsonHeaders;
+  }
+
+  static Future<void> _setTokens(String access, String refresh) async {
+    await _storage.write(key: 'access_token', value: access);
+    await _storage.write(key: 'refresh_token', value: refresh);
+  }
+
+  static Future<void> clearTokens() async {
+    await _storage.delete(key: 'access_token');
+    await _storage.delete(key: 'refresh_token');
+  }
+
+  static Future<String?> getAccessToken() async {
+    return await _storage.read(key: 'access_token');
+  }
+
+  static Future<bool> login({
+    required String username,
+    required String password,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/auth/login/'),
+            headers: _jsonHeaders,
+            body: jsonEncode({
+              'username': username,
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      _log('login status: ${response.statusCode}, body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final access = data['access'] as String?;
+        final refresh = data['refresh'] as String?;
+        if (access != null && refresh != null) {
+          await _setTokens(access, refresh);
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      _log('login exception: $e');
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getDriverMe() async {
+    try {
+      final headers = await _authHeaders();
+      final response = await http
+          .get(Uri.parse('$_baseUrl/api/drivers/me/'), headers: headers)
+          .timeout(const Duration(seconds: 15));
+
+      _log('getDriverMe status: ${response.statusCode}, body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data;
+      }
+      return null;
+    } catch (e) {
+      _log('getDriverMe exception: $e');
+      return null;
+    }
+  }
+
+  static Future<bool> updateVehicleAvailability({
+    required int vehicleId,
+    required bool isAvailable,
+  }) async {
+    try {
+      final headers = await _authHeaders();
+      final response = await http
+          .patch(
+            Uri.parse('$_baseUrl/api/vehicles/$vehicleId/'),
+            headers: headers,
+            body: jsonEncode({'is_available': isAvailable}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      _log('updateVehicleAvailability status: ${response.statusCode}, body: ${response.body}');
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('updateVehicleAvailability exception: $e');
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> setDutyStatus({
+    required bool isOnDuty,
+  }) async {
+    try {
+      final headers = await _authHeaders();
+      final response = await http
+          .patch(
+            Uri.parse('$_baseUrl/api/drivers/me/duty/'),
+            headers: headers,
+            body: jsonEncode({'is_on_duty': isOnDuty}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      _log('setDutyStatus status: ${response.statusCode}, body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      _log('setDutyStatus exception: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getMyDispatch() async {
+    try {
+      final headers = await _authHeaders();
+      final response = await http
+          .get(Uri.parse('$_baseUrl/api/drivers/me/dispatch/'), headers: headers)
+          .timeout(const Duration(seconds: 15));
+
+      _log('getMyDispatch status: ${response.statusCode}, body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      _log('getMyDispatch exception: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> transitionDispatch({
+    required String status,
+  }) async {
+    try {
+      final headers = await _authHeaders();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/drivers/me/dispatch/transition/'),
+            headers: headers,
+            body: jsonEncode({'status': status}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      _log('transitionDispatch status: ${response.statusCode}, body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      _log('transitionDispatch exception: $e');
+      return null;
+    }
+  }
+
+  static Future<bool> updateLocation({
+    required int vehicleId,
+    required double lat,
+    required double lng,
+  }) async {
+    try {
+      final headers = await _authHeaders();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/vehicles/$vehicleId/update-location/'),
+            headers: headers,
+            body: jsonEncode({'lat': lat, 'lng': lng}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      _log('updateLocation status: ${response.statusCode}, body: ${response.body}');
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('updateLocation exception: $e');
+      return false;
+    }
+  }
+
   static Future<bool> registerDriver({
     required String firebaseUid,
     required String name,
@@ -57,8 +241,6 @@ class ApiService {
     }
   }
 
-  // ── Login Event ────────────────────────────────────────────────────────────
-  /// Records a login event in PostgreSQL when the driver signs in.
   static Future<bool> recordLogin({
     required String firebaseUid,
     required String email,
@@ -87,9 +269,6 @@ class ApiService {
     }
   }
 
-  // ── Document Upload Metadata ───────────────────────────────────────────────
-  /// After a document is uploaded to Firebase Storage, call this to record
-  /// its metadata (URL, type) in PostgreSQL so the admin dashboard can see it.
   static Future<bool> recordDocument({
     required String firebaseUid,
     required String docType,
@@ -122,9 +301,6 @@ class ApiService {
     }
   }
 
-  // ── Multipart document file upload ────────────────────────────────────────
-  /// Uploads the actual license file bytes to Django, which stores it and
-  /// saves the path in PostgreSQL. Use this as an alternative to Firebase Storage.
   static Future<String?> uploadDocumentFile({
     required String firebaseUid,
     required File file,
@@ -157,7 +333,5 @@ class ApiService {
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  // ignore: avoid_print
   static void _log(String message) => print('[ApiService] $message');
 }
