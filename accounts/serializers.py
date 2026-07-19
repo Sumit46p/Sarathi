@@ -1,9 +1,38 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from vehicles.models import Vehicle
 from .models import Profile
+
+
+class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """Accept either a username or an email address as the login identifier."""
+
+    username_field = User.USERNAME_FIELD
+
+    def validate(self, attrs):
+        identifier = attrs.get('username') or attrs.get('email')
+        password = attrs.get('password')
+
+        user = (
+            User.objects.filter(username=identifier).first()
+            or User.objects.filter(email__iexact=identifier).first()
+        )
+
+        if user is None or not user.check_password(password):
+            raise serializers.ValidationError(
+                'No active account found with the given credentials'
+            )
+
+        if not user.is_active:
+            raise serializers.ValidationError(
+                'No active account found with the given credentials'
+            )
+
+        attrs[self.username_field] = user.get_username()
+        return super().validate(attrs)
 
 class UserSerializer(serializers.ModelSerializer):
     organization_type = serializers.CharField(source='profile.organization_type', read_only=True)

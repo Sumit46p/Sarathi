@@ -74,6 +74,15 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.0.2.2', '10.0.2.1']
 
+try:
+    import socket
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    if local_ip not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(local_ip)
+except Exception:
+    pass
+
 
 # Application definition
 
@@ -92,7 +101,6 @@ INSTALLED_APPS = [
     # Local apps
     'vehicles',
     'accounts',
-    'drivers',
 ]
 
 MIDDLEWARE = [
