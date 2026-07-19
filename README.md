@@ -4,8 +4,8 @@ Sarthi is an intelligent, location-aware vehicle dispatch platform built for
 emergency and municipal services. It enables real-time tracking and routing of
 ambulances, logistics trucks, and municipal vehicles using geospatial data,
 helping dispatchers assign the nearest available vehicle to any request. The
-backend is powered by Django + PostGIS, with planned integrations for OSRM
-routing, a React dashboard, and a Flutter mobile app.
+backend is powered by Django + PostGIS with OSRM real-road routing, a React
+dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 
 ---
 
@@ -15,7 +15,8 @@ routing, a React dashboard, and a Flutter mobile app.
 - [x] Django project scaffolded (`sarthi_backend`)
 - [x] PostGIS database running via Docker
 - [x] Vehicle model with GPS PointField + admin map picker
-- [x] JWT Authentication & Accounts app
+- [x] JWT Authentication & Accounts app (`rest_framework_simplejwt`)
+- [x] Login accepts **username or email**
 - [x] Frontend auth pages (Login & Signup)
 - [x] React Router with Protected Routes
 - [x] Organization scoping (per-admin/org data isolation)
@@ -23,29 +24,43 @@ routing, a React dashboard, and a Flutter mobile app.
 ### Fleet & Dispatch
 - [x] Vehicle CRUD (API + dashboard UI)
 - [x] Vehicle number plates
-- [x] Driver management (fully integrated, secure API)
-- [x] Nearest-vehicle dispatch (straight-line PostGIS distance)
+- [x] Driver management via `vehicles.Driver` model + `accounts` JWT auth
+- [x] **Admin-created driver logins**: admin creates a driver with `username` + `password` (Django `User` linked to the `Driver` profile)
+- [x] **Two-way availability sync**: `Driver.is_on_duty` + `Vehicle.admin_blocked` derive `Vehicle.is_available` (driver toggle drives availability; admin block overrides it)
+- [x] Nearest-vehicle dispatch (PostGIS distance, OSRM-ranked)
 - [x] Dispatch UI (map click → assign → route line)
-- [x] Location simulator (stands in for Flutter app)
-- [x] Live vehicle map (Leaflet, polling)
-- [x] OSRM real-road routing (upgrade from straight-line distance)
-- [x] Authentication & Authorization (token refresh flow)
+- [x] **Dispatch lifecycle** (`assigned → accepted → en_route → arrived → completed`, plus `cancelled`) — dispatcher **or** driver can accept (first wins)
+- [x] Location simulator (stands in for the Flutter app)
+- [x] Live vehicle map (Leaflet, 5s polling)
+- [x] **Clickable fleet rows → live vehicle map panel** (see a vehicle's real-time position on demand)
+- [x] OSRM real-road routing (route geometry returned to both dashboard and driver app)
+- [x] Token refresh flow
 
-### Not Yet Started (from original proposal scope)
-- [x] Maintenance monitoring + scheduled service alerts
+### Driver Mobile App (Flutter) — built
+- [x] JWT login (username/email + password)
+- [x] **On Duty toggle** → sets `Driver.is_on_duty` (requests location permission, sends immediate GPS fix + 5s polling)
+- [x] Driver's assigned vehicle shown from `/api/drivers/me/`
+- [x] **Trips tab**: live dispatch route on a map + status transitions (Accept / En Route / Arrived / Complete)
+- [x] Profile, Alerts, SOS placeholders
+
+### Implemented (completed in this cycle)
+- [x] Maintenance monitoring + scheduled service alerts (CRUD, overdue flagging, dashboard UI)
+- [x] Maintenance tab in frontend (vehicle-filtered table, status badges, mark-complete, delete)
+- [x] Removed Firebase/`drivers` app — standardized on Django REST + JWT (no separate `drivers` app)
+
+### Not Yet Started / Partial
 - [ ] Expense tracking (fuel, maintenance, operational costs)
 - [ ] Operational analytics/reporting dashboard (Chart.js/Recharts)
-- [ ] Real-time WebSocket notifications (Django Channels) — currently using polling instead
+- [ ] Real-time WebSocket notifications (Django Channels) — currently using polling
 - [ ] Redis caching layer
-- [ ] Role-based access control *within* an organization (currently one admin = one org, no dispatcher/viewer sub-roles)
-- [ ] Flutter driver mobile app
+- [ ] Role-based access control *within* an organization (one admin = one org; no dispatcher/viewer sub-roles yet)
 - [ ] Firebase Cloud Messaging push notifications
 - [ ] Docker Compose full-stack deployment (Nginx + Gunicorn)
 - [ ] Unit / integration testing
 - [ ] User Acceptance Testing (UAT) with a partner organization
 - [ ] Performance benchmarking (sub-2s dispatch @ 50 concurrent updates/sec)
 
-> **Architecture Note:** Vehicles are scoped per-admin/organization. An admin only sees and manages vehicles belonging to their own organization (Ambulance, Logistics, or Municipal). This was a deliberate architecture correction after initial testing revealed cross-org data mixing.
+> **Architecture Note:** Vehicles and drivers are scoped per-admin/organization. An admin only sees and manages vehicles/drivers belonging to their own organization (Ambulance, Logistics, or Municipal). A `Driver` is linked to a Django `User` (for mobile login) and optionally assigned to a `Vehicle`. Vehicle availability is **derived**: `is_available = driver.is_on_duty AND NOT admin_blocked`.
 
 ---
 
@@ -55,6 +70,7 @@ routing, a React dashboard, and a Flutter mobile app.
 |------|---------|-------|
 | Python | 3.11+ | Tested with 3.x on Windows |
 | Node.js | 18+ | For the React frontend (Vite) |
+| Flutter | 3.x | For the driver mobile app (`driver_app/`) |
 | Docker | Latest | For PostGIS container |
 | GDAL/GEOS | via OSGeo4W | Required for GeoDjango spatial fields |
 | Git | Latest | For version control |
@@ -132,9 +148,9 @@ pip install -r requirements.txt
 python manage.py migrate
 ```
 
-You should see output ending with:
+You should see output ending with something like:
 ```
-Applying vehicles.0001_initial... OK
+Applying vehicles.0010_driver_is_on_duty_vehicle_admin_blocked... OK
 ```
 
 ### 7. Create a superuser
@@ -164,40 +180,114 @@ npm install
 npm run dev
 ```
 
-Visit **http://localhost:5173** to see the live vehicle map.
+Visit **http://localhost:5173** to see the live vehicle map and dispatch console.
+
+### 10. Run the Flutter driver app
+
+```bash
+cd driver_app
+flutter pub get
+flutter run
+```
+
+Log in with a **driver account** created from the dashboard (Admin → Drivers → Add driver, with username + password). The driver's On Duty toggle and Trips tab connect to the same backend.
 
 ---
 
 ## 🔌 API Endpoints
 
+All endpoints are under the project root (`sarthi_backend/urls.py` → app routers).
+Auth: `Authorization: Bearer <access_token>`.
+
+### Auth (`/api/auth/`)
 | Method | URL | Description |
 |--------|-----|-------------|
-| GET | `/api/auth/me/` | Get current user and organization type |
-| GET | `/api/vehicles/` | List all vehicles for current org |
-| POST | `/api/vehicles/` | Create a new vehicle for current org |
-| GET | `/api/vehicles/<id>/` | Detail of one vehicle |
-| PATCH | `/api/vehicles/<id>/` | Partial update (toggle availability, edit) |
+| POST | `/api/auth/login/` | Obtain JWT (accepts `username` **or** `email` + `password`) |
+| POST | `/api/auth/login/refresh/` | Refresh access token |
+| POST | `/api/auth/register/` | Register a new admin/user (username, email, password, organization_type) |
+| GET | `/api/auth/me/` | Current user + organization type |
+
+### Vehicles (`/api/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/vehicles/` | List vehicles for current org |
+| POST | `/api/vehicles/` | Create a vehicle |
+| GET | `/api/vehicles/<id>/` | Vehicle detail |
+| PATCH | `/api/vehicles/<id>/` | Update (incl. `admin_blocked`) |
 | DELETE | `/api/vehicles/<id>/` | Remove a vehicle |
-| POST | `/api/vehicles/<id>/update-location/` | Update GPS location |
-| GET | `/api/vehicles/nearest/?lat=..&lng=..&type=..` | Top 5 nearest available vehicles in org |
-| POST | `/api/dispatch/` | Dispatch nearest vehicle in org |
-| GET | `/api/maintenance/` | List all maintenance records for current user |
-| POST | `/api/maintenance/` | Create a new maintenance record |
-| GET | `/api/maintenance/<id>/` | Detail of one maintenance record |
-| PATCH | `/api/maintenance/<id>/` | Partial update (e.g. mark completed=true) |
-| DELETE | `/api/maintenance/<id>/` | Remove a maintenance record |
-| GET | `/api/maintenance/upcoming/` | Records due in the next 30 days |
+| POST | `/api/vehicles/<id>/update-location/` | Update GPS location `{"lat":..,"lng":..}` |
+| POST | `/api/vehicles/<id>/assign-driver/` | Assign a driver `{"driver_id": <id>}` |
+| POST | `/api/vehicles/<id>/dispatch/transition/` | **Admin** advances the active dispatch (accept/en_route/arrived/completed/cancelled) |
 
-**Location format** — all endpoints use plain JSON `{"lat": 26.65, "lng": 87.89}` (not GeoJSON/WKT).
+### Dispatch
+| Method | URL | Description |
+|--------|-----|-------------|
+| POST | `/api/dispatch/` | Dispatch nearest available vehicle `{"lat":..,"lng":..,"vehicle_type":..}` |
 
-**Example — create a vehicle:**
+### Drivers (`/api/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/drivers/` | List drivers for current org |
+| POST | `/api/drivers/` | Create a driver **with login credentials** (`name`, `phone_number`, `license_number`, `username`, `password`) |
+| GET | `/api/drivers/me/` | Current driver's profile + assigned vehicle + `is_on_duty` |
+| PATCH | `/api/drivers/me/duty/` | Set `{"is_on_duty": true|false}` (drives vehicle availability) |
+| GET | `/api/drivers/me/dispatch/` | Active dispatch for the driver's vehicle (status + route geometry) |
+| POST | `/api/drivers/me/dispatch/transition/` | **Driver** advances the dispatch (accept/en_route/arrived/completed/cancelled) |
+| GET | `/api/drivers/<id>/` | Driver detail |
+| PATCH | `/api/drivers/<id>/` | Driver update |
+| DELETE | `/api/drivers/<id>/` | Remove a driver |
+
+### Maintenance (`/api/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/maintenance/` | List maintenance records |
+| POST | `/api/maintenance/` | Create a record |
+| GET | `/api/maintenance/<id>/` | Detail |
+| PATCH | `/api/maintenance/<id>/` | Update (mark completed) |
+| DELETE | `/api/maintenance/<id>/` | Remove |
+| GET | `/api/maintenance/upcoming/` | Due in next 30 days |
+
+**Location format** — all location endpoints use plain JSON `{"lat": 26.65, "lng": 87.89}`.
+
+**Examples**
+
+Create a vehicle:
 ```bash
 curl -X POST http://localhost:8000/api/vehicles/ \
   -H "Content-Type: application/json" \
   -d '{"name": "Ambulance-01", "vehicle_type": "ambulance", "is_available": true, "location": {"lat": 26.6468, "lng": 87.8942}}'
 ```
 
-**Example — update location:**
+Create a driver **with login credentials** (admin only):
+```bash
+curl -X POST http://localhost:8000/api/drivers/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin_token>" \
+  -d '{"name": "John Doe", "phone_number": "9876543210", "license_number": "DL-12345", "username": "john", "password": "securepass123"}'
+```
+
+Driver login (username **or** email):
+```bash
+curl -X POST http://localhost:8000/api/auth/login/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "john", "password": "securepass123"}'
+```
+
+Set driver on duty (this makes the assigned vehicle available):
+```bash
+curl -X PATCH http://localhost:8000/api/drivers/me/duty/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <driver_token>" \
+  -d '{"is_on_duty": true}'
+```
+
+Driver gets own profile + assigned vehicle:
+```bash
+curl -X GET http://localhost:8000/api/drivers/me/ \
+  -H "Authorization: Bearer <driver_token>"
+```
+
+Update vehicle location (from driver app or simulator):
 ```bash
 curl -X POST http://localhost:8000/api/vehicles/1/update-location/ \
   -H "Content-Type: application/json" \
@@ -210,8 +300,7 @@ curl -X POST http://localhost:8000/api/vehicles/1/update-location/ \
 
 The simulator script performs a **random walk** near Jhapa, Nepal, calling the
 `update-location` endpoint every 4 seconds to simulate a vehicle moving in
-real time. This stands in for the real **Flutter driver app**, which will call
-the same endpoint later.
+real time. It exercises the same endpoint the **Flutter driver app** uses.
 
 ### Running the simulator
 
@@ -230,7 +319,7 @@ python scripts/simulate_vehicle.py 1 --interval 2
 
 While the simulator runs, verify the location is changing:
 - Visit **http://localhost:8000/api/vehicles/1/** and refresh
-- Or watch the markers move on the **live map** at http://localhost:5173
+- Or watch the markers move on the **live map** at http://localhost:5173 (click a vehicle row to open its live map panel)
 - Or check Django admin → Vehicles → click the vehicle → see the map marker move
 
 ---
@@ -252,33 +341,39 @@ cd Sarathi/frontend
 npm run dev
 ```
 
-### Terminal 3 — Vehicle simulator
+### Terminal 3 — Vehicle simulator (or use the Flutter driver app)
 ```bash
 cd Sarathi
 .\venv\Scripts\Activate.ps1      # Windows
 python scripts/simulate_vehicle.py 1
 ```
 
-> **First time?** Before running the simulator, create a test vehicle:
-> ```bash
-> curl -X POST http://localhost:8000/api/vehicles/ \
->   -H "Content-Type: application/json" \
->   -d '{"name": "Ambulance-01", "vehicle_type": "ambulance", "is_available": true, "location": {"lat": 26.6468, "lng": 87.8942}}'
-> ```
-
 Then open **http://localhost:5173** — you should see the vehicle marker moving
-on the map every 4 seconds.
+on the map every 4 seconds. Open the **Flutter app** as a 4th terminal to drive
+the mobile experience (login as a driver, toggle On Duty, watch the dashboard
+update live, accept a dispatch from the Trips tab).
 
 ---
 
-## 📱 Planned Flutter App Scope (Next Phase)
+## 📱 Flutter Driver App
 
-The mobile application for drivers is the primary focus for the next development phase. Key planned features include:
-- **Authentication**: Driver login linked to their assigned organization.
-- **Duty Toggle**: Simple on/off duty switch indicating availability for dispatch.
-- **Live Location**: Background GPS tracking synced with the Django backend.
-- **Current Assignment**: Clear view of their current vehicle assignment and details.
-- **Dispatch Notifications**: Real-time alerts when assigned to a new emergency or dispatch request, with navigation integration.
+The driver mobile app (`driver_app/`) is fully implemented and connects to the
+same JWT backend.
+
+- **Login**: standard Django JWT (`/api/auth/login/`), username or email.
+- **On Duty toggle**: `PATCH /api/drivers/me/duty/` sets `Driver.is_on_duty`.
+  On enabling, the app requests location permission, captures an immediate GPS
+  fix, and polls every 5s, sending updates via `POST /api/vehicles/<id>/update-location/`.
+  Because availability is derived, going on duty makes the assigned vehicle
+  "Available" on the dashboard; the admin can still force it unavailable via
+  `admin_blocked`.
+- **Assigned vehicle**: read from `/api/drivers/me/` (`assigned_vehicle`).
+- **Trips tab**: fetches the active dispatch from `/api/drivers/me/dispatch/`
+  (which includes the OSRM route geometry), draws it on a map, and lets the
+  driver advance the lifecycle (Accept → En Route → Arrived → Complete). The
+  dispatcher can also accept from the dashboard — first acceptor wins.
+- Driver accounts are created by an admin (Dashboard → Drivers → Add driver
+  with username + password); the app has no self-signup.
 
 ---
 
@@ -287,13 +382,14 @@ The mobile application for drivers is the primary focus for the next development
 | Layer | Technology |
 |-------|-----------|
 | Backend | Django 5.2 + Django REST Framework |
+| Auth | `djangorestframework-simplejwt` (JWT) |
 | Geospatial | GeoDjango + PostGIS + GDAL/GEOS |
 | Database | PostgreSQL 16 + PostGIS 3.4 (Docker) |
 | API | Django REST Framework |
+| Routing | OSRM (real-road distance + geometry) |
 | Simulator | Python + requests (random walk) |
 | Frontend | React + TypeScript + Vite + Leaflet |
-| Routing | OSRM ✓ |
-| Mobile | Flutter (planned) |
+| Mobile | Flutter (driver app) |
 
 ---
 
@@ -307,29 +403,53 @@ Sarathi/
 │   └── simulate_vehicle.py        # Location simulator (random walk)
 ├── sarthi_backend/                 # Django project config
 │   ├── settings.py                 # DB, GDAL, CORS, installed apps
-│   ├── urls.py                     # Routes /api/ to vehicles.urls
+│   ├── urls.py                     # Root routes
 │   ├── wsgi.py
 │   └── asgi.py
-├── vehicles/                       # Vehicle tracking + dispatch app
-│   ├── models.py                   # Vehicle + DispatchRequest models
-│   ├── serializers.py              # DRF serializers ({lat, lng} format)
-│   ├── views.py                    # API views (CRUD, nearest, dispatch)
-│   ├── urls.py                     # /api/vehicles/ + /api/dispatch/
-│   ├── admin.py                    # GIS admin with map picker
-│   └── migrations/
-│       ├── 0001_initial.py
-│       └── 0002_add_dispatch_request.py
-└── frontend/                       # React + TypeScript + Vite
+├── vehicles/                       # Vehicle tracking + dispatch + drivers
+│   ├── models.py                   # Vehicle + DispatchRequest + Driver
+│   │                              #   (Driver.is_on_duty, Vehicle.admin_blocked)
+│   ├── serializers.py             # DRF serializers ({lat, lng}, driver login,
+│   │                              #   driver duty/dispatch)
+│   ├── views.py                    # CRUD, nearest, dispatch, driver_me,
+│   │                              #   driver_duty, driver_dispatch + transition,
+│   │                              #   admin dispatch_transition
+│   ├── urls.py                    # /api/vehicles/, /api/drivers/, /api/dispatch/
+│   ├── osrm.py                    # OSRM real-road routing helper
+│   ├── admin.py                   # GIS admin with map picker
+│   ├── signals.py                 # Recompute vehicle availability on changes
+│   └── migrations/                # 0001_initial … 0010_driver_is_on_duty_*
+├── accounts/                       # JWT auth + user profiles
+│   ├── models.py                   # Profile (org type)
+│   ├── serializers.py              # Register + email/username login
+│   ├── views.py                    # LoginView, RegisterView, UserDetailView
+│   └── urls.py
+├── driver_app/                     # Flutter mobile app (drivers)
+│   ├── lib/
+│   │   ├── services/api_service.dart
+│   │   ├── screens/
+│   │   │   ├── login_screen.dart
+│   │   │   ├── dashboard_screen.dart   # Home + On Duty toggle + live GPS
+│   │   │   ├── trips_screen.dart       # Live dispatch route + transitions
+│   │   │   ├── profile_screen.dart
+│   │   │   ├── alerts_screen.dart
+│   │   │   └── sos_screen.dart
+│   │   ├── widgets/
+│   │   └── theme.dart
+│   ├── pubspec.yaml
+│   └── ...
+└── frontend/                       # React + TypeScript + Vite (dispatcher console)
     ├── src/
     │   ├── api/auth.ts              # Axios instance with JWT headers
     │   ├── components/
     │   │   ├── FleetMap.tsx         # Live Leaflet map
-    │   │   ├── ProtectedRoute.tsx   # Auth route wrapper
-    │   │   └── ThemeToggle.tsx      # UI theme switcher
+    │   │   ├── MaintenanceTab.tsx
+    │   │   ├── ProtectedRoute.tsx
+    │   │   └── ThemeToggle.tsx
     │   ├── pages/
-    │   │   ├── Dashboard.tsx        # Fleet overview + Dispatch + Settings
-    │   │   ├── Login.tsx            # User login page
-    │   │   └── Signup.tsx           # User registration
+    │   │   ├── Dashboard.tsx        # Fleet + Dispatch + Drivers + live map panel
+    │   │   ├── Login.tsx
+    │   │   └── Signup.tsx
     │   ├── App.tsx
     │   └── main.tsx
     ├── package.json

@@ -112,3 +112,7 @@ google-services.json
 google-services*.json
 GoogleService-Info.plist
 firebase_options.dart
+
+# Agent / local tooling (Kilo)
+.kilo/
+
