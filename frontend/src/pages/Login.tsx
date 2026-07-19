@@ -19,7 +19,7 @@ const Login = () => {
       localStorage.setItem('accessToken', response.data.access);
       localStorage.setItem('refreshToken', response.data.refresh);
       navigate('/dashboard');
-    } catch (err) {
+    } catch {
       setError('Invalid username or password');
     }
   };

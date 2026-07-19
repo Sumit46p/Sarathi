@@ -3,7 +3,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
-import { useTheme } from './components/ThemeToggle';
+import { useTheme } from './hooks/useTheme';
 
 function App() {
   useTheme();

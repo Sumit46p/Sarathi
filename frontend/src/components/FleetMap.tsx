@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, MapPinned, Navigation, RefreshCw } from 'lucide-react';
-import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
+import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchVehicles } from '../api/vehicles';
 import type { Vehicle } from '../api/vehicles';
+import NEPAL_GEOJSON from '../data/nepalBorder';
 
 const TYPE_COLORS: Record<Vehicle['vehicle_type'], string> = {
   ambulance: '#dc2626',
@@ -21,6 +22,13 @@ const TYPE_LABELS: Record<Vehicle['vehicle_type'], string> = {
 const POLL_INTERVAL = 4000;
 const NEPAL_CENTER: [number, number] = [28.2, 84.0];
 const NEPAL_BOUNDS = L.latLngBounds([26.347, 80.058], [30.447, 88.201]);
+
+const BORDER_STYLE: L.PathOptions = {
+  color: '#fbbf24',
+  weight: 1.5,
+  fillColor: '#fef3c7',
+  fillOpacity: 0.08,
+};
 
 function VehicleBounds({ vehicles }: { vehicles: Vehicle[] }) {
   const map = useMap();
@@ -105,6 +113,10 @@ export default function FleetMap() {
         <TileLayer
           attribution='&copy; <a href="https://www.esri.com/en-us/home">Esri</a> &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        />
+        <GeoJSON
+          data={NEPAL_GEOJSON as GeoJSON.GeoJsonObject}
+          style={() => BORDER_STYLE}
         />
         <VehicleBounds vehicles={nepalVehicles} />
         {nepalVehicles.map(vehicle => (

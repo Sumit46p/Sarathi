@@ -23,8 +23,9 @@ const Signup = () => {
       localStorage.setItem('accessToken', response.data.access);
       localStorage.setItem('refreshToken', response.data.refresh);
       navigate('/dashboard');
-    } catch (err: any) {
-      const data = err.response?.data;
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: Record<string, string[]> } };
+      const data = error.response?.data;
       if (data) {
         if (data.password) {
           setError(data.password.join(' '));
