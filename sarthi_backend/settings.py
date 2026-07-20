@@ -72,7 +72,7 @@ SECRET_KEY = 'django-insecure-su$t5h7_k!hque+q3r4y2#uys#1-0^69%wsl5vxjj9muj!r!&$
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.0.2.2', '10.0.2.1']
+ALLOWED_HOSTS = ['*']
 
 try:
     import socket

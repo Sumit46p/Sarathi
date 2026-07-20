@@ -39,6 +39,8 @@ interface Vehicle {
   location: { lat: number; lng: number } | null;
   driver?: number | null;
   driver_name?: string | null;
+  has_active_dispatch: boolean;
+  active_dispatch_status: string | null;
 }
 
 interface DispatchResult {
@@ -109,6 +111,29 @@ function DispatchMapBoundsFitter({ geometry, requestMarker, assignedVehicle }: {
 }
 
 const formatType = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+
+// Human-readable label for an active dispatch status.
+const DISPATCH_STATUS_LABELS: Record<string, string> = {
+  assigned: 'Assigned',
+  accepted: 'Accepted',
+  en_route: 'En Route',
+  arrived: 'On Scene',
+};
+
+// Derives the status badge for a vehicle, distinguishing:
+//  - Available            → driver on duty, not blocked, no active trip
+//  - On Trip / En Route.. → currently on an active dispatch
+//  - In service           → unavailable for any other reason (off-duty / admin-blocked)
+function getVehicleStatusInfo(vehicle: Vehicle): { label: string; className: string } {
+  if (vehicle.is_available) return { label: 'Available', className: 'available' };
+  if (vehicle.has_active_dispatch) {
+    const label = vehicle.active_dispatch_status
+      ? (DISPATCH_STATUS_LABELS[vehicle.active_dispatch_status] || 'On Trip')
+      : 'On Trip';
+    return { label, className: 'on-trip' };
+  }
+  return { label: 'In service', className: 'unavailable' };
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -369,14 +394,17 @@ export default function Dashboard() {
             <div className="section-toolbar"><div><h2>Vehicles</h2><span>{filteredVehicles.length} of {vehicles.length} units</span></div><div className="toolbar-controls"><div className="search-field"><Search size={15} /><input id="vehicle-search" value={vehicleQuery} onChange={event => setVehicleQuery(event.target.value)} placeholder="Search fleet" aria-label="Search vehicles" /></div><div className="segmented-control" aria-label="Filter vehicle status">{(['all', 'available', 'unavailable'] as StatusFilter[]).map(filter => <button key={filter} className={statusFilter === filter ? 'active' : ''} onClick={() => setStatusFilter(filter)}>{formatType(filter)}</button>)}</div></div></div>
 
             {initialLoading ? <div className="list-skeleton">{[1, 2, 3].map(item => <div className="skeleton-row" key={item} />)}</div> : filteredVehicles.length === 0 ? renderEmpty(vehicles.length ? 'No matching vehicles' : 'No vehicles registered', vehicles.length ? 'Adjust your search or availability filter.' : 'Add your first vehicle to begin fleet operations.') :
-              <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Vehicle</th><th>Type</th><th>Driver</th><th>Status</th><th>Location</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredVehicles.map(vehicle => <tr key={vehicle.id} className="clickable-row" onClick={() => { setSelectedVehicleId(vehicle.id); setShowVehiclePanel(true); }}>
+              <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Vehicle</th><th>Type</th><th>Driver</th><th>Status</th><th>Location</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredVehicles.map(vehicle => {
+                const statusInfo = getVehicleStatusInfo(vehicle);
+                return <tr key={vehicle.id} className="clickable-row" onClick={() => { setSelectedVehicleId(vehicle.id); setShowVehiclePanel(true); }}>
                 <td><div className="primary-cell"><div className="entity-icon"><Truck size={17} /></div><div><strong>{vehicle.name}</strong><span className="mono">{vehicle.number_plate || 'No registration'}</span></div></div></td>
                 <td><span className="type-label">{formatType(vehicle.vehicle_type)}</span></td>
                 <td><select className="table-select" value={vehicle.driver || ''} onChange={event => handleAssignDriver(vehicle.id, event.target.value)} aria-label={`Assign driver to ${vehicle.name}`}><option value="">Unassigned</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></td>
-                <td><span className={`status-badge ${vehicle.is_available ? 'available' : 'unavailable'}`}><span />{vehicle.is_available ? 'Available' : 'In service'}</span></td>
+                <td><span className={`status-badge ${statusInfo.className}`}><span />{statusInfo.label}</span></td>
                 <td>{vehicle.location ? <span className="coordinate"><MapPin size={13} />{vehicle.location.lat.toFixed(3)}, {vehicle.location.lng.toFixed(3)}</span> : <span className="muted">Not reported</span>}</td>
                 <td><div className="row-actions"><label className="toggle-switch" title={vehicle.admin_blocked ? 'Set available' : 'Block vehicle'}><input type="checkbox" checked={!vehicle.admin_blocked} onChange={() => handleToggleAvailability(vehicle)} /><span className="toggle-slider" /></label><button className="icon-button danger" onClick={() => handleDeleteVehicle(vehicle.id)} title="Delete vehicle" aria-label={`Delete ${vehicle.name}`}><Trash2 size={15} /></button></div></td>
-              </tr>)}</tbody></table></div>}
+              </tr>;
+              })}</tbody></table></div>}
           </section>}
 
           {activeTab === 'dispatch' && <section className="tab-content dispatch-workspace" aria-labelledby="dispatch-heading">
@@ -389,7 +417,12 @@ export default function Dashboard() {
               {dispatchResult && <div className="dispatch-result" role="status"><div className="result-title"><CheckCircle2 size={18} /><div><strong>Vehicle dispatched</strong><span>Route confirmed</span></div></div><div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Assigned unit</span><strong>{dispatchResult.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div><div className="result-metrics"><div><span>Distance</span><strong>{dispatchResult.distance_km} km</strong></div><div><span>ETA</span><strong>{dispatchResult.duration_min ? `${Math.round(dispatchResult.duration_min)} min` : 'Route set'}</strong></div></div>{dispatchResult.status === 'assigned' && <button className="button button-primary" style={{ marginTop: 12, width: '100%' }} onClick={handleAcceptDispatch}>Accept dispatch</button>}</div>}
               {dispatchError && <div className="inline-alert error" role="alert"><AlertCircle size={16} /><span>{dispatchError}</span></div>}
 
-              <div className="rail-section"><div className="rail-section-title"><h3>Fleet units</h3><span>{availableVehicles} ready</span></div><div className="unit-list">{vehicles.length === 0 ? <p className="muted">No fleet units available.</p> : vehicles.map(vehicle => <button key={vehicle.id} className={`unit-row ${selectedVehicleId === vehicle.id ? 'selected' : ''}`} onClick={() => setSelectedVehicleId(vehicle.id)} disabled={!vehicle.location}><span className={`unit-status ${vehicle.is_available ? 'available' : 'unavailable'}`} /><div><strong>{vehicle.name}</strong><span>{vehicle.driver_name || 'Unassigned'} · {formatType(vehicle.vehicle_type)}</span></div><ChevronRight size={15} /></button>)}</div></div>
+              <div className="rail-section"><div className="rail-section-title"><h3>Fleet units</h3><span>{availableVehicles} ready</span></div><div className="unit-list">{vehicles.length === 0 ? <p className="muted">No fleet units available.</p> : vehicles.map(vehicle => {
+                const statusInfo = getVehicleStatusInfo(vehicle);
+                return <button key={vehicle.id} className={`unit-row ${selectedVehicleId === vehicle.id ? 'selected' : ''}`} onClick={() => setSelectedVehicleId(vehicle.id)} disabled={!vehicle.location}>
+                <span className={`unit-status ${statusInfo.className}`} />
+                <div><strong>{vehicle.name}</strong><span>{vehicle.driver_name || 'Unassigned'} · {formatType(vehicle.vehicle_type)}</span></div><ChevronRight size={15} /></button>;
+              })}</div></div>
             </div>
 
             <div className="dispatch-map-shell"><div className="map-top-overlay"><span><MapPin size={14} />Nepal operations area</span><span className="map-legend"><i className="available" />Available <i className="unavailable" />In service <i className="request" />Request</span></div>
@@ -399,7 +432,11 @@ export default function Dashboard() {
                 <MapController center={selectedCenter} />
                 <MapClickHandler onMapClick={(lat, lng) => { setRequestMarker({ lat, lng }); setDispatchResult(null); setDispatchError(null); }} />
                 <DispatchMapBoundsFitter geometry={dispatchResult?.geometry} requestMarker={requestMarker} assignedVehicle={dispatchResult?.assigned_vehicle || null} />
-                {vehicles.map(vehicle => vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={createVehicleIcon(vehicle.is_available)}><Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={vehicle.is_available ? 'available-text' : 'unavailable-text'}>{vehicle.is_available ? 'Available' : 'In service'}</span></div></Popup></Marker>)}
+                {vehicles.map(vehicle => {
+                  const statusInfo = getVehicleStatusInfo(vehicle);
+                  const popupTextClass = vehicle.is_available ? 'available-text' : (vehicle.has_active_dispatch ? 'on-trip-text' : 'unavailable-text');
+                  return vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={createVehicleIcon(vehicle.is_available)}><Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={popupTextClass}>{statusInfo.label}</span></div></Popup></Marker>;
+                })}
                 {requestMarker && <Marker position={[requestMarker.lat, requestMarker.lng]} icon={requestIcon}><Popup><div className="map-popup"><strong>Dispatch request</strong><span>{requestMarker.lat.toFixed(5)}, {requestMarker.lng.toFixed(5)}</span></div></Popup></Marker>}
                 {dispatchResult?.geometry?.length ? <Polyline positions={dispatchResult.geometry} pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : dispatchResult && requestMarker && <Polyline positions={[[requestMarker.lat, requestMarker.lng], [dispatchResult.assigned_vehicle.lat, dispatchResult.assigned_vehicle.lng]]} pathOptions={{ color: '#2563eb', weight: 4, dashArray: '8 7', opacity: 0.85 }} />}
               </MapContainer>
@@ -442,7 +479,7 @@ export default function Dashboard() {
                 <div className="vehicle-live-meta">
                   <span className="type-label">{formatType(v.vehicle_type)}</span>
                   <span className="mono">{v.number_plate || 'No registration'}</span>
-                  <span className={`status-badge ${v.is_available ? 'available' : 'unavailable'}`}><span />{v.is_available ? 'Available' : 'In service'}</span>
+                  <span className={`status-badge ${getVehicleStatusInfo(v).className}`}><span />{getVehicleStatusInfo(v).label}</span>
                   {v.driver_name && <span className="muted">Driver: {v.driver_name}</span>}
                   <span className="muted">{v.location ? `Last: ${v.location.lat.toFixed(4)}, ${v.location.lng.toFixed(4)}` : 'No location reported'}</span>
                 </div>

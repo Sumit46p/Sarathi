@@ -85,15 +85,36 @@ class Vehicle(models.Model):
             return True
         return (timezone.now() - self.last_location_at).total_seconds() > 300
 
-    def recompute_availability(self) -> None:
-        """Derive `is_available` from driver duty + admin block.
+    def has_active_dispatch(self) -> bool:
+        """True if this vehicle has any dispatch request in a non-terminal state.
 
-        available = driver on duty AND vehicle not admin-blocked.
+        Active dispatch states (anything not yet completed or cancelled):
+        'assigned', 'accepted', 'en_route', 'arrived'.
+        """
+        return self.dispatch_requests.filter(
+            status__in=['assigned', 'accepted', 'en_route', 'arrived']
+        ).exists()
+
+    @property
+    def active_dispatch_status(self) -> str | None:
+        """Returns the current status of an active dispatch, or None if no active dispatch."""
+        active = self.dispatch_requests.filter(
+            status__in=['assigned', 'accepted', 'en_route', 'arrived']
+        ).order_by('-created_at').first()
+        return active.status if active else None
+
+    def recompute_availability(self) -> None:
+        """Derive `is_available` from driver duty + admin block + active dispatch.
+
+        A vehicle is only available if:
+        - the driver is on duty, AND
+        - the vehicle is not admin-blocked, AND
+        - the vehicle has no active dispatch in progress.
         Uses a queryset update to avoid re-firing the post_save signal
         (which would recurse).
         """
         on_duty = bool(self.driver and self.driver.is_on_duty)
-        is_available = on_duty and not self.admin_blocked
+        is_available = on_duty and not self.admin_blocked and not self.has_active_dispatch
         Vehicle.objects.filter(pk=self.pk).update(is_available=is_available)
         self.is_available = is_available
 

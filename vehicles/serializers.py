@@ -69,11 +69,21 @@ class DriverSerializer(serializers.ModelSerializer):
 class VehicleSerializer(serializers.ModelSerializer):
     location = LocationField()
     driver_name = serializers.CharField(source='driver.name', read_only=True, default=None)
+    has_active_dispatch = serializers.BooleanField(read_only=True)
+    active_dispatch_status = serializers.CharField(read_only=True)
 
     class Meta:
         model = Vehicle
-        fields = ['id', 'name', 'vehicle_type', 'number_plate', 'is_available', 'admin_blocked', 'location', 'driver', 'driver_name']
-        read_only_fields = ['id', 'driver_name', 'is_available']
+        fields = [
+            'id', 'name', 'vehicle_type', 'number_plate',
+            'is_available', 'admin_blocked', 'location',
+            'driver', 'driver_name',
+            'has_active_dispatch', 'active_dispatch_status',
+        ]
+        read_only_fields = [
+            'id', 'driver_name', 'is_available',
+            'has_active_dispatch', 'active_dispatch_status',
+        ]
 
 
 class LocationUpdateSerializer(serializers.Serializer):
