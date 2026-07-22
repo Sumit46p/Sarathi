@@ -47,6 +47,9 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] Maintenance monitoring + scheduled service alerts (CRUD, overdue flagging, dashboard UI)
 - [x] Maintenance tab in frontend (vehicle-filtered table, status badges, mark-complete, delete)
 - [x] Removed Firebase/`drivers` app — standardized on Django REST + JWT (no separate `drivers` app)
+- [x] Active dispatch endpoint (`GET /api/dispatch/active/`) — returns owner's latest active dispatch with live OSRM route geometry
+- [x] Dashboard polls active dispatch every 5s and renders the live route as a green polyline on the map
+- [x] Fixed vehicle availability bug: `has_active_dispatch` method call in `is_available` derivation
 
 ### Not Yet Started / Partial
 - [ ] Expense tracking (fuel, maintenance, operational costs)
@@ -223,6 +226,7 @@ Auth: `Authorization: Bearer <access_token>`.
 | Method | URL | Description |
 |--------|-----|-------------|
 | POST | `/api/dispatch/` | Dispatch nearest available vehicle `{"lat":..,"lng":..,"vehicle_type":..}` |
+| GET | `/api/dispatch/active/` | Owner's latest active dispatch with live route geometry |
 
 ### Drivers (`/api/`)
 | Method | URL | Description |

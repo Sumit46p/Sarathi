@@ -1,5 +1,5 @@
 from django.contrib.gis import admin
-from .models import Vehicle, DispatchRequest
+from .models import Vehicle, DispatchRequest, IssueReport
 
 
 @admin.register(Vehicle)
@@ -17,4 +17,14 @@ class DispatchRequestAdmin(admin.ModelAdmin):
 
     list_display = ('id', 'vehicle_type', 'status', 'assigned_vehicle', 'created_at')
     list_filter = ('status', 'vehicle_type')
+    readonly_fields = ('created_at',)
+
+
+@admin.register(IssueReport)
+class IssueReportAdmin(admin.ModelAdmin):
+    """Admin interface for driver issue reports."""
+
+    list_display = ('id', 'driver', 'resolved', 'created_at')
+    list_filter = ('resolved', 'created_at')
+    search_fields = ('driver__name', 'description')
     readonly_fields = ('created_at',)

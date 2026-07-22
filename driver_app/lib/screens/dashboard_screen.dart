@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'trips_screen.dart';
+import 'report_issue_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -533,7 +534,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             ActionButton(label: 'SOS\nHelp', icon: Icons.emergency_share_rounded, color: AppTheme.errorColor, onTap: () {}),
             ActionButton(label: 'Fuel\nEntry', icon: Icons.local_gas_station_rounded, color: AppTheme.primaryColor, onTap: () {}),
-            ActionButton(label: 'Report\nIssue', icon: Icons.build_circle_rounded, color: const Color(0xFF7C3AED), onTap: () {}),
+            ActionButton(label: 'Report\nIssue', icon: Icons.build_circle_rounded, color: const Color(0xFF7C3AED), onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReportIssueScreen()));
+            }),
             ActionButton(label: 'Inspect\nVehicle', icon: Icons.fact_check_rounded, color: AppTheme.tertiaryColor, onTap: () {}),
           ],
         ),

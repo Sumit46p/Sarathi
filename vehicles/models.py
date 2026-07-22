@@ -250,6 +250,22 @@ class DispatchRequest(models.Model):
         ]
 
 
+class IssueReport(models.Model):
+    """A driver-submitted issue report with optional photo evidence."""
+
+    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='issue_reports')
+    description = models.TextField()
+    image = models.ImageField(upload_to='issue_reports/', blank=True, null=True)
+    resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Issue by {self.driver.name} at {self.created_at}"
+
+
 class MaintenanceRecord(models.Model):
     """Tracks maintenance history and schedules for a vehicle."""
 

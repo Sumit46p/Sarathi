@@ -99,7 +99,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     # Local apps
-    'vehicles',
+    'vehicles.apps.VehiclesConfig',
     'accounts',
 ]
 

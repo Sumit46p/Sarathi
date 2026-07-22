@@ -3,7 +3,7 @@ from django.contrib.gis.geos import Point
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth.password_validation import validate_password
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, IssueReport
 
 
 class LocationField(serializers.Field):
@@ -33,6 +33,15 @@ class LocationField(serializers.Field):
         if not (-180 <= lng <= 180):
             raise serializers.ValidationError('lng must be between -180 and 180')
         return Point(lng, lat, srid=4326)
+
+
+class IssueReportSerializer(serializers.ModelSerializer):
+    image = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = IssueReport
+        fields = ['id', 'driver', 'description', 'image', 'resolved', 'created_at']
+        read_only_fields = ['id', 'driver', 'resolved', 'created_at']
 
 
 class DriverSerializer(serializers.ModelSerializer):

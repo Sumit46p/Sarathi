@@ -10,6 +10,7 @@ urlpatterns = [
     path('vehicles/<int:pk>/update-location/', views.update_location, name='vehicle-update-location'),
     path('vehicles/<int:pk>/assign-driver/', views.assign_driver, name='vehicle-assign-driver'),
     path('vehicles/<int:pk>/dispatch/transition/', views.dispatch_transition, name='vehicle-dispatch-transition'),
+    path('dispatch/active/', views.active_dispatch, name='active-dispatch'),
     path('drivers/', views.DriverListCreateView.as_view(), name='driver-list'),
     path('drivers/me/', views.driver_me, name='driver-me'),
     path('drivers/me/duty/', views.driver_duty, name='driver-duty'),
@@ -20,4 +21,5 @@ urlpatterns = [
     path('maintenance/', views.MaintenanceRecordListCreateView.as_view(), name='maintenance-list'),
     path('maintenance/<int:pk>/', views.MaintenanceRecordDetailView.as_view(), name='maintenance-detail'),
     path('maintenance/upcoming/', views.upcoming_maintenance, name='maintenance-upcoming'),
+    path('drivers/me/report-issue/', views.report_issue, name='driver-report-issue'),
 ]

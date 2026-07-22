@@ -138,6 +138,39 @@ class ApiService {
     }
   }
 
+  static Future<bool> reportIssue({
+    required String description,
+    File? image,
+  }) async {
+    try {
+      final token = await _storage.read(key: 'access_token');
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/api/drivers/me/report-issue/'),
+      );
+
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+      request.fields['description'] = description;
+
+      if (image != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('image', image.path),
+        );
+      }
+
+      final streamed = await request.send().timeout(const Duration(seconds: 30));
+      final response = await http.Response.fromStream(streamed);
+
+      _log('reportIssue status: ${response.statusCode}, body: ${response.body}');
+      return response.statusCode == 201 || response.statusCode == 200;
+    } catch (e) {
+      _log('reportIssue exception: $e');
+      return false;
+    }
+  }
+
   static Future<Map<String, dynamic>?> getMyDispatch() async {
     try {
       final headers = await _authHeaders();

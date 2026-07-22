@@ -9,7 +9,7 @@ from django.utils import timezone
 from .osrm import get_route_distance
 import threading
 
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, IssueReport
 from .serializers import (
     VehicleSerializer,
     LocationUpdateSerializer,
@@ -20,6 +20,7 @@ from .serializers import (
     DriverSerializer,
     AssignDriverSerializer,
     DriverMeSerializer,
+    IssueReportSerializer,
 )
 
 
@@ -126,14 +127,41 @@ def safe_route_geometry(vehicle, dispatch, deadline=3.0):
                 vehicle.location.y, vehicle.location.x,
                 dispatch.request_lat, dispatch.request_lng,
             )
-            result['geom'] = geom
+            result['geometry'] = geom
         except Exception:
-            result['geom'] = None
+            result['geometry'] = None
 
-    thread = threading.Thread(target=_compute, daemon=True)
-    thread.start()
-    thread.join(timeout=deadline)
-    return result.get('geom')
+    worker = threading.Thread(target=_compute, daemon=True)
+    worker.start()
+    worker.join(timeout=deadline)
+    if worker.is_alive():
+        return None
+    return result['geometry']
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def active_dispatch(request):
+    """Return the owner's latest active dispatch with live route geometry."""
+    dispatch = (
+        DispatchRequest.objects
+        .select_related('assigned_vehicle')
+        .filter(
+            assigned_vehicle__owner=request.user,
+            status__in=ACTIVE_DISPATCH_STATUSES,
+        )
+        .order_by('-created_at')
+        .first()
+    )
+    if dispatch is None:
+        return Response(
+            {'error': 'No active dispatch for any of your vehicles'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    data = DispatchRequestSerializer(dispatch).data
+    data['geometry'] = safe_route_geometry(dispatch.assigned_vehicle, dispatch)
+    return Response(data)
 
 
 @api_view(['GET'])
@@ -634,3 +662,40 @@ def upcoming_maintenance(request):
 
     serializer = MaintenanceRecordSerializer(records, many=True)
     return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def report_issue(request):
+    """
+    POST /api/drivers/me/report-issue/
+    Body (multipart/form-data):
+      - description (text, required)
+      - image (file, optional)
+    Creates an issue report for the driver linked to the current user.
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    description = request.data.get('description', '').strip()
+    if not description:
+        return Response(
+            {'error': 'Description is required'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    image = request.data.get('image') if 'image' in request.data else None
+
+    report = IssueReport.objects.create(
+        driver=driver,
+        description=description,
+        image=image,
+    )
+
+    serializer = IssueReportSerializer(report)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
