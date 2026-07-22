@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
+import '../utils/animations.dart';
 import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -164,33 +166,104 @@ class _ProfileScreenState extends State<ProfileScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Column(
           children: [
-            Container(
-              width: 110,
-              height: 110,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 4),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20, offset: const Offset(0, 6))],
-              ),
-              child: ClipOval(
+            AnimatedListItem(
+              index: 0,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.8, end: 1.0),
+                duration: const Duration(milliseconds: 600),
+                curve: Curves.elasticOut,
+                builder: (context, value, child) {
+                  return Transform.scale(
+                    scale: value,
+                    child: child,
+                  );
+                },
                 child: Container(
-                  color: AppTheme.surfaceContainer,
-                  child: const Icon(Icons.person_rounded, size: 52, color: AppTheme.primaryColor),
+                  width: 110,
+                  height: 110,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 4),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                        blurRadius: 25,
+                        offset: const Offset(0, 8),
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 15,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppTheme.surfaceContainer,
+                            AppTheme.surfaceContainerHigh,
+                          ],
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.person_rounded,
+                        size: 52,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            Text(name, style: GoogleFonts.plusJakartaSans(fontSize: 26, fontWeight: FontWeight.w700, color: AppTheme.onSurface, letterSpacing: -0.3)),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.badge_rounded, size: 14, color: AppTheme.outline),
-                const SizedBox(width: 4),
-                Text('Driver ID: ${_driverData?['id'] ?? '—'}', style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppTheme.outline)),
-              ],
+            const SizedBox(height: 16),
+            AnimatedListItem(
+              index: 1,
+              delay: const Duration(milliseconds: 100),
+              child: Text(
+                name,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.onSurface,
+                  letterSpacing: -0.3,
+                ),
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 6),
+            AnimatedListItem(
+              index: 2,
+              delay: const Duration(milliseconds: 100),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.badge_rounded, size: 14, color: AppTheme.primaryColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      'ID: ${_driverData?['id'] ?? '—'}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -198,37 +271,64 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildInfoSection(List<_InfoField> fields) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceLowest,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 20, offset: const Offset(0, 4))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.assignment_ind_rounded, size: 16, color: AppTheme.primaryColor),
-              ),
-              const SizedBox(width: 10),
-              Text('Your Information', style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          for (int i = 0; i < fields.length; i++) ...[
-            _infoRow(fields[i]),
-            if (i != fields.length - 1)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Divider(color: AppTheme.surfaceVariant.withValues(alpha: 0.4), height: 1),
-              ),
+    return AnimatedListItem(
+      index: 3,
+      delay: const Duration(milliseconds: 80),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceLowest,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
           ],
-        ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.assignment_ind_rounded,
+                    size: 18,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Your Information',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            for (int i = 0; i < fields.length; i++) ...[
+              _infoRow(fields[i]),
+              if (i != fields.length - 1)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(
+                    color: AppTheme.surfaceVariant.withValues(alpha: 0.3),
+                    height: 1,
+                  ),
+                ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -267,29 +367,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _logoutTile() {
-    return GestureDetector(
-      onTap: _signOut,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppTheme.errorColor.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Container(width: 40, height: 40, decoration: BoxDecoration(color: AppTheme.errorColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.logout_rounded, color: AppTheme.errorColor, size: 22)),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Logout', style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.errorColor)),
-                  Text('Securely exit your account', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppTheme.errorColor.withValues(alpha: 0.6))),
-                ],
-              ),
+    return AnimatedListItem(
+      index: 4,
+      delay: const Duration(milliseconds: 80),
+      child: BounceScaleButton(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          _signOut();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: AppTheme.errorColor.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: AppTheme.errorColor.withValues(alpha: 0.2),
             ),
-            Icon(Icons.chevron_right_rounded, color: AppTheme.errorColor.withValues(alpha: 0.4)),
-          ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppTheme.errorColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.logout_rounded,
+                  color: AppTheme.errorColor,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Logout',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.errorColor,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Securely exit your account',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: AppTheme.errorColor.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.logout_rounded,
+                color: AppTheme.errorColor.withValues(alpha: 0.5),
+                size: 20,
+              ),
+            ],
+          ),
         ),
       ),
     );

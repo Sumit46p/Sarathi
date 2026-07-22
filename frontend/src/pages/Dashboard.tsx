@@ -168,6 +168,7 @@ export default function Dashboard() {
   const [dispatchResult, setDispatchResult] = useState<DispatchResult | null>(null);
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [activeDispatch, setActiveDispatch] = useState<DispatchResult | null>(null);
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -191,8 +192,23 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchActiveDispatch = useCallback(async () => {
+    try {
+      const response = await api.get('/dispatch/active/');
+      setActiveDispatch(response.data);
+    } catch (error) {
+      if ((error as { response?: { status?: number } })?.response?.status === 404) {
+        setActiveDispatch(null);
+        setDispatchResult(null);
+      } else {
+        console.error('Failed to fetch active dispatch', error);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
+
     const load = async () => {
       try {
         const profile = await api.get('/auth/me/');
@@ -206,13 +222,21 @@ export default function Dashboard() {
       } catch (error) {
         console.error('Failed to fetch user profile', error);
       }
-      await Promise.all([fetchVehicles(), fetchDrivers()]);
+      await Promise.all([fetchVehicles(), fetchDrivers(), fetchActiveDispatch()]);
       if (mounted) setInitialLoading(false);
     };
+
     load();
-    const interval = window.setInterval(() => { fetchVehicles(); fetchDrivers(); }, 5000);
-    return () => { mounted = false; window.clearInterval(interval); };
-  }, [fetchDrivers, fetchVehicles]);
+    const interval = window.setInterval(() => {
+      fetchVehicles();
+      fetchDrivers();
+      fetchActiveDispatch();
+    }, 5000);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, [fetchDrivers, fetchVehicles, fetchActiveDispatch]);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
@@ -438,6 +462,7 @@ export default function Dashboard() {
                   return vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={createVehicleIcon(vehicle.is_available)}><Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={popupTextClass}>{statusInfo.label}</span></div></Popup></Marker>;
                 })}
                 {requestMarker && <Marker position={[requestMarker.lat, requestMarker.lng]} icon={requestIcon}><Popup><div className="map-popup"><strong>Dispatch request</strong><span>{requestMarker.lat.toFixed(5)}, {requestMarker.lng.toFixed(5)}</span></div></Popup></Marker>}
+                {activeDispatch?.geometry?.length ? <Polyline positions={activeDispatch.geometry} pathOptions={{ color: '#059669', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : null}
                 {dispatchResult?.geometry?.length ? <Polyline positions={dispatchResult.geometry} pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : dispatchResult && requestMarker && <Polyline positions={[[requestMarker.lat, requestMarker.lng], [dispatchResult.assigned_vehicle.lat, dispatchResult.assigned_vehicle.lng]]} pathOptions={{ color: '#2563eb', weight: 4, dashArray: '8 7', opacity: 0.85 }} />}
               </MapContainer>
               <div className="map-hint"><CircleDot size={13} />Click the map to place a request</div>

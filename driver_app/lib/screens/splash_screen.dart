@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import '../utils/animations.dart';
 import 'login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -9,40 +10,87 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
+class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+  late AnimationController _logoController;
+  late AnimationController _textController;
+  late AnimationController _pulseController;
+  
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
+  late Animation<double> _textFadeAnimation;
+  late Animation<Offset> _textSlideAnimation;
+  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
     super.initState();
     
-    _animationController = AnimationController(
+    // Logo animation
+    _logoController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1200),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+    _scaleAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
       CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeOutBack,
+        parent: _logoController,
+        curve: Curves.elasticOut,
       ),
     );
 
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
-        parent: _animationController,
-        curve: const Interval(0.2, 1.0, curve: Curves.easeIn),
+        parent: _logoController,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
       ),
     );
 
-    _animationController.forward();
+    // Text animation
+    _textController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
 
-    Future.delayed(const Duration(seconds: 3), () {
+    _textFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _textController,
+        curve: Curves.easeIn,
+      ),
+    );
+
+    _textSlideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _textController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+
+    // Pulse animation for loading indicator
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _pulseController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    // Start animations sequence
+    _logoController.forward();
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) _textController.forward();
+    });
+
+    Future.delayed(const Duration(milliseconds: 2800), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          SmoothPageRoute(page: const LoginScreen()),
         );
       }
     });
@@ -50,7 +98,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _logoController.dispose();
+    _textController.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -59,83 +109,145 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     return Scaffold(
       body: Container(
         width: double.infinity,
-        color: AppTheme.background,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppTheme.background,
+              AppTheme.primaryColor.withValues(alpha: 0.05),
+              AppTheme.background,
+            ],
+            stops: const [0.0, 0.5, 1.0],
+          ),
+        ),
         child: SafeArea(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const SizedBox(height: 48),
               
-              AnimatedBuilder(
-                animation: _animationController,
-                builder: (context, child) {
-                  return Transform.scale(
-                    scale: _scaleAnimation.value,
-                    child: Opacity(
-                      opacity: _fadeAnimation.value,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(24),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.05),
-                                  blurRadius: 10,
-                                  spreadRadius: 2,
+              // Logo and text animations
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    AnimatedBuilder(
+                      animation: _logoController,
+                      builder: (context, child) {
+                        return Transform.scale(
+                          scale: _scaleAnimation.value,
+                          child: Opacity(
+                            opacity: _fadeAnimation.value,
+                            child: Container(
+                              padding: const EdgeInsets.all(28),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.primaryColor.withValues(alpha: 0.15),
+                                    blurRadius: 30,
+                                    spreadRadius: 5,
+                                  ),
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.05),
+                                    blurRadius: 15,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: const CircleAvatar(
+                                radius: 50,
+                                backgroundColor: Colors.transparent,
+                                backgroundImage: AssetImage('assets/images/logo.png'),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 32),
+                    SlideTransition(
+                      position: _textSlideAnimation,
+                      child: FadeTransition(
+                        opacity: _textFadeAnimation,
+                        child: Column(
+                          children: [
+                            ShaderMask(
+                              shaderCallback: (bounds) => LinearGradient(
+                                colors: [
+                                  AppTheme.primaryColor,
+                                  AppTheme.primaryColor.withValues(alpha: 0.8),
+                                ],
+                              ).createShader(bounds),
+                              child: const Text(
+                                'Sarathi Driver',
+                                style: TextStyle(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
                                 ),
-                              ],
+                              ),
                             ),
-                            child: const CircleAvatar(
-                              radius: 40,
-                              backgroundColor: Colors.transparent,
-                              backgroundImage: AssetImage('assets/images/logo.png'),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Smart Fleet Management',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: AppTheme.outline,
+                                letterSpacing: 1.0,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 24),
-                          const Text(
-                            'Sarathi Driver',
-                            style: TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.onSurface,
-                              letterSpacing: 1.2,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Smart Fleet Management',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: AppTheme.outline,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  );
-                },
+                  ],
+                ),
               ),
 
+              // Loading indicator
               Padding(
-                padding: const EdgeInsets.only(bottom: 32),
+                padding: const EdgeInsets.only(bottom: 48),
                 child: Column(
                   children: [
-                    const CircularProgressIndicator(
-                      color: AppTheme.primaryColor,
-                      strokeWidth: 3,
+                    ScaleTransition(
+                      scale: _pulseAnimation,
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [
+                              AppTheme.primaryColor,
+                              AppTheme.primaryColor.withValues(alpha: 0.6),
+                            ],
+                          ),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 3,
+                          ),
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Powered by Sarathi',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppTheme.outline,
-                        fontWeight: FontWeight.w500,
+                    const SizedBox(height: 28),
+                    FadeTransition(
+                      opacity: _textFadeAnimation,
+                      child: Text(
+                        'Powered by Sarathi',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.outline,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
                   ],

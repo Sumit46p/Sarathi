@@ -16,7 +16,23 @@ const Login = () => {
     setError('');
     try {
       const response = await authApi.post('/auth/login/', { username, password });
+      
+      // Temporarily set token to fetch user profile
       localStorage.setItem('accessToken', response.data.access);
+      
+      try {
+        const profileResponse = await authApi.get('/auth/me/');
+        if (!profileResponse.data.organization_type) {
+          localStorage.removeItem('accessToken');
+          setError('Access denied. Driver accounts cannot access the admin dashboard.');
+          return;
+        }
+      } catch (err) {
+        localStorage.removeItem('accessToken');
+        setError('Failed to verify account type.');
+        return;
+      }
+
       localStorage.setItem('refreshToken', response.data.refresh);
       navigate('/dashboard');
     } catch {

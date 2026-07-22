@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -8,6 +9,7 @@ import 'dart:async';
 import '../theme.dart';
 import '../widgets/action_button.dart';
 import '../services/api_service.dart';
+import '../utils/animations.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'trips_screen.dart';
@@ -347,20 +349,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildNavItem(_NavItem item, int index) {
     final isActive = _selectedIndex == index;
     return GestureDetector(
-      onTap: () => _onItemTapped(index),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        _onItemTapped(index);
+      },
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 64,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (isActive)
-              Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 4), decoration: BoxDecoration(color: AppTheme.primaryColor, borderRadius: BorderRadius.circular(2)))
-            else
-              const SizedBox(height: 8),
-            AnimatedScale(scale: isActive ? 1.1 : 1.0, duration: const Duration(milliseconds: 200), child: Icon(isActive ? item.activeIcon : item.icon, color: isActive ? AppTheme.primaryColor : AppTheme.outline, size: 24)),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              width: isActive ? 40 : 0,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            if (!isActive) const SizedBox(height: 8),
+            AnimatedScale(
+              scale: isActive ? 1.15 : 1.0,
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              child: Icon(
+                isActive ? item.activeIcon : item.icon,
+                color: isActive ? AppTheme.primaryColor : AppTheme.outline,
+                size: 24,
+              ),
+            ),
             const SizedBox(height: 2),
-            Text(item.label, style: GoogleFonts.plusJakartaSans(fontSize: 10, fontWeight: isActive ? FontWeight.w700 : FontWeight.w500, color: isActive ? AppTheme.primaryColor : AppTheme.outline, letterSpacing: 0.3)),
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 10,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: isActive ? AppTheme.primaryColor : AppTheme.outline,
+                letterSpacing: 0.3,
+              ),
+              child: Text(item.label),
+            ),
           ],
         ),
       ),
@@ -372,15 +404,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline_rounded, size: 48, color: AppTheme.errorColor),
-              const SizedBox(height: 16),
-              Text(_errorMsg!, textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor)),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(onPressed: _loadProfile, icon: const Icon(Icons.refresh_rounded), label: Text('Retry', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)), style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryColor, foregroundColor: Colors.white)),
-            ],
+          child: AnimatedListItem(
+            index: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 600),
+                  curve: Curves.elasticOut,
+                  builder: (context, value, child) {
+                    return Transform.scale(
+                      scale: value,
+                      child: child,
+                    );
+                  },
+                  child: const Icon(Icons.error_outline_rounded, size: 48, color: AppTheme.errorColor),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMsg!,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    _loadProfile();
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text('Retry', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -403,9 +464,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                 _buildVehicleCard(vehicleName, vehicleType, plate),
+                AnimatedListItem(
+                  index: 0,
+                  delay: const Duration(milliseconds: 80),
+                  child: _buildVehicleCard(vehicleName, vehicleType, plate),
+                ),
                 const SizedBox(height: 24),
-                _buildDutyToggle(),
+                AnimatedListItem(
+                  index: 1,
+                  delay: const Duration(milliseconds: 80),
+                  child: _buildDutyToggle(),
+                ),
                 if (_isAvailable && _lastLocationStatus != null) ...[
                   const SizedBox(height: 12),
                   Padding(
@@ -417,7 +486,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
                 const SizedBox(height: 24),
-                _buildQuickActionsSection(),
+                AnimatedListItem(
+                  index: 2,
+                  delay: const Duration(milliseconds: 80),
+                  child: _buildQuickActionsSection(),
+                ),
               ],
             ),
           ),
@@ -556,7 +629,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       decoration: BoxDecoration(
         color: AppTheme.surfaceLowest,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 20, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(18),
       child: Row(
@@ -564,14 +643,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.power_settings_new_rounded, color: _isAvailable ? AppTheme.secondaryColor : AppTheme.outline, size: 22),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (_isAvailable ? AppTheme.secondaryColor : AppTheme.outline)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.power_settings_new_rounded,
+                  color: _isAvailable ? AppTheme.secondaryColor : AppTheme.outline,
+                  size: 20,
+                ),
+              ),
               const SizedBox(width: 12),
-              Text('On Duty', style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'On Duty',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.onSurface,
+                    ),
+                  ),
+                  AnimatedOpacity(
+                    opacity: 1.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: Text(
+                      _isAvailable ? 'Available for trips' : 'Currently offline',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        color: AppTheme.outline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           Switch(
             value: _isAvailable,
-            onChanged: _toggleAvailability,
+            onChanged: (value) {
+              HapticFeedback.mediumImpact();
+              _toggleAvailability(value);
+            },
             activeColor: Colors.white,
             activeTrackColor: AppTheme.secondaryColor,
           ),
@@ -581,6 +700,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildQuickActionsSection() {
+    final actions = [
+      _ActionData('SOS\nHelp', Icons.emergency_share_rounded, AppTheme.errorColor, _handleSOS),
+      _ActionData('Fuel\nEntry', Icons.local_gas_station_rounded, AppTheme.primaryColor, () => _handleCameraAction('Fuel Entry', 'fuel')),
+      _ActionData('Report\nIssue', Icons.build_circle_rounded, const Color(0xFF7C3AED), () {
+        HapticFeedback.lightImpact();
+        Navigator.of(context).push(
+          SmoothPageRoute(page: const ReportIssueScreen()),
+        );
+      }),
+      _ActionData('Inspect\nVehicle', Icons.fact_check_rounded, AppTheme.tertiaryColor, () => _handleCameraAction('Inspect Vehicle', 'inspect')),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -588,29 +719,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
               child: const Icon(Icons.flash_on_rounded, size: 16, color: AppTheme.primaryColor),
             ),
             const SizedBox(width: 10),
-            Text('Quick Actions', style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
+            Text(
+              'Quick Actions',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.onSurface,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 14),
-        GridView.count(
-          crossAxisCount: 4,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 0.7,
+        GridView.builder(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 0.7,
+          ),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          children: [
-            ActionButton(label: 'SOS\nHelp', icon: Icons.emergency_share_rounded, color: AppTheme.errorColor, onTap: _handleSOS),
-            ActionButton(label: 'Fuel\nEntry', icon: Icons.local_gas_station_rounded, color: AppTheme.primaryColor, onTap: () => _handleCameraAction('Fuel Entry', 'fuel')),
-            ActionButton(label: 'Report\nIssue', icon: Icons.build_circle_rounded, color: const Color(0xFF7C3AED), onTap: () {
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReportIssueScreen()));
-            }),
-            ActionButton(label: 'Inspect\nVehicle', icon: Icons.fact_check_rounded, color: AppTheme.tertiaryColor, onTap: () => _handleCameraAction('Inspect Vehicle', 'inspect')),
-          ],
+          itemCount: actions.length,
+          itemBuilder: (context, index) {
+            final action = actions[index];
+            return AnimatedListItem(
+              index: index,
+              delay: const Duration(milliseconds: 60),
+              child: ActionButton(
+                label: action.label,
+                icon: action.icon,
+                color: action.color,
+                onTap: action.onTap,
+              ),
+            );
+          },
         ),
       ],
     );
@@ -769,4 +918,12 @@ class _NavItem {
   final IconData activeIcon;
   final String label;
   const _NavItem({required this.icon, required this.activeIcon, required this.label});
+}
+
+class _ActionData {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionData(this.label, this.icon, this.color, this.onTap);
 }
