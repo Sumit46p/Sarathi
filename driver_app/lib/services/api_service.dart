@@ -2,9 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
 
 class ApiService {
-  static const String _baseUrl = 'http://10.47.169.138:8000';
+  // Using 127.0.0.1 on all platforms because:
+  // - On physical Android: adb reverse tcp:8000 tcp:8000 tunnels it to the PC
+  // - On emulator: 10.0.2.2 would be needed but adb reverse works too
+  // - On desktop/web: 127.0.0.1 is localhost directly
+  // Run `adb reverse tcp:8000 tcp:8000` each time you connect the phone.
+  static const String _baseUrl = 'http://127.0.0.1:8000';
+
   static const _storage = FlutterSecureStorage();
 
   static const Map<String, String> _jsonHeaders = {
@@ -88,6 +95,47 @@ class ApiService {
     } catch (e) {
       _log('getDriverMe exception: $e');
       return null;
+    }
+  }
+
+  static Future<bool> changePassword(String newPassword) async {
+    try {
+      final headers = await _authHeaders();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/drivers/me/change-password/'),
+            headers: headers,
+            body: jsonEncode({'new_password': newPassword}),
+          )
+          .timeout(const Duration(seconds: 15));
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('changePassword exception: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> resetPassword({
+    required String username,
+    required String licenseNumber,
+    required String newPassword,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/drivers/reset-password/'),
+            headers: _jsonHeaders,
+            body: jsonEncode({
+              'username': username,
+              'license_number': licenseNumber,
+              'new_password': newPassword,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('resetPassword exception: $e');
+      return false;
     }
   }
 

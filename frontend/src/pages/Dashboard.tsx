@@ -356,7 +356,7 @@ export default function Dashboard() {
   return (
     <div className="dashboard-layout">
       <aside className="sidebar" aria-label="Primary navigation">
-        <div className="sidebar-header"><div className="brand-mark"><Navigation size={18} /></div><div><strong>Sarthi</strong><span>Fleet operations</span></div></div>
+        <div className="sidebar-header"><div className="brand-mark" style={{ background: 'transparent' }}><img src="/logo.png" alt="Sarathi" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /></div><div><strong>Sarthi</strong><span>Fleet operations</span></div></div>
         <nav className="sidebar-nav">
           <p className="nav-label">Workspace</p>
           <button id="nav-overview" className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => switchTab('dashboard')}><LayoutDashboard size={17} /><span>Overview</span></button>

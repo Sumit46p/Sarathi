@@ -100,13 +100,21 @@ class DriverDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     GET    /api/drivers/<id>/  — detail of one driver
     PATCH  /api/drivers/<id>/  — partial update
-    DELETE /api/drivers/<id>/  — remove a driver
+    DELETE /api/drivers/<id>/  — remove a driver AND its linked User account
     """
     serializer_class = DriverSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return Driver.objects.filter(owner=self.request.user)
+
+    def perform_destroy(self, instance):
+        """Delete the linked Django User when the driver is removed so the
+        username can be reused immediately."""
+        linked_user = instance.user
+        instance.delete()
+        if linked_user is not None:
+            linked_user.delete()
 
 
 def safe_route_geometry(vehicle, dispatch, deadline=3.0):
@@ -198,11 +206,71 @@ def driver_me(request):
         'phone_number': driver.phone_number,
         'license_number': driver.license_number,
         'is_active': driver.is_active,
+        'requires_password_change': driver.requires_password_change,
         'is_on_duty': driver.is_on_duty,
         'assigned_vehicle': assigned_vehicle,
     }
     serializer = DriverMeSerializer(data)
     return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def driver_change_password(request):
+    """
+    POST /api/drivers/me/change-password/
+    Body: {"new_password": "..."}
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response({'error': 'Driver profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    new_password = request.data.get('new_password')
+    if not new_password or len(new_password) < 6:
+        return Response({'error': 'Password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    user.set_password(new_password)
+    user.save()
+
+    driver.requires_password_change = False
+    driver.save(update_fields=['requires_password_change'])
+
+    return Response({'success': True})
+
+
+@api_view(['POST'])
+def reset_password(request):
+    """
+    POST /api/drivers/reset-password/
+    Body: {"username": "...", "license_number": "...", "new_password": "..."}
+    Allows resetting password if username and license match.
+    """
+    username = request.data.get('username')
+    license_number = request.data.get('license_number')
+    new_password = request.data.get('new_password')
+
+    if not all([username, license_number, new_password]):
+        return Response({'error': 'Missing required fields'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if len(new_password) < 6:
+        return Response({'error': 'Password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        from django.contrib.auth.models import User
+        user = User.objects.get(username=username)
+        driver = Driver.objects.get(user=user, license_number=license_number)
+    except (User.DoesNotExist, Driver.DoesNotExist):
+        return Response({'error': 'Invalid username or license number'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.set_password(new_password)
+    user.save()
+
+    driver.requires_password_change = False
+    driver.save(update_fields=['requires_password_change'])
+
+    return Response({'success': True})
 
 
 @api_view(['PATCH'])

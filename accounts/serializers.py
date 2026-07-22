@@ -35,7 +35,13 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
         return super().validate(attrs)
 
 class UserSerializer(serializers.ModelSerializer):
-    organization_type = serializers.CharField(source='profile.organization_type', read_only=True)
+    organization_type = serializers.SerializerMethodField()
+
+    def get_organization_type(self, obj):
+        try:
+            return obj.profile.organization_type
+        except Exception:
+            return None
 
     class Meta:
         model = User

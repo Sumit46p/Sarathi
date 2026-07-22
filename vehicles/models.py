@@ -8,6 +8,10 @@ class Driver(models.Model):
     phone_number = models.CharField(max_length=20)
     license_number = models.CharField(max_length=50, unique=True)
     is_active = models.BooleanField(default=True)
+    requires_password_change = models.BooleanField(
+        default=True,
+        help_text='Forces driver to change password on first login.',
+    )
     is_on_duty = models.BooleanField(
         default=False,
         db_index=True,

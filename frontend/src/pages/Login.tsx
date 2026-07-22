@@ -31,8 +31,8 @@ const Login = () => {
       </div>
       <div className="auth-card glass-panel">
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Lock size={28} color="var(--primary)" strokeWidth={2} />
+          <div style={{ width: '80px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img src="/logo.png" alt="Sarathi Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
         </div>
         <h2 className="auth-title">Welcome Back</h2>

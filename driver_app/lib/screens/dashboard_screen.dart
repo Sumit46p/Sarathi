@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import '../theme.dart';
 import '../widgets/action_button.dart';
@@ -59,6 +62,75 @@ class _DashboardScreenState extends State<DashboardScreen> {
       await _ensureLocationPermission();
       _startLocationTracking();
     }
+
+    if (data?['requires_password_change'] == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showPasswordChangeDialog();
+      });
+    }
+  }
+
+  void _showPasswordChangeDialog() {
+    final passwordController = TextEditingController();
+    bool isLoading = false;
+    String? errorMessage;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Text('Change Password', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('You must change your password before continuing.', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: 'New Password',
+                    border: const OutlineInputBorder(),
+                    errorText: errorMessage,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: isLoading ? null : () async {
+                  final newPassword = passwordController.text;
+                  if (newPassword.length < 6) {
+                    setDialogState(() => errorMessage = 'Must be at least 6 characters');
+                    return;
+                  }
+                  setDialogState(() {
+                    isLoading = true;
+                    errorMessage = null;
+                  });
+                  final success = await ApiService.changePassword(newPassword);
+                  if (success) {
+                    if (mounted) Navigator.of(ctx).pop();
+                  } else {
+                    setDialogState(() {
+                      isLoading = false;
+                      errorMessage = 'Failed to change password.';
+                    });
+                  }
+                },
+                child: isLoading
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text('Update Password', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: AppTheme.primaryColor)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _toggleAvailability(bool value) async {
@@ -532,15 +604,137 @@ class _DashboardScreenState extends State<DashboardScreen> {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: [
-            ActionButton(label: 'SOS\nHelp', icon: Icons.emergency_share_rounded, color: AppTheme.errorColor, onTap: () {}),
-            ActionButton(label: 'Fuel\nEntry', icon: Icons.local_gas_station_rounded, color: AppTheme.primaryColor, onTap: () {}),
+            ActionButton(label: 'SOS\nHelp', icon: Icons.emergency_share_rounded, color: AppTheme.errorColor, onTap: _handleSOS),
+            ActionButton(label: 'Fuel\nEntry', icon: Icons.local_gas_station_rounded, color: AppTheme.primaryColor, onTap: () => _handleCameraAction('Fuel Entry', 'fuel')),
             ActionButton(label: 'Report\nIssue', icon: Icons.build_circle_rounded, color: const Color(0xFF7C3AED), onTap: () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReportIssueScreen()));
             }),
-            ActionButton(label: 'Inspect\nVehicle', icon: Icons.fact_check_rounded, color: AppTheme.tertiaryColor, onTap: () {}),
+            ActionButton(label: 'Inspect\nVehicle', icon: Icons.fact_check_rounded, color: AppTheme.tertiaryColor, onTap: () => _handleCameraAction('Inspect Vehicle', 'inspect')),
           ],
         ),
       ],
+    );
+  }
+
+  /// SOS — shows a confirmation dialog then dials emergency services.
+  void _handleSOS() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: Colors.red[50],
+        title: Row(
+          children: [
+            const Icon(Icons.emergency_share_rounded, color: Colors.red, size: 26),
+            const SizedBox(width: 10),
+            Text('SOS Emergency', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: Colors.red)),
+          ],
+        ),
+        content: Text(
+          'This will call emergency services (100).\nOnly use this in a real emergency.',
+          style: GoogleFonts.plusJakartaSans(color: Colors.red[800]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline, fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.call_rounded, size: 18),
+            label: Text('Call 100', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              final uri = Uri(scheme: 'tel', path: '100');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri);
+              } else if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Could not open the dialler'), backgroundColor: Colors.red),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Opens camera then shows a note dialog for Fuel Entry / Report / Inspect.
+  Future<void> _handleCameraAction(String title, String type) async {
+    final status = await Permission.camera.request();
+    if (status.isDenied || status.isPermanentlyDenied) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Camera permission is required for this action.'), backgroundColor: Colors.red),
+      );
+      if (status.isPermanentlyDenied) {
+         openAppSettings();
+      }
+      return;
+    }
+
+    final picker = ImagePicker();
+    XFile? image;
+    try {
+      image = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera error: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+
+    if (image == null || !mounted) return; // User cancelled
+
+    final notesController = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(title, style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Photo captured ✓', style: GoogleFonts.plusJakartaSans(color: Colors.green, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notesController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: 'Add notes (optional)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('$title logged successfully'),
+                    backgroundColor: AppTheme.primaryColor,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: Text('Save Log', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
     );
   }
 

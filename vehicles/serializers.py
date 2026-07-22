@@ -160,6 +160,7 @@ class DriverMeSerializer(serializers.Serializer):
     phone_number = serializers.CharField()
     license_number = serializers.CharField()
     is_active = serializers.BooleanField()
+    requires_password_change = serializers.BooleanField()
     is_on_duty = serializers.BooleanField()
     assigned_vehicle = AssignedVehicleSerializer(allow_null=True)
 
