@@ -20,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   late Animation<Offset> _slideAnimation;
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
+  final _organizationController = TextEditingController();
   final _passwordController = TextEditingController();
   final _usernameFocus = FocusNode();
   final _passwordFocus = FocusNode();
@@ -63,9 +64,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       setState(() => _isLoading = true);
 
       final username = _usernameController.text.trim();
+      final organizationName = _organizationController.text.trim();
       final password = _passwordController.text;
 
-      final success = await ApiService.login(username: username, password: password);
+      final success = await ApiService.login(username: username, organizationName: organizationName, password: password);
 
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -85,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Invalid username or password',
+                    'Invalid username, organization, or password',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -107,6 +109,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   void dispose() {
     _animationController.dispose();
     _usernameController.dispose();
+    _organizationController.dispose();
     _passwordController.dispose();
     _usernameFocus.dispose();
     _passwordFocus.dispose();
@@ -132,208 +135,163 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Logo with hero animation
-                      Hero(
-                        tag: 'app_logo',
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppTheme.primaryColor.withOpacity(0.1),
-                                  blurRadius: 20,
-                                  spreadRadius: 5,
-                                ),
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 10,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: const CircleAvatar(
-                              radius: 50,
-                              backgroundColor: Colors.transparent,
-                              backgroundImage: AssetImage('assets/images/logo.png'),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                      
-                      // Title with gradient
-                      ShaderMask(
-                        shaderCallback: (bounds) => LinearGradient(
-                          colors: [
-                            AppTheme.primaryColor,
-                            AppTheme.primaryColor.withValues(alpha: 0.8),
-                          ],
-                        ).createShader(bounds),
-                        child: const Text(
-                          'Welcome Back',
-                          style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w800,
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
                             color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 10,
+                                spreadRadius: 2,
+                              ),
+                            ],
                           ),
-                          textAlign: TextAlign.center,
+                          child: const CircleAvatar(
+                            radius: 50,
+                            backgroundColor: Colors.transparent,
+                            backgroundImage: AssetImage('assets/images/logo.png'),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 24),
                       Text(
-                        'Sign in to continue',
+                        'Sarathi',
                         style: TextStyle(
-                          fontSize: 15,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                          fontWeight: FontWeight.w500,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 40),
-
-                      // Username field with animation
-                      AnimatedListItem(
-                        index: 0,
-                        delay: const Duration(milliseconds: 100),
-                        child: TextFormField(
-                          controller: _usernameController,
-                          focusNode: _usernameFocus,
-                          textInputAction: TextInputAction.next,
-                          onFieldSubmitted: (_) {
-                            _passwordFocus.requestFocus();
-                          },
-                          decoration: const InputDecoration(
-                            labelText: 'Username',
-                            hintText: 'Enter your username',
-                            prefixIcon: Icon(Icons.person_outline_rounded),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your username';
-                            }
-                            return null;
-                          },
+                      const SizedBox(height: 8),
+                      Text(
+                        'Smart Fleet Management',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 32),
 
-                      // Password field with animation
-                      AnimatedListItem(
-                        index: 1,
-                        delay: const Duration(milliseconds: 100),
-                        child: TextFormField(
-                          controller: _passwordController,
-                          focusNode: _passwordFocus,
-                          obscureText: _obscurePassword,
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _handleLogin(),
-                          decoration: InputDecoration(
-                            labelText: 'Password',
-                            hintText: 'Enter your password',
-                            prefixIcon: const Icon(Icons.lock_outline_rounded),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off_rounded
-                                    : Icons.visibility_rounded,
-                              ),
-                              onPressed: () {
-                                HapticFeedback.selectionClick();
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
+                      TextFormField(
+                        controller: _usernameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Username',
+                          hintText: 'Enter your username',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter your username';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      TextFormField(
+                        controller: _organizationController,
+                        decoration: const InputDecoration(
+                          labelText: 'Organization Name',
+                          hintText: 'Enter your organization name',
+                          prefixIcon: Icon(Icons.business_outlined),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter your organization name';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      TextFormField(
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility_off : Icons.visibility,
                             ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your password';
-                            }
-                            if (value.length < 6) {
-                              return 'Password must be at least 6 characters';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      AnimatedListItem(
-                        index: 2,
-                        delay: const Duration(milliseconds: 100),
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
                             onPressed: () {
-                              Navigator.of(context).push(
-                                SmoothPageRoute(page: const ForgotPasswordScreen()),
-                              );
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
                             },
-                            child: const Text(
-                              'Forgot Password?',
-                              style: TextStyle(
-                                color: AppTheme.primaryColor,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter your password';
+                          }
+                          if (value.length < 6) {
+                            return 'Password must be at least 6 characters';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const ForgotPasswordScreen()),
+                            );
+                          },
+                          child: Text(
+                            'Forgot Password?',
+                            style: TextStyle(
+                              color: AppTheme.primaryColor,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(height: 24),
 
-                      // Login button with animation
-                      AnimatedListItem(
-                        index: 3,
-                        delay: const Duration(milliseconds: 100),
-                        child: PrimaryButton(
-                          text: 'Login',
-                          isLoading: _isLoading,
-                          onPressed: _handleLogin,
-                        ),
+                      PrimaryButton(
+                        text: 'Login',
+                        isLoading: _isLoading,
+                        onPressed: _handleLogin,
                       ),
 
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
 
-                      // Sign up link with animation
-                      AnimatedListItem(
-                        index: 3,
-                        delay: const Duration(milliseconds: 100),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              "Don't have an account? ",
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            "Don't have an account? ",
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              Navigator.of(context).push(
+                                SmoothPageRoute(
+                                  page: const SignupMessageScreen(),
+                                ),
+                              );
+                            },
+                            child: const Text(
+                              'Sign Up',
                               style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withOpacity(0.7),
+                                color: AppTheme.primaryColor,
+                                fontWeight: FontWeight.w700,
                                 fontSize: 14,
                               ),
                             ),
-                            GestureDetector(
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                Navigator.of(context).push(
-                                  SmoothPageRoute(
-                                    page: const SignupMessageScreen(),
-                                  ),
-                                );
-                              },
-                              child: const Text(
-                                'Sign Up',
-                                style: TextStyle(
-                                  color: AppTheme.primaryColor,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

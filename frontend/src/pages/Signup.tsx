@@ -8,7 +8,7 @@ const Signup = () => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [organizationType, setOrganizationType] = useState('ambulance');
+  const [organizationName, setOrganizationName] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
@@ -17,9 +17,8 @@ const Signup = () => {
     e.preventDefault();
     setError('');
     try {
-      await authApi.post('/auth/register/', { username, email, password, organization_type: organizationType });
-      // After registration, directly login or redirect to login
-      const response = await authApi.post('/auth/login/', { username, password });
+      await authApi.post('/auth/register/', { username, email, password, organization_name: organizationName });
+      const response = await authApi.post('/auth/login/', { username, password, organization_name: organizationName });
       localStorage.setItem('accessToken', response.data.access);
       localStorage.setItem('refreshToken', response.data.refresh);
       navigate('/dashboard');
@@ -119,17 +118,15 @@ const Signup = () => {
           </div>
 
           <div className="form-group">
-            <label>Organization Type</label>
-            <select
+            <label>Organization Name</label>
+            <input
+              type="text"
               className="input-field"
-              value={organizationType}
-              onChange={(e) => setOrganizationType(e.target.value)}
+              placeholder="e.g. City Hospital"
+              value={organizationName}
+              onChange={(e) => setOrganizationName(e.target.value)}
               required
-            >
-              <option value="ambulance">Ambulance</option>
-              <option value="logistics">Logistics</option>
-              <option value="municipal">Municipal</option>
-            </select>
+            />
           </div>
           <button type="submit" className="btn-primary" style={{ marginTop: '12px' }}>
             Sign Up

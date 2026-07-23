@@ -244,25 +244,26 @@ def driver_change_password(request):
 def reset_password(request):
     """
     POST /api/drivers/reset-password/
-    Body: {"username": "...", "license_number": "...", "new_password": "..."}
-    Allows resetting password if username and license match.
+    Body: {"username": "...", "organization_name": "...", "new_password": "..."}
+    Allows resetting password after verifying username and organization name.
     """
     username = request.data.get('username')
-    license_number = request.data.get('license_number')
+    organization_name = request.data.get('organization_name')
     new_password = request.data.get('new_password')
 
-    if not all([username, license_number, new_password]):
+    if not all([username, organization_name, new_password]):
         return Response({'error': 'Missing required fields'}, status=status.HTTP_400_BAD_REQUEST)
     
     if len(new_password) < 6:
         return Response({'error': 'Password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        from django.contrib.auth.models import User
         user = User.objects.get(username=username)
-        driver = Driver.objects.get(user=user, license_number=license_number)
+        if not hasattr(user, 'profile') or user.profile.organization_name != organization_name:
+            return Response({'error': 'Invalid organization name'}, status=status.HTTP_400_BAD_REQUEST)
+        driver = Driver.objects.get(user=user)
     except (User.DoesNotExist, Driver.DoesNotExist):
-        return Response({'error': 'Invalid username or license number'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Invalid username or organization name'}, status=status.HTTP_400_BAD_REQUEST)
 
     user.set_password(new_password)
     user.save()
@@ -271,6 +272,30 @@ def reset_password(request):
     driver.save(update_fields=['requires_password_change'])
 
     return Response({'success': True})
+
+
+@api_view(['POST'])
+def verify_driver_identity(request):
+    """
+    POST /api/drivers/verify-identity/
+    Body: {"username": "...", "organization_name": "..."}
+    Verifies if a driver exists for the given username and organization name.
+    """
+    username = request.data.get('username')
+    organization_name = request.data.get('organization_name')
+
+    if not all([username, organization_name]):
+        return Response({'error': 'Missing required fields'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(username=username)
+        if not hasattr(user, 'profile') or user.profile.organization_name != organization_name:
+            return Response({'error': 'Invalid organization name'}, status=status.HTTP_400_BAD_REQUEST)
+        driver = Driver.objects.get(user=user)
+    except (User.DoesNotExist, Driver.DoesNotExist):
+        return Response({'error': 'No driver account found'}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({'success': True, 'message': 'Identity verified'})
 
 
 @api_view(['PATCH'])

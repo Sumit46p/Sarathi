@@ -47,6 +47,7 @@ class ApiService {
   static Future<bool> login({
     required String username,
     required String password,
+    required String organizationName,
   }) async {
     try {
       final response = await http
@@ -56,6 +57,7 @@ class ApiService {
             body: jsonEncode({
               'username': username,
               'password': password,
+              'organization_name': organizationName,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -117,7 +119,7 @@ class ApiService {
 
   static Future<bool> resetPassword({
     required String username,
-    required String licenseNumber,
+    required String organizationName,
     required String newPassword,
   }) async {
     try {
@@ -127,7 +129,7 @@ class ApiService {
             headers: _jsonHeaders,
             body: jsonEncode({
               'username': username,
-              'license_number': licenseNumber,
+              'organization_name': organizationName,
               'new_password': newPassword,
             }),
           )
@@ -135,6 +137,28 @@ class ApiService {
       return response.statusCode == 200;
     } catch (e) {
       _log('resetPassword exception: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> verifyForgotPasswordIdentity({
+    required String username,
+    required String organizationName,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/drivers/verify-identity/'),
+            headers: _jsonHeaders,
+            body: jsonEncode({
+              'username': username,
+              'organization_name': organizationName,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('verifyForgotPasswordIdentity exception: $e');
       return false;
     }
   }

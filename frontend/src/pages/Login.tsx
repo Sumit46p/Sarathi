@@ -6,6 +6,7 @@ import ThemeToggle from '../components/ThemeToggle';
 
 const Login = () => {
   const [username, setUsername] = useState('');
+  const [organizationName, setOrganizationName] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -15,28 +16,12 @@ const Login = () => {
     e.preventDefault();
     setError('');
     try {
-      const response = await authApi.post('/auth/login/', { username, password });
-      
-      // Temporarily set token to fetch user profile
+      const response = await authApi.post('/auth/login/', { username, password, organization_name: organizationName });
       localStorage.setItem('accessToken', response.data.access);
-      
-      try {
-        const profileResponse = await authApi.get('/auth/me/');
-        if (!profileResponse.data.organization_type) {
-          localStorage.removeItem('accessToken');
-          setError('Access denied. Driver accounts cannot access the admin dashboard.');
-          return;
-        }
-      } catch (err) {
-        localStorage.removeItem('accessToken');
-        setError('Failed to verify account type.');
-        return;
-      }
-
       localStorage.setItem('refreshToken', response.data.refresh);
       navigate('/dashboard');
     } catch {
-      setError('Invalid username or password');
+      setError('Invalid ID, Organization Name, or password');
     }
   };
 
@@ -58,13 +43,24 @@ const Login = () => {
 
         <form onSubmit={handleLogin}>
           <div className="form-group">
-            <label>Username</label>
+            <label>ID</label>
             <input
               type="text"
               className="input-field"
-              placeholder="Enter your username"
+              placeholder="Enter your ID"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Organization Name</label>
+            <input
+              type="text"
+              className="input-field"
+              placeholder="Enter organization name"
+              value={organizationName}
+              onChange={(e) => setOrganizationName(e.target.value)}
               required
             />
           </div>
@@ -102,13 +98,16 @@ const Login = () => {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <Link to="/forgot-password" style={{ fontSize: '14px', color: 'var(--primary)' }}>Forgot Password?</Link>
+            </div>
           </div>
           <button type="submit" className="btn-primary" style={{ marginTop: '12px' }}>
             Sign In
           </button>
         </form>
         <p style={{ textAlign: 'center', marginTop: '24px', color: 'var(--text-muted)' }}>
-          Don't have an account? <Link to="/signup">Sign up</Link>
+          Don't have an account? <Link to="/signup">Register Organization</Link>
         </p>
       </div>
     </div>

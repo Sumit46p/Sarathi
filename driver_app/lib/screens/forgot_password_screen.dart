@@ -14,22 +14,54 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
-  final _licenseController = TextEditingController();
+  final _organizationController = TextEditingController();
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
   String? _errorMsg;
+  String? _successMsg;
 
-  Future<void> _handleReset() async {
+  Future<void> _handleVerifyIdentity() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
         _errorMsg = null;
+        _successMsg = null;
+      });
+
+      final success = await ApiService.verifyForgotPasswordIdentity(
+        username: _usernameController.text.trim(),
+        organizationName: _organizationController.text.trim(),
+      );
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (success) {
+        setState(() {
+          _successMsg = 'Identity verified. Set your new password.';
+          _errorMsg = null;
+        });
+      } else {
+        setState(() {
+          _errorMsg = 'Verification failed. Check username and organization name.';
+          _successMsg = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleResetPassword() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+        _errorMsg = null;
+        _successMsg = null;
       });
 
       final success = await ApiService.resetPassword(
         username: _usernameController.text.trim(),
-        licenseNumber: _licenseController.text.trim(),
+        organizationName: _organizationController.text.trim(),
         newPassword: _passwordController.text,
       );
 
@@ -42,7 +74,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         );
         Navigator.of(context).pop();
       } else {
-        setState(() => _errorMsg = 'Failed to reset password. Check credentials.');
+        setState(() {
+          _errorMsg = 'Failed to reset password. Please try again.';
+        });
       }
     }
   }
@@ -50,13 +84,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   void dispose() {
     _usernameController.dispose();
-    _licenseController.dispose();
+    _organizationController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final isVerified = _successMsg != null;
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -84,12 +120,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         color: AppTheme.primaryColor.withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.lock_reset_rounded, size: 48, color: AppTheme.primaryColor),
+                      child: Icon(Icons.lock_reset_rounded, size: 48, color: AppTheme.primaryColor),
                     ),
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'Password Reset',
+                    isVerified ? 'Reset Password' : 'Verify Identity',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 22,
@@ -99,7 +135,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Enter your username and license number to reset your password.',
+                    isVerified
+                        ? 'Enter your new password below to complete the reset.'
+                        : 'Enter your username and organization name to verify your identity.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
@@ -107,35 +145,53 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       height: 1.5,
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
+
                   if (_errorMsg != null) ...[
                     Text(_errorMsg!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
                     const SizedBox(height: 16),
                   ],
+                  if (_successMsg != null) ...[
+                    Text(_successMsg!, style: const TextStyle(color: Colors.green), textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                  ],
+
                   TextFormField(
                     controller: _usernameController,
+                    enabled: !isVerified,
                     decoration: const InputDecoration(labelText: 'Username', prefixIcon: Icon(Icons.person_outline)),
                     validator: (v) => v!.isEmpty ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
+
                   TextFormField(
-                    controller: _licenseController,
-                    decoration: const InputDecoration(labelText: 'License Number', prefixIcon: Icon(Icons.badge_outlined)),
+                    controller: _organizationController,
+                    enabled: !isVerified,
+                    decoration: const InputDecoration(labelText: 'Organization Name', prefixIcon: Icon(Icons.business_outlined)),
                     validator: (v) => v!.isEmpty ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: 'New Password', prefixIcon: Icon(Icons.lock_outline)),
-                    validator: (v) => v!.length < 6 ? 'Min 6 chars' : null,
-                  ),
-                  const SizedBox(height: 32),
-                  PrimaryButton(
-                    text: 'Reset Password',
-                    isLoading: _isLoading,
-                    onPressed: _handleReset,
-                  ),
+
+                  if (isVerified) ...[
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(labelText: 'New Password', prefixIcon: Icon(Icons.lock_outline)),
+                      validator: (v) => v!.length < 6 ? 'Min 6 chars' : null,
+                    ),
+                    const SizedBox(height: 32),
+                    PrimaryButton(
+                      text: 'Reset Password',
+                      isLoading: _isLoading,
+                      onPressed: _handleResetPassword,
+                    ),
+                  ] else ...[
+                    PrimaryButton(
+                      text: 'Verify Identity',
+                      isLoading: _isLoading,
+                      onPressed: _handleVerifyIdentity,
+                    ),
+                  ],
                 ],
               ),
             ),

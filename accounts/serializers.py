@@ -26,6 +26,12 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'No active account found with the given credentials'
             )
 
+        organization_name = self.initial_data.get('organization_name')
+        if not hasattr(user, 'profile') or user.profile.organization_name != organization_name:
+            raise serializers.ValidationError(
+                'Invalid organization name'
+            )
+
         if not user.is_active:
             raise serializers.ValidationError(
                 'No active account found with the given credentials'
@@ -35,17 +41,17 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
         return super().validate(attrs)
 
 class UserSerializer(serializers.ModelSerializer):
-    organization_type = serializers.SerializerMethodField()
+    organization_name = serializers.SerializerMethodField()
 
-    def get_organization_type(self, obj):
+    def get_organization_name(self, obj):
         try:
-            return obj.profile.organization_type
+            return obj.profile.organization_name
         except Exception:
             return None
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'organization_type')
+        fields = ('id', 'username', 'email', 'organization_name')
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -54,15 +60,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         style={'input_type': 'password'}
     )
     email = serializers.EmailField(required=True)
-    organization_type = serializers.ChoiceField(
-        choices=Vehicle.VEHICLE_TYPE_CHOICES,
+    organization_name = serializers.CharField(
         write_only=True,
         required=True
     )
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', 'organization_type')
+        fields = ('id', 'username', 'email', 'password', 'organization_name')
 
     def validate_password(self, value):
         try:
@@ -72,11 +77,11 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        org_type = validated_data.pop('organization_type')
+        org_name = validated_data.pop('organization_name')
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password']
         )
-        Profile.objects.create(user=user, organization_type=org_type)
+        Profile.objects.create(user=user, organization_name=org_name)
         return user

@@ -15,6 +15,7 @@ urlpatterns = [
     path('drivers/me/', views.driver_me, name='driver-me'),
     path('drivers/me/change-password/', views.driver_change_password, name='driver-change-password'),
     path('drivers/reset-password/', views.reset_password, name='driver-reset-password'),
+    path('drivers/verify-identity/', views.verify_driver_identity, name='driver-verify-identity'),
     path('drivers/me/duty/', views.driver_duty, name='driver-duty'),
     path('drivers/me/dispatch/', views.driver_dispatch, name='driver-dispatch'),
     path('drivers/me/dispatch/transition/', views.driver_dispatch_transition, name='driver-dispatch-transition'),

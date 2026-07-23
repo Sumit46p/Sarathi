@@ -213,8 +213,8 @@ Auth: `Authorization: Bearer <access_token>`.
 |--------|-----|-------------|
 | POST | `/api/auth/login/` | Obtain JWT (accepts `username` **or** `email` + `password`) |
 | POST | `/api/auth/login/refresh/` | Refresh access token |
-| POST | `/api/auth/register/` | Register a new admin/user (username, email, password, organization_type) |
-| GET | `/api/auth/me/` | Current user + organization type |
+| POST | `/api/auth/register/` | Register a new admin/user (username, email, password, organization_name) |
+| GET | `/api/auth/me/` | Current user + organization name |
 
 ### Vehicles (`/api/`)
 | Method | URL | Description |
