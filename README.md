@@ -35,7 +35,7 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] **Clickable fleet rows → live vehicle map panel** (see a vehicle's real-time position on demand)
 - [x] OSRM real-road routing (route geometry returned to both dashboard and driver app)
 - [x] Token refresh flow
-
+....................................
 ### Driver Mobile App (Flutter) — built
 - [x] JWT login (username/email + password)
 - [x] **On Duty toggle** → sets `Driver.is_on_duty` (requests location permission, sends immediate GPS fix + 5s polling)
