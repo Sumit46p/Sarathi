@@ -307,9 +307,14 @@ export default function Dashboard() {
       setShowAddModal(false);
       setNewVehicle({ name: '', vehicle_type: 'ambulance', number_plate: '', is_available: true, location: null });
       await fetchVehicles();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to add vehicle', error);
-      setVehicleFormError('Vehicle could not be added. Check the details and map location.');
+      const responseError = error as { response?: { data?: Record<string, string | string[]> } };
+      const data = responseError.response?.data;
+      const firstError = data
+        ? Object.values(data).flat()[0]
+        : null;
+      setVehicleFormError(typeof firstError === 'string' ? firstError : 'Vehicle could not be added. Check the details and map location.');
     } finally { setAddLoading(false); }
   };
 
