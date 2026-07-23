@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity, AlertCircle, CheckCircle2, ChevronRight, CircleDot,
+  Activity, AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, CircleDot,
   Gauge, LayoutDashboard, LogOut, MapPin, Navigation, Phone, Plus,
   Radio, RefreshCw, Search, Settings, ShieldCheck, Trash2, Truck,
   UserRound, Users, Wrench, X,
@@ -11,6 +11,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { api } from '../api/auth';
 import MaintenanceTab from '../components/MaintenanceTab';
+import IssuesTab from '../components/IssuesTab';
 import ThemeToggle from '../components/ThemeToggle';
 import NEPAL_GEOJSON from '../data/nepalBorder';
 
@@ -43,6 +44,17 @@ interface Vehicle {
   active_dispatch_status: string | null;
 }
 
+interface IssueReport {
+  id: number;
+  driver: number;
+  driver_name: string;
+  vehicle_name: string;
+  description: string;
+  image: string | null;
+  status: 'open' | 'acknowledged' | 'resolved';
+  created_at: string;
+}
+
 interface DispatchResult {
   assigned_vehicle: { id: number; name: string; lat: number; lng: number };
   status: string;
@@ -51,7 +63,7 @@ interface DispatchResult {
   geometry?: Array<[number, number]> | null;
 }
 
-type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance';
+type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues';
 type StatusFilter = 'all' | 'available' | 'unavailable';
 
 const VEHICLE_TYPES = [
@@ -169,6 +181,7 @@ export default function Dashboard() {
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [activeDispatch, setActiveDispatch] = useState<DispatchResult | null>(null);
+  const [issues, setIssues] = useState<IssueReport[]>([]);
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -206,6 +219,15 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchIssues = useCallback(async () => {
+    try {
+      const { data } = await api.get<IssueReport[]>('/issues/');
+      setIssues(previous => JSON.stringify(previous) === JSON.stringify(data) ? previous : data);
+    } catch (error) {
+      console.error('Failed to fetch issues', error);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
@@ -231,6 +253,7 @@ export default function Dashboard() {
       fetchVehicles();
       fetchDrivers();
       fetchActiveDispatch();
+      fetchIssues();
     }, 5000);
     return () => {
       mounted = false;
@@ -356,6 +379,14 @@ export default function Dashboard() {
     return !query || [driver.name, driver.phone_number, driver.license_number].some(value => value.toLowerCase().includes(query));
   }), [driverQuery, drivers]);
 
+  const openIssueDriverIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const issue of issues) {
+      if (issue.status === 'open') ids.add(issue.driver);
+    }
+    return ids;
+  }, [issues]);
+
   const createVehicleIcon = useCallback((available: boolean) => L.divIcon({
     className: 'fleet-marker-wrap',
     html: `<span class="fleet-marker ${available ? 'is-available' : 'is-unavailable'}"><span></span></span>`,
@@ -371,6 +402,7 @@ export default function Dashboard() {
     drivers: { title: 'Driver management', eyebrow: 'Workforce' },
     maintenance: { title: 'Vehicle maintenance', eyebrow: 'Service' },
     settings: { title: 'Workspace settings', eyebrow: 'Configuration' },
+    issues: { title: 'Reported issues', eyebrow: 'Driver feedback' },
   };
 
   const renderEmpty = (title: string, text: string) => (
@@ -387,6 +419,7 @@ export default function Dashboard() {
           <button id="nav-dispatch" className={`nav-item ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => switchTab('dispatch')}><Radio size={17} /><span>Dispatch</span><span className="nav-live-dot" /></button>
           <button id="nav-drivers" className={`nav-item ${activeTab === 'drivers' ? 'active' : ''}`} onClick={() => switchTab('drivers')}><Users size={17} /><span>Drivers</span></button>
           <button id="nav-maintenance" className={`nav-item ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => switchTab('maintenance')}><Wrench size={17} /><span>Maintenance</span></button>
+          <button id="nav-issues" className={`nav-item ${activeTab === 'issues' ? 'active' : ''}`} onClick={() => switchTab('issues')}><AlertTriangle size={17} /><span>Issues</span>{issues.filter(i => i.status === 'open').length > 0 && <span className="nav-badge">{issues.filter(i => i.status === 'open').length}</span>}</button>
           <p className="nav-label nav-label-secondary">System</p>
           <button id="nav-settings" className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => switchTab('settings')}><Settings size={17} /><span>Settings</span></button>
         </nav>
@@ -421,7 +454,7 @@ export default function Dashboard() {
               <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Vehicle</th><th>Type</th><th>Driver</th><th>Status</th><th>Location</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredVehicles.map(vehicle => {
                 const statusInfo = getVehicleStatusInfo(vehicle);
                 return <tr key={vehicle.id} className="clickable-row" onClick={() => { setSelectedVehicleId(vehicle.id); setShowVehiclePanel(true); }}>
-                <td><div className="primary-cell"><div className="entity-icon"><Truck size={17} /></div><div><strong>{vehicle.name}</strong><span className="mono">{vehicle.number_plate || 'No registration'}</span></div></div></td>
+                <td><div className="primary-cell"><div className="entity-icon"><Truck size={17} /></div><div><strong>{vehicle.name}</strong>{vehicle.driver && openIssueDriverIds.has(vehicle.driver as number) && <span className="issue-warning-badge" title="Open driver issue"><AlertTriangle size={13} /></span>}<span className="mono">{vehicle.number_plate || 'No registration'}</span></div></div></td>
                 <td><span className="type-label">{formatType(vehicle.vehicle_type)}</span></td>
                 <td><select className="table-select" value={vehicle.driver || ''} onChange={event => handleAssignDriver(vehicle.id, event.target.value)} aria-label={`Assign driver to ${vehicle.name}`}><option value="">Unassigned</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></td>
                 <td><span className={`status-badge ${statusInfo.className}`}><span />{statusInfo.label}</span></td>
@@ -479,6 +512,7 @@ export default function Dashboard() {
           </section>}
 
           {activeTab === 'maintenance' && <MaintenanceTab />}
+          {activeTab === 'issues' && <IssuesTab />}
 
           {activeTab === 'settings' && <section className="tab-content" aria-labelledby="settings-heading"><div className="page-heading"><div><h2 id="settings-heading">Workspace settings</h2><p>Configuration for your Sarthi operations workspace.</p></div></div><div className="settings-panel"><div className="settings-icon"><Settings size={20} /></div><div><h3>Configuration is not available yet</h3><p>No settings API is currently exposed. This section is intentionally read-only to avoid changing backend behavior.</p></div></div></section>}
         </div>

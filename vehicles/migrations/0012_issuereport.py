@@ -5,7 +5,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('vehicles', '0010_driver_is_on_duty_vehicle_admin_blocked'),
+        (('vehicles', '0011_driver_requires_password_change')),
     ]
 
     operations = [

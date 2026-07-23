@@ -767,3 +767,50 @@ def report_issue(request):
 
     serializer = IssueReportSerializer(report)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def issue_report_list(request):
+    """
+    GET /api/issues/
+    Returns all issue reports for the current owner (org-scoped),
+    sorted newest first.
+    """
+    reports = IssueReport.objects.filter(driver__owner=request.user).select_related('driver')
+    serializer = IssueReportSerializer(reports, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def issue_report_detail(request, pk):
+    """
+    GET    /api/issues/<id>/
+    PATCH  /api/issues/<id>/
+    Returns/updates a single issue report owned by the current owner.
+    PATCH accepts {"status": "open"|"acknowledged"|"resolved"}.
+    """
+    try:
+        report = IssueReport.objects.get(pk=pk, driver__owner=request.user)
+    except IssueReport.DoesNotExist:
+        return Response(
+            {'error': 'Issue report not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == 'GET':
+        serializer = IssueReportSerializer(report)
+        return Response(serializer.data)
+
+    new_status = request.data.get('status')
+    if new_status not in dict(IssueReport.STATUS_CHOICES):
+        return Response(
+            {'error': 'Invalid status. Use open, acknowledged, or resolved.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    report.status = new_status
+    report.save(update_fields=['status'])
+    serializer = IssueReportSerializer(report)
+    return Response(serializer.data)

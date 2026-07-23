@@ -41,6 +41,8 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] **On Duty toggle** → sets `Driver.is_on_duty` (requests location permission, sends immediate GPS fix + 5s polling)
 - [x] Driver's assigned vehicle shown from `/api/drivers/me/`
 - [x] **Trips tab**: live dispatch route on a map + status transitions (Accept / En Route / Arrived / Complete)
+- [x] **First-login password change** (forced when `requires_password_change` is true)
+- [x] **Report Issue** screen: submit descriptions + optional photo via `POST /api/drivers/me/report-issue/`
 - [x] Profile, Alerts, SOS placeholders
 
 ### Implemented (completed in this cycle)
@@ -50,6 +52,10 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] Active dispatch endpoint (`GET /api/dispatch/active/`) — returns owner's latest active dispatch with live OSRM route geometry
 - [x] Dashboard polls active dispatch every 5s and renders the live route as a green polyline on the map
 - [x] Fixed vehicle availability bug: `has_active_dispatch` method call in `is_available` derivation
+- [x] **Driver password change flow**: `requires_password_change` flag forces first-login password reset (`PATCH /api/drivers/me/change-password/`)
+- [x] **Driver Report Issue feature**: backend `IssueReport` model + `POST /api/drivers/me/report-issue/` (multipart, optional photo); Flutter `ReportIssueScreen` with description, camera/gallery upload, submit confirmation
+- [x] **Flutter UI enhancements**: custom animations (`SmoothPageRoute`, `AnimatedListItem`), splash screen animation, haptic feedback, staggered list animations, improved bottom nav, polished cards/buttons
+- [x] **Admin-facing issue report view**: backend `IssueReport` now uses `status` workflow (`open` → `acknowledged` → `resolved`); admin endpoints `GET /api/issues/` (owner-scoped list) and `PATCH /api/issues/<id>/` (status update); frontend `IssuesTab` with photo thumbnails, status badges, Acknowledge/Resolve actions, and open-count badge on sidebar nav; fleet table shows warning indicator on vehicles with open driver issues
 
 ### Not Yet Started / Partial
 - [ ] Expense tracking (fuel, maintenance, operational costs)
@@ -233,8 +239,10 @@ Auth: `Authorization: Bearer <access_token>`.
 |--------|-----|-------------|
 | GET | `/api/drivers/` | List drivers for current org |
 | POST | `/api/drivers/` | Create a driver **with login credentials** (`name`, `phone_number`, `license_number`, `username`, `password`) |
-| GET | `/api/drivers/me/` | Current driver's profile + assigned vehicle + `is_on_duty` |
+| GET | `/api/drivers/me/` | Current driver's profile + assigned vehicle + `is_on_duty` + `requires_password_change` |
 | PATCH | `/api/drivers/me/duty/` | Set `{"is_on_duty": true|false}` (drives vehicle availability) |
+| PATCH | `/api/drivers/me/change-password/` | **First-login password change** (sets `requires_password_change = False`) |
+| POST | `/api/drivers/me/report-issue/` | Submit an issue report with optional photo (`multipart/form-data`: `description` + `image`) |
 | GET | `/api/drivers/me/dispatch/` | Active dispatch for the driver's vehicle (status + route geometry) |
 | POST | `/api/drivers/me/dispatch/transition/` | **Driver** advances the dispatch (accept/en_route/arrived/completed/cancelled) |
 | GET | `/api/drivers/<id>/` | Driver detail |
@@ -250,6 +258,13 @@ Auth: `Authorization: Bearer <access_token>`.
 | PATCH | `/api/maintenance/<id>/` | Update (mark completed) |
 | DELETE | `/api/maintenance/<id>/` | Remove |
 | GET | `/api/maintenance/upcoming/` | Due in next 30 days |
+
+### Reported Issues (`/api/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/issues/` | List owner-scoped driver-issued reports (newest first) |
+| GET | `/api/issues/<id>/` | Issue detail |
+| PATCH | `/api/issues/<id>/` | Update status (`open`, `acknowledged`, `resolved`) |
 
 **Location format** — all location endpoints use plain JSON `{"lat": 26.65, "lng": 87.89}`.
 
@@ -283,6 +298,22 @@ curl -X PATCH http://localhost:8000/api/drivers/me/duty/ \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <driver_token>" \
   -d '{"is_on_duty": true}'
+```
+
+Driver submits an issue report (multipart):
+```bash
+curl -X POST http://localhost:8000/api/drivers/me/report-issue/ \
+  -H "Authorization: Bearer <driver_token>" \
+  -F "description=GPS not updating on current vehicle" \
+  -F "image=@/path/to/photo.jpg"
+```
+
+Driver changes password on first login:
+```bash
+curl -X PATCH http://localhost:8000/api/drivers/me/change-password/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <driver_token>" \
+  -d '{"new_password": "newSecurePass123"}'
 ```
 
 Driver gets own profile + assigned vehicle:
@@ -365,6 +396,8 @@ The driver mobile app (`driver_app/`) is fully implemented and connects to the
 same JWT backend.
 
 - **Login**: standard Django JWT (`/api/auth/login/`), username or email.
+- **First-login password change**: if `requires_password_change` is true, the
+  app forces a password update dialog before proceeding.
 - **On Duty toggle**: `PATCH /api/drivers/me/duty/` sets `Driver.is_on_duty`.
   On enabling, the app requests location permission, captures an immediate GPS
   fix, and polls every 5s, sending updates via `POST /api/vehicles/<id>/update-location/`.
@@ -376,6 +409,12 @@ same JWT backend.
   (which includes the OSRM route geometry), draws it on a map, and lets the
   driver advance the lifecycle (Accept → En Route → Arrived → Complete). The
   dispatcher can also accept from the dashboard — first acceptor wins.
+- **Report Issue**: drivers can submit issue reports with an optional photo
+  (`POST /api/drivers/me/report-issue/`). Accessible from the Quick Actions
+  grid on the home tab.
+- **UI Enhancements**: custom page transitions, staggered animations, haptic
+  feedback, splash screen animation, animated bottom navigation, and polished
+  cards/buttons. See `driver_app/UI_ENHANCEMENTS.md` for details.
 - Driver accounts are created by an admin (Dashboard → Drivers → Add driver
   with username + password); the app has no self-signup.
 
@@ -411,18 +450,19 @@ Sarathi/
 │   ├── wsgi.py
 │   └── asgi.py
 ├── vehicles/                       # Vehicle tracking + dispatch + drivers
-│   ├── models.py                   # Vehicle + DispatchRequest + Driver
-│   │                              #   (Driver.is_on_duty, Vehicle.admin_blocked)
+│   ├── models.py                   # Vehicle + DispatchRequest + Driver + IssueReport + MaintenanceRecord
 │   ├── serializers.py             # DRF serializers ({lat, lng}, driver login,
-│   │                              #   driver duty/dispatch)
+│   │                              #   driver duty/dispatch/change-password/report-issue)
 │   ├── views.py                    # CRUD, nearest, dispatch, driver_me,
 │   │                              #   driver_duty, driver_dispatch + transition,
-│   │                              #   admin dispatch_transition
-│   ├── urls.py                    # /api/vehicles/, /api/drivers/, /api/dispatch/
+│   │                              #   admin dispatch_transition, report_issue,
+│   │                              #   driver_change_password, maintenance CRUD
+│   ├── urls.py                    # /api/vehicles/, /api/drivers/, /api/dispatch/,
+│   │                              #   /api/maintenance/
 │   ├── osrm.py                    # OSRM real-road routing helper
-│   ├── admin.py                   # GIS admin with map picker
+│   ├── admin.py                   # GIS admin with map picker + IssueReport admin
 │   ├── signals.py                 # Recompute vehicle availability on changes
-│   └── migrations/                # 0001_initial … 0010_driver_is_on_duty_*
+│   └── migrations/                # 0001_initial … 0011_issuereport
 ├── accounts/                       # JWT auth + user profiles
 │   ├── models.py                   # Profile (org type)
 │   ├── serializers.py              # Register + email/username login
@@ -431,33 +471,41 @@ Sarathi/
 ├── driver_app/                     # Flutter mobile app (drivers)
 │   ├── lib/
 │   │   ├── services/api_service.dart
+│   │   ├── utils/animations.dart   # Reusable animation utilities
 │   │   ├── screens/
-│   │   │   ├── login_screen.dart
-│   │   │   ├── dashboard_screen.dart   # Home + On Duty toggle + live GPS
+│   │   │   ├── splash_screen.dart  # Animated splash/logo
+│   │   │   ├── login_screen.dart   # JWT login with haptic feedback
+│   │   │   ├── dashboard_screen.dart # Home + On Duty toggle + live GPS + quick actions
+│   │   │   ├── report_issue_screen.dart # Issue report with photo upload
 │   │   │   ├── trips_screen.dart       # Live dispatch route + transitions
 │   │   │   ├── profile_screen.dart
 │   │   │   ├── alerts_screen.dart
 │   │   │   └── sos_screen.dart
 │   │   ├── widgets/
-│   │   └── theme.dart
+│   │   │   ├── custom_buttons.dart # Animated primary/secondary buttons
+│   │   │   └── ...
+│   │   ├── theme.dart
+│   │   └── main.dart
+│   ├── UI_ENHANCEMENTS.md          # Full UI/UX enhancement documentation
 │   ├── pubspec.yaml
 │   └── ...
-└── frontend/                       # React + TypeScript + Vite (dispatcher console)
-    ├── src/
-    │   ├── api/auth.ts              # Axios instance with JWT headers
-    │   ├── components/
-    │   │   ├── FleetMap.tsx         # Live Leaflet map
-    │   │   ├── MaintenanceTab.tsx
-    │   │   ├── ProtectedRoute.tsx
-    │   │   └── ThemeToggle.tsx
-    │   ├── pages/
-    │   │   ├── Dashboard.tsx        # Fleet + Dispatch + Drivers + live map panel
-    │   │   ├── Login.tsx
-    │   │   └── Signup.tsx
-    │   ├── App.tsx
-    │   └── main.tsx
-    ├── package.json
-    └── vite.config.ts
+├── frontend/                       # React + TypeScript + Vite (dispatcher console)
+│   ├── src/
+│   │   ├── api/auth.ts              # Axios instance with JWT headers
+│   │   ├── components/
+│   │   │   ├── FleetMap.tsx         # Live Leaflet map
+│   │   │   ├── MaintenanceTab.tsx   # Vehicle maintenance CRUD
+│   │   │   ├── ProtectedRoute.tsx
+│   │   │   └── ThemeToggle.tsx
+│   │   ├── pages/
+│   │   │   ├── Dashboard.tsx        # Fleet + Dispatch + Drivers + Maintenance tabs
+│   │   │   ├── Login.tsx
+│   │   │   └── Signup.tsx
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   ├── package.json
+│   └── vite.config.ts
+└── ...
 ```
 
 ---

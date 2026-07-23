@@ -257,10 +257,16 @@ class DispatchRequest(models.Model):
 class IssueReport(models.Model):
     """A driver-submitted issue report with optional photo evidence."""
 
+    STATUS_CHOICES = [
+        ('open', 'Open'),
+        ('acknowledged', 'Acknowledged'),
+        ('resolved', 'Resolved'),
+    ]
+
     driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='issue_reports')
     description = models.TextField()
     image = models.ImageField(upload_to='issue_reports/', blank=True, null=True)
-    resolved = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open', db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

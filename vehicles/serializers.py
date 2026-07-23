@@ -37,11 +37,17 @@ class LocationField(serializers.Field):
 
 class IssueReportSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(required=False, allow_null=True)
+    driver_name = serializers.CharField(source='driver.name', read_only=True)
+    vehicle_name = serializers.SerializerMethodField()
 
     class Meta:
         model = IssueReport
-        fields = ['id', 'driver', 'description', 'image', 'resolved', 'created_at']
-        read_only_fields = ['id', 'driver', 'resolved', 'created_at']
+        fields = ['id', 'driver', 'driver_name', 'vehicle_name', 'description', 'image', 'status', 'created_at']
+        read_only_fields = ['id', 'driver', 'driver_name', 'vehicle_name', 'status', 'created_at']
+
+    def get_vehicle_name(self, obj):
+        vehicle = obj.driver.assigned_vehicles.first()
+        return vehicle.name if vehicle else 'Unassigned'
 
 
 class DriverSerializer(serializers.ModelSerializer):

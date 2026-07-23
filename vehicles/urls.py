@@ -24,4 +24,6 @@ urlpatterns = [
     path('maintenance/<int:pk>/', views.MaintenanceRecordDetailView.as_view(), name='maintenance-detail'),
     path('maintenance/upcoming/', views.upcoming_maintenance, name='maintenance-upcoming'),
     path('drivers/me/report-issue/', views.report_issue, name='driver-report-issue'),
+    path('issues/', views.issue_report_list, name='issue-report-list'),
+    path('issues/<int:pk>/', views.issue_report_detail, name='issue-report-detail'),
 ]

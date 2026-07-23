@@ -24,7 +24,7 @@ class DispatchRequestAdmin(admin.ModelAdmin):
 class IssueReportAdmin(admin.ModelAdmin):
     """Admin interface for driver issue reports."""
 
-    list_display = ('id', 'driver', 'resolved', 'created_at')
-    list_filter = ('resolved', 'created_at')
+    list_display = ('id', 'driver', 'status', 'created_at')
+    list_filter = ('status', 'created_at')
     search_fields = ('driver__name', 'description')
     readonly_fields = ('created_at',)
