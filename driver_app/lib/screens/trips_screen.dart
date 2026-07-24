@@ -53,13 +53,33 @@ class _TripsScreenState extends State<TripsScreen> {
 
   Future<void> _loadDispatch({bool showLoading = true}) async {
     if (showLoading && mounted) setState(() => _loading = true);
-    final data = await ApiService.getMyDispatch();
-    if (!mounted) return;
-    setState(() {
-      _dispatch = data;
-      _loading = false;
-      _errorMsg = data == null ? null : _errorMsg;
-    });
+    try {
+      final data = await ApiService.getMyDispatch();
+      if (!mounted) return;
+      setState(() {
+        _dispatch = data;
+        _loading = false;
+        _errorMsg = null;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (e.kind == ApiErrorKind.network) {
+          _errorMsg = 'Network error. Please check your connection and retry.';
+        } else if (e.kind == ApiErrorKind.unauthorized) {
+          _errorMsg = 'Session expired. Please log in again.';
+        } else {
+          _errorMsg = 'Failed to load trip: ${e.message}';
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _errorMsg = 'An unexpected error occurred.';
+      });
+    }
   }
 
   List<LatLng> _decodeGeometry(dynamic geometry) {
@@ -231,6 +251,42 @@ class _TripsScreenState extends State<TripsScreen> {
     );
   }
 
+  Widget _buildError() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: AnimatedListItem(
+          index: 0,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_rounded, size: 48, color: AppTheme.errorColor),
+              const SizedBox(height: 16),
+              Text(
+                _errorMsg!,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  _loadDispatch();
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text('Retry', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentStatus = _dispatch?['status'] as String?;
@@ -249,9 +305,11 @@ class _TripsScreenState extends State<TripsScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
-          : _dispatch == null
-              ? _buildEmpty()
-              : Column(
+          : _errorMsg != null && _dispatch == null
+              ? _buildError()
+              : _dispatch == null
+                  ? _buildEmpty()
+                  : Column(
                   children: [
                     Expanded(
                       flex: 3,

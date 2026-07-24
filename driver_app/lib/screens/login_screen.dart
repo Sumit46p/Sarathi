@@ -8,7 +8,11 @@ import 'dashboard_screen.dart';
 import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// When true, the login screen shows a "session expired" banner
+  /// (the user was redirected here after a token refresh failure).
+  final bool sessionExpired;
+
+  const LoginScreen({super.key, this.sessionExpired = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -56,54 +60,62 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _animationController.forward();
   }
 
-  void _handleLogin() async {
-    FocusScope.of(context).unfocus();
-    
-    if (_formKey.currentState!.validate()) {
-      HapticFeedback.lightImpact();
-      setState(() => _isLoading = true);
+void _handleLogin() async {
+ FocusScope.of(context).unfocus();
+ 
+ if (_formKey.currentState!.validate()) {
+ HapticFeedback.lightImpact();
+ setState(() => _isLoading = true);
 
-      final username = _usernameController.text.trim();
-      final organizationName = _organizationController.text.trim();
-      final password = _passwordController.text;
+ final username = _usernameController.text.trim();
+ final organizationName = _organizationController.text.trim();
+ final password = _passwordController.text;
 
-      final success = await ApiService.login(username: username, organizationName: organizationName, password: password);
+ final result = await ApiService.login(username: username, organizationName: organizationName, password: password);
 
-      if (!mounted) return;
-      setState(() => _isLoading = false);
+ if (!mounted) return;
+ setState(() => _isLoading = false);
 
-      if (success) {
-        HapticFeedback.mediumImpact();
-        Navigator.of(context).pushReplacement(
-          SmoothPageRoute(page: const DashboardScreen()),
-        );
-      } else {
-        HapticFeedback.heavyImpact();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.error_outline, color: Colors.white),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Invalid username, organization, or password',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: AppTheme.errorColor,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
-      }
-    }
-  }
+ if (result.outcome == LoginOutcome.success) {
+ HapticFeedback.mediumImpact();
+ Navigator.of(context).pushReplacement(
+ SmoothPageRoute(page: const DashboardScreen()),
+ );
+ } else {
+ HapticFeedback.heavyImpact();
+ final isNetwork = result.outcome == LoginOutcome.networkError;
+ final message = result.detail ?? (isNetwork
+ ? 'No internet connection'
+ : 'Invalid username, organization, or password');
+ ScaffoldMessenger.of(context).showSnackBar(
+ SnackBar(
+ content: Row(
+ children: [
+ Icon(
+ isNetwork ? Icons.wifi_off_rounded : Icons.error_outline,
+ color: Colors.white,
+ ),
+ const SizedBox(width: 12),
+ Expanded(
+ child: Text(
+ message,
+ style: const TextStyle(fontWeight: FontWeight.w600),
+ ),
+ ),
+ ],
+ ),
+ backgroundColor: isNetwork ? AppTheme.outline : AppTheme.errorColor,
+ behavior: SnackBarBehavior.floating,
+ shape: RoundedRectangleBorder(
+ borderRadius: BorderRadius.circular(12),
+ ),
+ margin: const EdgeInsets.all(16),
+ duration: isNetwork ? const Duration(seconds: 5) : const Duration(seconds: 3),
+ ),
+ );
+ }
+ }
+ }
 
   @override
   void dispose() {

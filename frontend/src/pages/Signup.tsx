@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authApi } from '../api/auth';
-import { UserPlus, Eye, EyeOff } from 'lucide-react';
+import { AxiosError } from 'axios';
+import { UserPlus, Eye, EyeOff, Loader2 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
 const Signup = () => {
@@ -10,12 +11,14 @@ const Signup = () => {
   const [password, setPassword] = useState('');
   const [organizationName, setOrganizationName] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSubmitting(true);
     try {
       await authApi.post('/auth/register/', { username, email, password, organization_name: organizationName });
       const response = await authApi.post('/auth/login/', { username, password, organization_name: organizationName });
@@ -23,21 +26,22 @@ const Signup = () => {
       localStorage.setItem('refreshToken', response.data.refresh);
       navigate('/dashboard');
     } catch (err: unknown) {
-      const error = err as { response?: { data?: Record<string, string[]> } };
-      const data = error.response?.data;
-      if (data) {
-        if (data.password) {
+      if (err instanceof AxiosError && err.response) {
+        const data = err.response.data as Record<string, string[]> | undefined;
+        if (data?.password) {
           setError(data.password.join(' '));
-        } else if (data.username) {
+        } else if (data?.username) {
           setError(data.username[0]);
-        } else if (data.email) {
+        } else if (data?.email) {
           setError(data.email[0]);
         } else {
           setError('Registration failed. Please check your inputs.');
         }
       } else {
-        setError('Registration failed. Server error.');
+        setError('Could not reach the server. Check your internet connection and try again.');
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -128,8 +132,9 @@ const Signup = () => {
               required
             />
           </div>
-          <button type="submit" className="btn-primary" style={{ marginTop: '12px' }}>
-            Sign Up
+          <button type="submit" className="btn-primary" style={{ marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: submitting ? 0.8 : 1 }} disabled={submitting}>
+            {submitting && <Loader2 size={18} className="spin" />}
+            {submitting ? 'Creating account' : 'Sign Up'}
           </button>
         </form>
         <p style={{ textAlign: 'center', marginTop: '24px', color: 'var(--text-muted)' }}>

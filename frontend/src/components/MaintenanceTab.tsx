@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/auth';
 import { AlertCircle, CheckCircle2, Plus, Search, Trash2, Truck, Wrench, X } from 'lucide-react';
+import { toast } from './toast';
 
 interface MaintenanceRecord {
   id: number;
@@ -82,6 +83,7 @@ export default function MaintenanceTab() {
         description: '',
       });
       await fetchMaintenance();
+      toast.success('Maintenance record added');
     } catch (error) {
       console.error('Failed to add maintenance record', error);
       setFormError('Failed to create maintenance record. Please check your input and try again.');
@@ -95,9 +97,11 @@ export default function MaintenanceTab() {
     try {
       await api.delete(`/maintenance/${id}/`);
       await fetchMaintenance();
+      toast.success('Record deleted');
     } catch (error) {
       console.error('Failed to delete maintenance record', error);
       setDataError('Failed to delete maintenance record.');
+      toast.error('Failed to delete maintenance record.');
     }
   };
 
@@ -106,9 +110,11 @@ export default function MaintenanceTab() {
     try {
       await api.patch(`/maintenance/${id}/`, { completed: true });
       await fetchMaintenance();
+      toast.success('Marked complete');
     } catch (error) {
       console.error('Failed to mark record complete', error);
       setDataError('Could not update maintenance record.');
+      toast.error('Could not update maintenance record.');
     } finally {
       setCompletingId(null);
     }

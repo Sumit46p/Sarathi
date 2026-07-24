@@ -30,10 +30,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isAvailable = true;
   Timer? _locationTimer;
   String? _lastLocationStatus;
+  int _consecutiveLocationFailures = 0;
+  StreamSubscription<void>? _forceLogoutSub;
 
   @override
   void initState() {
     super.initState();
+    _forceLogoutSub = forceLogoutController.stream.listen((_) {
+      if (mounted) _performLogout();
+    });
     _loadProfile();
   }
 
@@ -43,31 +48,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _errorMsg = null;
     });
 
-    final data = await ApiService.getDriverMe();
-    if (!mounted) return;
+    try {
+      final data = await ApiService.getDriverMe();
+      if (!mounted) return;
 
-    bool isOnDuty = false;
-    if (data != null) {
-      isOnDuty = data['is_on_duty'] == true;
-    }
-
-    setState(() {
-      _driverData = data;
-      _loading = false;
-      _isAvailable = isOnDuty;
-      if (data == null) {
-        _errorMsg = 'Failed to load profile. Please log in again.';
+      bool isOnDuty = false;
+      if (data != null) {
+        isOnDuty = data['is_on_duty'] == true;
       }
-    });
 
-    if (isOnDuty) {
-      await _ensureLocationPermission();
-      _startLocationTracking();
-    }
+      setState(() {
+        _driverData = data;
+        _loading = false;
+        _isAvailable = isOnDuty;
+        if (data == null) {
+          _errorMsg = 'Failed to load profile. Please log in again.';
+        }
+      });
 
-    if (data?['requires_password_change'] == true) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showPasswordChangeDialog();
+      if (isOnDuty) {
+        await _ensureLocationPermission();
+        _startLocationTracking();
+      }
+
+      if (data?['requires_password_change'] == true) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _showPasswordChangeDialog();
+        });
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (e.kind == ApiErrorKind.unauthorized) {
+          _errorMsg = 'Session expired. Please log in again.';
+        } else if (e.kind == ApiErrorKind.network) {
+          _errorMsg = 'Network error. Please check your connection and retry.';
+        } else {
+          _errorMsg = 'Failed to load profile: ${e.message}';
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _errorMsg = 'An unexpected error occurred. Please retry.';
       });
     }
   }
@@ -138,28 +163,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _toggleAvailability(bool value) async {
     setState(() => _isAvailable = value);
 
-    final result = await ApiService.setDutyStatus(isOnDuty: value);
+    try {
+      final result = await ApiService.setDutyStatus(isOnDuty: value);
 
-    if (result == null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update status'), backgroundColor: Colors.red),
-      );
-      setState(() => _isAvailable = !value);
-      return;
-    }
+      if (result == null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to update status'), backgroundColor: Colors.red),
+        );
+        setState(() => _isAvailable = !value);
+        return;
+      }
 
-    if (mounted) {
-      setState(() {
-        _isAvailable = result?['is_on_duty'] == true;
-        _driverData = result ?? _driverData;
-      });
-    }
+      if (mounted) {
+        setState(() {
+          _isAvailable = result?['is_on_duty'] == true;
+          _driverData = result ?? _driverData;
+        });
+      }
 
-    if (_isAvailable) {
-      await _ensureLocationPermission();
-      _startLocationTracking();
-    } else {
-      _stopLocationTracking();
+      if (_isAvailable) {
+        await _ensureLocationPermission();
+        _startLocationTracking();
+      } else {
+        _stopLocationTracking();
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update status: ${e.message}'), backgroundColor: Colors.red),
+        );
+        setState(() => _isAvailable = !value);
+      }
     }
   }
 
@@ -182,13 +216,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
       permission = await Geolocator.requestPermission();
     }
     if (permission == LocationPermission.deniedForever && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Location permission denied. Enable it in app settings.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showLocationPermissionDeniedDialog();
     }
+  }
+
+  void _showLocationPermissionDeniedDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Location Permission Required',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+        content: Text(
+          'On Duty mode requires location access to send your position updates. '
+          'Please enable location permission in your device settings.',
+          style: GoogleFonts.plusJakartaSans(color: AppTheme.outline),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel',
+                style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w600, color: AppTheme.outline)),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.settings_rounded, size: 18),
+            label: Text('Open Settings',
+                style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              openAppSettings();
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _sendLocationUpdate() async {
@@ -201,7 +270,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        if (mounted) {
+        _consecutiveLocationFailures++;
+        if (mounted && _consecutiveLocationFailures >= 6) {
           setState(() => _lastLocationStatus = 'Location services disabled');
         }
         return;
@@ -211,14 +281,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          if (mounted) {
+          _consecutiveLocationFailures++;
+          if (mounted && _consecutiveLocationFailures >= 6) {
             setState(() => _lastLocationStatus = 'Location permission denied');
           }
           return;
         }
       }
       if (permission == LocationPermission.deniedForever) {
-        if (mounted) {
+        _consecutiveLocationFailures++;
+        if (mounted && _consecutiveLocationFailures >= 6) {
           setState(() => _lastLocationStatus = 'Location permission permanently denied');
         }
         return;
@@ -234,16 +306,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         lng: position.longitude,
       );
 
+      if (success) {
+        _consecutiveLocationFailures = 0;
+      } else {
+        _consecutiveLocationFailures++;
+      }
+
       if (mounted) {
         setState(() {
           _lastLocationStatus = success
               ? 'Location updated ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}'
-              : 'Location update failed';
+              : (_consecutiveLocationFailures >= 6 ? 'Location update failed — check connection' : null);
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _lastLocationStatus = 'Location error: $e');
+      _consecutiveLocationFailures++;
+      // Only surface the error after ~30s of continuous failures (6 × 5s intervals).
+      if (mounted && _consecutiveLocationFailures >= 6) {
+        setState(() => _lastLocationStatus = 'Location error — retrying in background');
       }
     }
   }
@@ -264,6 +344,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _locationTimer?.cancel();
+    _forceLogoutSub?.cancel();
     super.dispose();
   }
 

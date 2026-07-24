@@ -1,8 +1,71 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter/foundation.dart';
+
+// ── Exception hierarchy ────────────────────────────────────────────────────
+// Every API failure is surfaced as an [ApiException] so call sites can
+// distinguish network problems from auth issues from server errors without
+// inspecting raw HTTP status codes.
+
+class ApiException implements Exception {
+  final String message;
+  final ApiErrorKind kind;
+  final int? statusCode;
+
+  const ApiException({
+    required this.message,
+    required this.kind,
+    this.statusCode,
+  });
+
+  @override
+  String toString() => 'ApiException($kind): $message';
+}
+
+enum ApiErrorKind {
+  /// No internet, DNS failure, timeout, or SocketException.
+  network,
+
+  /// HTTP 401 — access token is invalid or expired.
+  unauthorized,
+
+  /// HTTP 404 — resource does not exist (e.g. no active dispatch).
+  notFound,
+
+  /// HTTP 4xx other than 401/404.
+  client,
+
+  /// HTTP 5xx.
+  server,
+
+  /// Any non-HTTP exception that doesn't match the above (parse errors, etc.).
+  unknown,
+}
+
+// ── Login result ──────────────────────────────────────────────────────────
+// Instead of a bare [bool], [login] now returns a [LoginResult] so the UI
+// can show different messages for network errors vs bad credentials.
+
+enum LoginOutcome { success, invalidCredentials, networkError }
+
+class LoginResult {
+  final LoginOutcome outcome;
+  final String? detail;
+
+  const LoginResult({required this.outcome, this.detail});
+}
+
+// ── Force-logout broadcast ────────────────────────────────────────────────
+// When the refresh token is also expired (or missing), the interceptor
+// broadcasts on this controller.  The app shell (NavigatorObserver or a
+// similar wrapper) listens and redirects to the login screen with a
+// "session expired" message.
+
+final forceLogoutController = StreamController<void>.broadcast();
+
+// ── API service ────────────────────────────────────────────────────────────
 
 class ApiService {
   // Using 127.0.0.1 on all platforms because:
@@ -18,6 +81,8 @@ class ApiService {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };
+
+  // ── Token helpers ──────────────────────────────────────────────────────
 
   static Future<Map<String, String>> _authHeaders() async {
     final token = await _storage.read(key: 'access_token');
@@ -44,7 +109,172 @@ class ApiService {
     return await _storage.read(key: 'access_token');
   }
 
-  static Future<bool> login({
+  // ── Centralized 401 refresh (single-flight) ────────────────────────────
+  // When any authenticated request returns 401, we attempt a single token
+  // refresh.  Concurrent 401s share the same in-flight promise so the
+  // refresh endpoint is hit at most once per expiry window.  If refresh
+  // also fails we broadcast a force-logout and throw.
+
+  static Future<void> _performForceLogout() async {
+    await clearTokens();
+    forceLogoutController.add(null);
+  }
+
+  static Future<Map<String, String>> _refreshHeaders() async {
+    final refreshToken = await _storage.read(key: 'refresh_token');
+    if (refreshToken == null) {
+      await _performForceLogout();
+      throw const ApiException(
+        message: 'Session expired. Please log in again.',
+        kind: ApiErrorKind.unauthorized,
+      );
+    }
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/auth/login/refresh/'),
+            headers: _jsonHeaders,
+            body: jsonEncode({'refresh': refreshToken}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final access = data['access'] as String?;
+        if (access != null) {
+          await _storage.write(key: 'access_token', value: access);
+          return {
+            ..._jsonHeaders,
+            'Authorization': 'Bearer $access',
+          };
+        }
+      }
+      // Refresh endpoint returned non-200 — session is dead.
+      await _performForceLogout();
+      throw const ApiException(
+        message: 'Session expired. Please log in again.',
+        kind: ApiErrorKind.unauthorized,
+      );
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      await _performForceLogout();
+      throw const ApiException(
+        message: 'Session expired. Please log in again.',
+        kind: ApiErrorKind.unauthorized,
+      );
+    }
+  }
+
+  // Mutex-like: only one refresh in flight at a time.
+  static Future<Map<String, String>>? _inFlightRefresh;
+
+  static Future<Map<String, String>> _refreshOrShare() {
+    return _inFlightRefresh ??= _refreshHeaders().whenComplete(() {
+      _inFlightRefresh = null;
+    });
+  }
+
+  /// Sends an authenticated request.  On 401, silently refreshes the token
+  /// and retries once.  All other errors are converted to [ApiException].
+  static Future<http.Response> _authenticatedRequest(
+    Future<http.Response> Function(Map<String, String> headers) fn,
+  ) async {
+    var headers = await _authHeaders();
+    http.Response response;
+    try {
+      response = await fn(headers).timeout(const Duration(seconds: 15));
+    } on SocketException {
+      throw const ApiException(
+        message: 'No internet connection. Please check your network and try again.',
+        kind: ApiErrorKind.network,
+      );
+    } on TimeoutException {
+      throw const ApiException(
+        message: 'Request timed out. The server may be slow or unreachable.',
+        kind: ApiErrorKind.network,
+      );
+    } on http.ClientException {
+      throw const ApiException(
+        message: 'Network error. Please check your connection.',
+        kind: ApiErrorKind.network,
+      );
+    }
+
+    if (response.statusCode == 401) {
+      // Attempt silent refresh + retry.
+      try {
+        headers = await _refreshOrShare();
+        response = await fn(headers).timeout(const Duration(seconds: 15));
+      } on ApiException {
+        rethrow; // Already an ApiException (likely unauthorized after refresh fail).
+      } on SocketException {
+        throw const ApiException(
+          message: 'No internet connection during token refresh.',
+          kind: ApiErrorKind.network,
+        );
+      } on TimeoutException {
+        throw const ApiException(
+          message: 'Token refresh timed out.',
+          kind: ApiErrorKind.network,
+        );
+      } on http.ClientException {
+        throw const ApiException(
+          message: 'Network error during token refresh.',
+          kind: ApiErrorKind.network,
+        );
+      }
+    }
+
+    // Convert non-2xx to ApiException for call-site consumption.
+    if (response.statusCode >= 400) {
+      final body = _safeParseJson(response.body);
+      final serverMessage = body?['error']?.toString() ??
+          body?['detail']?.toString() ??
+          (body is Map
+              ? (body as Map).values
+                  .whereType<List>()
+                  .expand((e) => e)
+                  .firstOrNull
+                  ?.toString()
+              : null);
+
+      final kind = response.statusCode == 401
+          ? ApiErrorKind.unauthorized
+          : response.statusCode == 404
+              ? ApiErrorKind.notFound
+              : response.statusCode >= 500
+                  ? ApiErrorKind.server
+                  : ApiErrorKind.client;
+
+      throw ApiException(
+        message: serverMessage ?? _defaultMessage(response.statusCode),
+        kind: kind,
+        statusCode: response.statusCode,
+      );
+    }
+
+    return response;
+  }
+
+  static String _defaultMessage(int status) {
+    if (status == 401) return 'Session expired. Please log in again.';
+    if (status == 403) return 'You do not have permission for this action.';
+    if (status == 404) return 'Requested resource was not found.';
+    if (status >= 500) return 'Server error. Please try again later.';
+    return 'Request failed ($status).';
+  }
+
+  static Map<String, dynamic>? _safeParseJson(String body) {
+    try {
+      return jsonDecode(body) as Map<String, dynamic>?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Public API methods ──────────────────────────────────────────────────
+
+  static Future<LoginResult> login({
     required String username,
     required String password,
     required String organizationName,
@@ -62,7 +292,7 @@ class ApiService {
           )
           .timeout(const Duration(seconds: 15));
 
-      _log('login status: ${response.statusCode}, body: ${response.body}');
+      _log('login status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -70,49 +300,54 @@ class ApiService {
         final refresh = data['refresh'] as String?;
         if (access != null && refresh != null) {
           await _setTokens(access, refresh);
-          return true;
+          return const LoginResult(outcome: LoginOutcome.success);
         }
       }
-      return false;
-    } catch (e) {
-      _log('login exception: $e');
-      return false;
+      return const LoginResult(
+        outcome: LoginOutcome.invalidCredentials,
+        detail: 'Invalid username, organization, or password',
+      );
+    } on SocketException {
+      return const LoginResult(
+        outcome: LoginOutcome.networkError,
+        detail: 'No internet connection. Check your network and try again.',
+      );
+    } on TimeoutException {
+      return const LoginResult(
+        outcome: LoginOutcome.networkError,
+        detail: 'Connection timed out. The server may be unreachable.',
+      );
+    } on http.ClientException {
+      return const LoginResult(
+        outcome: LoginOutcome.networkError,
+        detail: 'Network error. Please check your connection.',
+      );
     }
   }
 
   static Future<Map<String, dynamic>?> getDriverMe() async {
     try {
-      final headers = await _authHeaders();
-      final response = await http
-          .get(Uri.parse('$_baseUrl/api/drivers/me/'), headers: headers)
-          .timeout(const Duration(seconds: 15));
-
-      _log('getDriverMe status: ${response.statusCode}, body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data;
-      }
-      return null;
-    } catch (e) {
-      _log('getDriverMe exception: $e');
-      return null;
+      final response = await _authenticatedRequest(
+        (headers) => http.get(Uri.parse('$_baseUrl/api/drivers/me/'), headers: headers),
+      );
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } on ApiException catch (e) {
+      _log('getDriverMe failed: $e');
+      rethrow;
     }
   }
 
   static Future<bool> changePassword(String newPassword) async {
     try {
-      final headers = await _authHeaders();
-      final response = await http
-          .post(
-            Uri.parse('$_baseUrl/api/drivers/me/change-password/'),
-            headers: headers,
-            body: jsonEncode({'new_password': newPassword}),
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await _authenticatedRequest(
+        (headers) => http.post(
+          Uri.parse('$_baseUrl/api/drivers/me/change-password/'),
+          headers: headers,
+          body: jsonEncode({'new_password': newPassword}),
+        ),
+      );
       return response.statusCode == 200;
-    } catch (e) {
-      _log('changePassword exception: $e');
+    } on ApiException {
       return false;
     }
   }
@@ -123,20 +358,19 @@ class ApiService {
     required String newPassword,
   }) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('$_baseUrl/api/drivers/reset-password/'),
-            headers: _jsonHeaders,
-            body: jsonEncode({
-              'username': username,
-              'organization_name': organizationName,
-              'new_password': newPassword,
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await _authenticatedRequest(
+        (headers) => http.post(
+          Uri.parse('$_baseUrl/api/drivers/reset-password/'),
+          headers: headers,
+          body: jsonEncode({
+            'username': username,
+            'organization_name': organizationName,
+            'new_password': newPassword,
+          }),
+        ),
+      );
       return response.statusCode == 200;
-    } catch (e) {
-      _log('resetPassword exception: $e');
+    } on ApiException {
       return false;
     }
   }
@@ -168,19 +402,16 @@ class ApiService {
     required bool isAvailable,
   }) async {
     try {
-      final headers = await _authHeaders();
-      final response = await http
-          .patch(
-            Uri.parse('$_baseUrl/api/vehicles/$vehicleId/'),
-            headers: headers,
-            body: jsonEncode({'is_available': isAvailable}),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      _log('updateVehicleAvailability status: ${response.statusCode}, body: ${response.body}');
+      final response = await _authenticatedRequest(
+        (headers) => http.patch(
+          Uri.parse('$_baseUrl/api/vehicles/$vehicleId/'),
+          headers: headers,
+          body: jsonEncode({'is_available': isAvailable}),
+        ),
+      );
+      _log('updateVehicleAvailability status: ${response.statusCode}');
       return response.statusCode == 200;
-    } catch (e) {
-      _log('updateVehicleAvailability exception: $e');
+    } on ApiException {
       return false;
     }
   }
@@ -189,24 +420,18 @@ class ApiService {
     required bool isOnDuty,
   }) async {
     try {
-      final headers = await _authHeaders();
-      final response = await http
-          .patch(
-            Uri.parse('$_baseUrl/api/drivers/me/duty/'),
-            headers: headers,
-            body: jsonEncode({'is_on_duty': isOnDuty}),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      _log('setDutyStatus status: ${response.statusCode}, body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
+      final response = await _authenticatedRequest(
+        (headers) => http.patch(
+          Uri.parse('$_baseUrl/api/drivers/me/duty/'),
+          headers: headers,
+          body: jsonEncode({'is_on_duty': isOnDuty}),
+        ),
+      );
+      _log('setDutyStatus status: ${response.statusCode}');
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } on ApiException catch (e) {
       _log('setDutyStatus exception: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -232,10 +457,11 @@ class ApiService {
         );
       }
 
-      final streamed = await request.send().timeout(const Duration(seconds: 30));
+      final streamed =
+          await request.send().timeout(const Duration(seconds: 30));
       final response = await http.Response.fromStream(streamed);
 
-      _log('reportIssue status: ${response.statusCode}, body: ${response.body}');
+      _log('reportIssue status: ${response.statusCode}');
       return response.statusCode == 201 || response.statusCode == 200;
     } catch (e) {
       _log('reportIssue exception: $e');
@@ -243,22 +469,24 @@ class ApiService {
     }
   }
 
+  /// Returns the driver's active dispatch, or [null] if there is none (404).
+  /// Throws [ApiException] on network/server/auth errors.
   static Future<Map<String, dynamic>?> getMyDispatch() async {
     try {
-      final headers = await _authHeaders();
-      final response = await http
-          .get(Uri.parse('$_baseUrl/api/drivers/me/dispatch/'), headers: headers)
-          .timeout(const Duration(seconds: 15));
-
-      _log('getMyDispatch status: ${response.statusCode}, body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+      final response = await _authenticatedRequest(
+        (headers) => http.get(
+          Uri.parse('$_baseUrl/api/drivers/me/dispatch/'),
+          headers: headers,
+        ),
+      );
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } on ApiException catch (e) {
+      if (e.kind == ApiErrorKind.notFound) {
+        // 404 means no active dispatch — not an error.
+        return null;
       }
-      return null;
-    } catch (e) {
-      _log('getMyDispatch exception: $e');
-      return null;
+      _log('getMyDispatch failed: $e');
+      rethrow;
     }
   }
 
@@ -266,24 +494,18 @@ class ApiService {
     required String status,
   }) async {
     try {
-      final headers = await _authHeaders();
-      final response = await http
-          .post(
-            Uri.parse('$_baseUrl/api/drivers/me/dispatch/transition/'),
-            headers: headers,
-            body: jsonEncode({'status': status}),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      _log('transitionDispatch status: ${response.statusCode}, body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
+      final response = await _authenticatedRequest(
+        (headers) => http.post(
+          Uri.parse('$_baseUrl/api/drivers/me/dispatch/transition/'),
+          headers: headers,
+          body: jsonEncode({'status': status}),
+        ),
+      );
+      _log('transitionDispatch status: ${response.statusCode}');
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } on ApiException catch (e) {
       _log('transitionDispatch exception: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -293,20 +515,17 @@ class ApiService {
     required double lng,
   }) async {
     try {
-      final headers = await _authHeaders();
-      final response = await http
-          .post(
-            Uri.parse('$_baseUrl/api/vehicles/$vehicleId/update-location/'),
-            headers: headers,
-            body: jsonEncode({'lat': lat, 'lng': lng}),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      _log('updateLocation status: ${response.statusCode}, body: ${response.body}');
+      final response = await _authenticatedRequest(
+        (headers) => http.post(
+          Uri.parse('$_baseUrl/api/vehicles/$vehicleId/update-location/'),
+          headers: headers,
+          body: jsonEncode({'lat': lat, 'lng': lng}),
+        ),
+      );
       return response.statusCode == 200;
-    } catch (e) {
+    } on ApiException catch (e) {
       _log('updateLocation exception: $e');
-      return false;
+      rethrow;
     }
   }
 
@@ -422,7 +641,8 @@ class ApiService {
         await http.MultipartFile.fromPath('file', file.path),
       );
 
-      final streamed = await request.send().timeout(const Duration(seconds: 30));
+      final streamed =
+          await request.send().timeout(const Duration(seconds: 30));
       final response = await http.Response.fromStream(streamed);
 
       if (response.statusCode == 201 || response.statusCode == 200) {

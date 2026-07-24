@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import { fetchIssueReports, updateIssueStatus, getIssueImageUrl, type IssueReport } from '../api/issues';
+import { toast } from './toast';
 
 const STATUS_BADGES: Record<string, { className: string; label: string }> = {
   open: { className: 'issue-open', label: 'Open' },
@@ -53,9 +54,11 @@ export default function IssuesTab() {
     try {
       const updated = await updateIssueStatus(id, newStatus);
       setReports(prev => prev.map(r => r.id === id ? updated : r));
+      toast.success(`Issue ${newStatus === 'resolved' ? 'resolved' : 'acknowledged'}`);
     } catch (error) {
       console.error('Failed to update issue status', error);
       setDataError('Could not update issue status.');
+      toast.error('Could not update issue status.');
     } finally {
       setUpdatingId(null);
     }

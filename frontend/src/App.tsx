@@ -4,12 +4,14 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import ForgotPassword from './pages/ForgotPassword';
+import { ToastViewport } from './components/toast';
 import { useTheme } from './hooks/useTheme';
 
 function App() {
   useTheme();
   return (
     <Router>
+      <ToastViewport />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />

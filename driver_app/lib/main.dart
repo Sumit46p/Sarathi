@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'theme.dart';
 import 'screens/splash_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/login_screen.dart';
+import 'services/api_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,11 +44,29 @@ class _AuthGateState extends State<_AuthGate> {
   final _storage = const FlutterSecureStorage();
   bool _loading = true;
   bool _hasToken = false;
+  StreamSubscription<void>? _forceLogoutSub;
 
   @override
   void initState() {
     super.initState();
     _checkAuth();
+    // Listen for force-logout events (expired refresh token) so we
+    // can navigate to the login screen with a clear message.
+    _forceLogoutSub = forceLogoutController.stream.listen((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const LoginScreen(sessionExpired: true),
+        ),
+        (route) => false,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _forceLogoutSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkAuth() async {

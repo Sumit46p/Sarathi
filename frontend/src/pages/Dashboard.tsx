@@ -13,6 +13,7 @@ import { api } from '../api/auth';
 import MaintenanceTab from '../components/MaintenanceTab';
 import IssuesTab from '../components/IssuesTab';
 import ThemeToggle from '../components/ThemeToggle';
+import { toast } from '../components/toast';
 import NEPAL_GEOJSON from '../data/nepalBorder';
 
 delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
@@ -224,6 +225,7 @@ export default function Dashboard() {
       setIssues(previous => JSON.stringify(previous) === JSON.stringify(data) ? previous : data);
     } catch (error) {
       console.error('Failed to fetch issues', error);
+      setDataError('Issue data could not be refreshed.');
     }
   }, []);
 
@@ -268,6 +270,7 @@ export default function Dashboard() {
       setShowAddDriverModal(false);
       setNewDriver({ name: '', phone_number: '', license_number: '', username: '', password: '' });
       await fetchDrivers();
+      toast.success('Driver added');
     } catch (error: unknown) {
       console.error('Failed to add driver', error);
       const responseError = error as { response?: { data?: Record<string, string[] | string> } };
@@ -281,15 +284,16 @@ export default function Dashboard() {
 
   const handleDeleteDriver = async (driverId: number) => {
     if (!window.confirm('Delete this driver? This action cannot be undone.')) return;
-    try { await api.delete(`/drivers/${driverId}/`); await fetchDrivers(); }
-    catch (error) { console.error('Failed to delete driver', error); setDataError('Driver could not be deleted.'); }
+    try { await api.delete(`/drivers/${driverId}/`); await fetchDrivers(); toast.success('Driver deleted'); }
+    catch (error) { console.error('Failed to delete driver', error); setDataError('Driver could not be deleted.'); toast.error('Driver could not be deleted.'); }
   };
 
   const handleAssignDriver = async (vehicleId: number, driverId: string) => {
     try {
       await api.post(`/vehicles/${vehicleId}/assign-driver/`, { driver_id: driverId === '' ? null : Number(driverId) });
       await fetchVehicles();
-    } catch (error) { console.error('Failed to assign driver', error); setDataError('Driver assignment could not be updated.'); }
+      toast.success(driverId === '' ? 'Driver unassigned' : 'Driver assigned');
+    } catch (error) { console.error('Failed to assign driver', error); setDataError('Driver assignment could not be updated.'); toast.error('Driver assignment could not be updated.'); }
   };
 
   const handleAddVehicle = async () => {
@@ -307,6 +311,7 @@ export default function Dashboard() {
       setShowAddModal(false);
       setNewVehicle({ name: '', vehicle_type: 'ambulance', number_plate: '', is_available: true, location: null });
       await fetchVehicles();
+      toast.success('Vehicle added');
     } catch (error: unknown) {
       console.error('Failed to add vehicle', error);
       const responseError = error as { response?: { data?: Record<string, string | string[]> } };
@@ -319,14 +324,14 @@ export default function Dashboard() {
   };
 
   const handleToggleAvailability = async (vehicle: Vehicle) => {
-    try { await api.patch(`/vehicles/${vehicle.id}/`, { admin_blocked: !vehicle.admin_blocked }); await fetchVehicles(); }
-    catch (error) { console.error('Failed to toggle availability', error); setDataError('Vehicle status could not be updated.'); }
+    try { await api.patch(`/vehicles/${vehicle.id}/`, { admin_blocked: !vehicle.admin_blocked }); await fetchVehicles(); toast.success(vehicle.admin_blocked ? 'Vehicle set available' : 'Vehicle blocked'); }
+    catch (error) { console.error('Failed to toggle availability', error); setDataError('Vehicle status could not be updated.'); toast.error('Vehicle status could not be updated.'); }
   };
 
   const handleDeleteVehicle = async (vehicleId: number) => {
     if (!window.confirm('Delete this vehicle? This action cannot be undone.')) return;
-    try { await api.delete(`/vehicles/${vehicleId}/`); await fetchVehicles(); }
-    catch (error) { console.error('Failed to delete vehicle', error); setDataError('Vehicle could not be deleted.'); }
+    try { await api.delete(`/vehicles/${vehicleId}/`); await fetchVehicles(); toast.success('Vehicle deleted'); }
+    catch (error) { console.error('Failed to delete vehicle', error); setDataError('Vehicle could not be deleted.'); toast.error('Vehicle could not be deleted.'); }
   };
 
   const handleDispatch = async () => {
@@ -336,9 +341,15 @@ export default function Dashboard() {
       const response = await api.post('/dispatch/', { lat: requestMarker.lat, lng: requestMarker.lng, vehicle_type: dispatchType });
       setDispatchResult(response.data);
       await fetchVehicles();
+      toast.success(`${response.data.assigned_vehicle.name} dispatched`);
     } catch (error: unknown) {
-      const responseError = error as { response?: { data?: { error?: string } } };
-      setDispatchError(responseError.response?.data?.error || 'Dispatch failed. Try another location or vehicle type.');
+      const responseError = error as { response?: { data?: { error?: string }; status?: number } };
+      const status = responseError.response?.status;
+      const fallback = status === 404
+        ? 'No available vehicle of this type was found nearby. Try a different vehicle type or add units to your fleet.'
+        : 'Dispatch failed. Try another location or vehicle type.';
+      setDispatchError(responseError.response?.data?.error || fallback);
+      toast.error(responseError.response?.data?.error || fallback);
     } finally { setDispatchLoading(false); }
   };
 
@@ -347,9 +358,11 @@ export default function Dashboard() {
     try {
       const response = await api.post(`/vehicles/${dispatchResult.assigned_vehicle.id}/dispatch/transition/`, { status: 'accepted' });
       setDispatchResult(response.data);
+      toast.success('Dispatch accepted');
     } catch (error: unknown) {
       const responseError = error as { response?: { data?: { error?: string } } };
       setDispatchError(responseError.response?.data?.error || 'Could not accept the dispatch.');
+      toast.error(responseError.response?.data?.error || 'Could not accept the dispatch.');
     }
   };
 
@@ -451,13 +464,13 @@ export default function Dashboard() {
               <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Vehicle</th><th>Type</th><th>Driver</th><th>Status</th><th>Location</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredVehicles.map(vehicle => {
                 const statusInfo = getVehicleStatusInfo(vehicle);
                 return <tr key={vehicle.id} className="clickable-row" onClick={() => { setSelectedVehicleId(vehicle.id); setShowVehiclePanel(true); }}>
-                <td><div className="primary-cell"><div className="entity-icon"><Truck size={17} /></div><div><strong>{vehicle.name}</strong>{vehicle.driver && openIssueDriverIds.has(vehicle.driver as number) && <span className="issue-warning-badge" title="Open driver issue"><AlertTriangle size={13} /></span>}<span className="mono">{vehicle.number_plate || 'No registration'}</span></div></div></td>
-                <td><span className="type-label">{formatType(vehicle.vehicle_type)}</span></td>
-                <td><select className="table-select" value={vehicle.driver || ''} onChange={event => handleAssignDriver(vehicle.id, event.target.value)} aria-label={`Assign driver to ${vehicle.name}`}><option value="">Unassigned</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></td>
-                <td><span className={`status-badge ${statusInfo.className}`}><span />{statusInfo.label}</span></td>
-                <td>{vehicle.location ? <span className="coordinate"><MapPin size={13} />{vehicle.location.lat.toFixed(3)}, {vehicle.location.lng.toFixed(3)}</span> : <span className="muted">Not reported</span>}</td>
-                <td><div className="row-actions"><label className="toggle-switch" title={vehicle.admin_blocked ? 'Set available' : 'Block vehicle'}><input type="checkbox" checked={!vehicle.admin_blocked} onChange={() => handleToggleAvailability(vehicle)} /><span className="toggle-slider" /></label><button className="icon-button danger" onClick={() => handleDeleteVehicle(vehicle.id)} title="Delete vehicle" aria-label={`Delete ${vehicle.name}`}><Trash2 size={15} /></button></div></td>
-              </tr>;
+                  <td><div className="primary-cell"><div className="entity-icon"><Truck size={17} /></div><div><strong>{vehicle.name}</strong>{vehicle.driver && openIssueDriverIds.has(vehicle.driver as number) && <span className="issue-warning-badge" title="Open driver issue"><AlertTriangle size={13} /></span>}<span className="mono">{vehicle.number_plate || 'No registration'}</span></div></div></td>
+                  <td><span className="type-label">{formatType(vehicle.vehicle_type)}</span></td>
+                  <td><select className="table-select" value={vehicle.driver || ''} onChange={event => handleAssignDriver(vehicle.id, event.target.value)} aria-label={`Assign driver to ${vehicle.name}`}><option value="">Unassigned</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></td>
+                  <td><span className={`status-badge ${statusInfo.className}`}><span />{statusInfo.label}</span></td>
+                  <td>{vehicle.location ? <span className="coordinate"><MapPin size={13} />{vehicle.location.lat.toFixed(3)}, {vehicle.location.lng.toFixed(3)}</span> : <span className="muted">Not reported</span>}</td>
+                  <td><div className="row-actions"><label className="toggle-switch" title={vehicle.admin_blocked ? 'Set available' : 'Block vehicle'}><input type="checkbox" checked={!vehicle.admin_blocked} onChange={() => handleToggleAvailability(vehicle)} /><span className="toggle-slider" /></label><button className="icon-button danger" onClick={() => handleDeleteVehicle(vehicle.id)} title="Delete vehicle" aria-label={`Delete ${vehicle.name}`}><Trash2 size={15} /></button></div></td>
+                </tr>;
               })}</tbody></table></div>}
           </section>}
 
@@ -474,8 +487,8 @@ export default function Dashboard() {
               <div className="rail-section"><div className="rail-section-title"><h3>Fleet units</h3><span>{availableVehicles} ready</span></div><div className="unit-list">{vehicles.length === 0 ? <p className="muted">No fleet units available.</p> : vehicles.map(vehicle => {
                 const statusInfo = getVehicleStatusInfo(vehicle);
                 return <button key={vehicle.id} className={`unit-row ${selectedVehicleId === vehicle.id ? 'selected' : ''}`} onClick={() => setSelectedVehicleId(vehicle.id)} disabled={!vehicle.location}>
-                <span className={`unit-status ${statusInfo.className}`} />
-                <div><strong>{vehicle.name}</strong><span>{vehicle.driver_name || 'Unassigned'} · {formatType(vehicle.vehicle_type)}</span></div><ChevronRight size={15} /></button>;
+                  <span className={`unit-status ${statusInfo.className}`} />
+                  <div><strong>{vehicle.name}</strong><span>{vehicle.driver_name || 'Unassigned'} · {formatType(vehicle.vehicle_type)}</span></div><ChevronRight size={15} /></button>;
               })}</div></div>
             </div>
 

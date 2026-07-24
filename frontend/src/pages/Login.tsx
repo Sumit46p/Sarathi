@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { authApi } from '../api/auth';
-import { Lock, Eye, EyeOff } from 'lucide-react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { authApi, SESSION_EXPIRED_FLAG } from '../api/auth';
+import { AxiosError } from 'axios';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
 const Login = () => {
@@ -9,19 +10,30 @@ const Login = () => {
   const [organizationName, setOrganizationName] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [searchParams] = useSearchParams();
+  const sessionExpired = searchParams.get(SESSION_EXPIRED_FLAG) === '1';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSubmitting(true);
     try {
       const response = await authApi.post('/auth/login/', { username, password, organization_name: organizationName });
       localStorage.setItem('accessToken', response.data.access);
       localStorage.setItem('refreshToken', response.data.refresh);
-      navigate('/dashboard');
-    } catch {
-      setError('Invalid ID, Organization Name, or password');
+      // Clean any session-expired flag from the URL on a fresh login.
+      navigate('/dashboard', { replace: true });
+    } catch (err) {
+      if (err instanceof AxiosError && err.response) {
+        setError('Invalid ID, Organization Name, or password');
+      } else {
+        setError('Could not reach the server. Check your internet connection and try again.');
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -39,6 +51,11 @@ const Login = () => {
         <h2 className="auth-title">Welcome Back</h2>
         <p className="auth-subtitle">Sign in to access Sarathi Fleet Dashboard</p>
 
+        {sessionExpired && (
+          <div style={{ color: 'var(--warning, #b45309)', marginBottom: '16px', textAlign: 'center', padding: '10px 12px', background: 'rgba(180, 83, 9, 0.08)', borderRadius: 8, fontSize: '0.85rem' }}>
+            Your session has expired. Please sign in again.
+          </div>
+        )}
         {error && <div style={{ color: 'var(--danger)', marginBottom: '16px', textAlign: 'center' }}>{error}</div>}
 
         <form onSubmit={handleLogin}>
@@ -102,8 +119,9 @@ const Login = () => {
               <Link to="/forgot-password" style={{ fontSize: '14px', color: 'var(--primary)' }}>Forgot Password?</Link>
             </div>
           </div>
-          <button type="submit" className="btn-primary" style={{ marginTop: '12px' }}>
-            Sign In
+          <button type="submit" className="btn-primary" style={{ marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: submitting ? 0.8 : 1 }} disabled={submitting}>
+            {submitting && <Loader2 size={18} className="spin" />}
+            {submitting ? 'Signing in' : 'Sign In'}
           </button>
         </form>
         <p style={{ textAlign: 'center', marginTop: '24px', color: 'var(--text-muted)' }}>
