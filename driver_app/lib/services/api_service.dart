@@ -308,11 +308,24 @@ class ApiService {
       String? serverMessage;
       try {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
+        _log('login response body: $body');
+        
+        // Try multiple common error field names
         serverMessage = body['error']?.toString() ??
             body['detail']?.toString() ??
-            body['non_field_errors']?.first?.toString();
-      } catch (_) {
+            body['message']?.toString() ??
+            body['non_field_errors']?.first?.toString() ??
+            body['organization_name']?.first?.toString() ??
+            body['username']?.first?.toString() ??
+            body['password']?.first?.toString();
+        
+        // If still no message, try to stringify the entire body to see the structure
+        if (serverMessage == null && body.isNotEmpty) {
+          serverMessage = body.toString();
+        }
+      } catch (e) {
         // Response is not valid JSON
+        _log('Failed to parse login error response: $e, body: ${response.body}');
       }
       
       // Return appropriate error based on status code

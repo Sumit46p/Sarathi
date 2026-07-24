@@ -136,7 +136,8 @@ const DISPATCH_STATUS_LABELS: Record<string, string> = {
 // Derives the status badge for a vehicle, distinguishing:
 //  - Available            → driver on duty, not blocked, no active trip
 //  - On Trip / En Route.. → currently on an active dispatch
-//  - In service           → unavailable for any other reason (off-duty / admin-blocked)
+//  - Off Duty             → driver is not assigned or off-duty
+//  - Blocked              → admin has blocked the vehicle
 function getVehicleStatusInfo(vehicle: Vehicle): { label: string; className: string } {
   if (vehicle.is_available) return { label: 'Available', className: 'available' };
   if (vehicle.has_active_dispatch) {
@@ -145,7 +146,11 @@ function getVehicleStatusInfo(vehicle: Vehicle): { label: string; className: str
       : 'On Trip';
     return { label, className: 'on-trip' };
   }
-  return { label: 'In service', className: 'unavailable' };
+  // If admin blocked, show "Blocked"; otherwise show "Off Duty" (driver offline)
+  if (vehicle.admin_blocked) {
+    return { label: 'Blocked', className: 'unavailable' };
+  }
+  return { label: 'Off Duty', className: 'unavailable' };
 }
 
 export default function Dashboard() {

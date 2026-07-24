@@ -272,10 +272,55 @@ void _handleLogin() async {
                       ),
                       const SizedBox(height: 24),
 
+                      const SizedBox(height: 24),
+
                       PrimaryButton(
                         text: 'Login',
                         isLoading: _isLoading,
                         onPressed: _handleLogin,
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Demo Credentials Helper
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _usernameController.text = 'Ram1';
+                            _organizationController.text = 'company';
+                            _passwordController.text = 'driver123';
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Demo credentials autofilled')),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Tap to use Demo Credentials',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryColor,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'User: Ram1 | Org: company',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
 
                       const SizedBox(height: 24),

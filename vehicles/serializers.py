@@ -78,6 +78,19 @@ class DriverSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(username=username, password=password)
         driver.user = user
         driver.save()
+        
+        # Fix organization_name if signal created profile with default
+        # Get organization name from the context (if available)
+        from .models import Profile
+        org_name = self.context.get('organization_name', 'Default Org')
+        profile, created = Profile.objects.get_or_create(
+            user=user,
+            defaults={'organization_name': org_name}
+        )
+        if not created and profile.organization_name == 'Default Org' and org_name != 'Default Org':
+            profile.organization_name = org_name
+            profile.save()
+        
         return driver
 
 

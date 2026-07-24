@@ -78,16 +78,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        if (e.kind == ApiErrorKind.unauthorized) {
-          _errorMsg = 'Session expired. Please log in again.';
-        } else if (e.kind == ApiErrorKind.network) {
-          _errorMsg = 'Network error. Please check your connection and retry.';
-        } else {
-          _errorMsg = 'Failed to load profile: ${e.message}';
-        }
-      });
+      if (e.kind == ApiErrorKind.unauthorized) {
+        // Token is invalid/expired - clear it and redirect to login
+        await _performLogout();
+      } else {
+        setState(() {
+          _loading = false;
+          if (e.kind == ApiErrorKind.network) {
+            _errorMsg = 'Network error. Please check your connection and retry.';
+          } else {
+            _errorMsg = 'Failed to load profile: ${e.message}';
+          }
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -602,6 +605,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   Text(_getGreeting(firstName), style: GoogleFonts.plusJakartaSans(fontSize: 19, fontWeight: FontWeight.w600, color: Colors.white)),
                   const SizedBox(height: 3),
+                  if (_driverData?['organization_name'] != null || _driverData?['organization'] != null)
+                    Text(
+                      (_driverData?['organization_name'] ?? _driverData?['organization']).toString(),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14, 
+                        fontWeight: FontWeight.w500, 
+                        color: Colors.white.withValues(alpha: 0.9)
+                      ),
+                    ),
+                  if (_driverData?['organization_name'] != null || _driverData?['organization'] != null)
+                    const SizedBox(height: 3),
                   Text(_getSubGreeting(), style: GoogleFonts.plusJakartaSans(fontSize: 12, color: Colors.white.withValues(alpha: 0.75))),
                 ],
               ),

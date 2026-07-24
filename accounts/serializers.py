@@ -6,7 +6,6 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from vehicles.models import Vehicle
 from .models import Profile
 
-
 class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Accept either a username or an email address as the login identifier."""
 
@@ -27,9 +26,15 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
             )
 
         organization_name = self.initial_data.get('organization_name')
-        if not hasattr(user, 'profile') or user.profile.organization_name != organization_name:
+        if not hasattr(user, 'profile'):
             raise serializers.ValidationError(
-                'Invalid organization name'
+                'User profile not found. Please contact support.'
+            )
+        
+        # Case-insensitive organization name comparison
+        if user.profile.organization_name.lower() != (organization_name or '').lower():
+            raise serializers.ValidationError(
+                f'Invalid organization name. Expected: {user.profile.organization_name}'
             )
 
         if not user.is_active:
@@ -83,5 +88,14 @@ class RegisterSerializer(serializers.ModelSerializer):
             email=validated_data['email'],
             password=validated_data['password']
         )
-        Profile.objects.create(user=user, organization_name=org_name)
+        # Use get_or_create to avoid duplicate profile errors
+        # (the post_save signal may have already created one)
+        profile, created = Profile.objects.get_or_create(
+            user=user,
+            defaults={'organization_name': org_name}
+        )
+        # Update org name if profile was created by signal with default
+        if not created and profile.organization_name == 'Default Org':
+            profile.organization_name = org_name
+            profile.save()
         return user

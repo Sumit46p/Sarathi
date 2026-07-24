@@ -18,6 +18,34 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
   final _imagePicker = ImagePicker();
   File? _selectedImage;
   bool _submitting = false;
+  Map<String, dynamic>? _driverData;
+  bool _loadingDriver = true;
+  String? _errorMsg;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDriverData();
+  }
+
+  Future<void> _loadDriverData() async {
+    try {
+      final data = await ApiService.getDriverMe();
+      if (mounted) {
+        setState(() {
+          _driverData = data;
+          _loadingDriver = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMsg = 'Failed to load driver data';
+          _loadingDriver = false;
+        });
+      }
+    }
+  }
 
   Future<void> _pickImage(ImageSource source) async {
     final XFile? picked = await _imagePicker.pickImage(
@@ -87,7 +115,20 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: SingleChildScrollView(
+      body: _loadingDriver
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMsg != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, size: 64, color: AppTheme.errorColor),
+                      const SizedBox(height: 16),
+                      Text(_errorMsg!, style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor)),
+                    ],
+                  ),
+                )
+              : SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.all(20),
         child: Form(

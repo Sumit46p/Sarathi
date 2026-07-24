@@ -89,6 +89,7 @@ class Vehicle(models.Model):
             return True
         return (timezone.now() - self.last_location_at).total_seconds() > 300
 
+    @property
     def has_active_dispatch(self) -> bool:
         """True if this vehicle has any dispatch request in a non-terminal state.
 
@@ -119,7 +120,11 @@ class Vehicle(models.Model):
         """
         on_duty = bool(self.driver and self.driver.is_on_duty)
         is_available = on_duty and not self.admin_blocked and not self.has_active_dispatch
-        Vehicle.objects.filter(pk=self.pk).update(is_available=is_available)
+        # Update database and refresh in-memory object
+        updated_count = Vehicle.objects.filter(pk=self.pk).update(is_available=is_available)
+        # Force refresh from database to ensure we have latest state
+        if updated_count > 0:
+            self.refresh_from_db()
         self.is_available = is_available
 
     class Meta:

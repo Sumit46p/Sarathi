@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
+from django.contrib.auth.models import User
 from django.db.models import Q
 from django.utils import timezone
 from .osrm import get_route_distance
@@ -91,6 +92,18 @@ class DriverListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return Driver.objects.filter(owner=self.request.user)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # Pass organization_name from user's profile to serializer
+        org_name = 'Default Org'
+        try:
+            if hasattr(self.request.user, 'profile'):
+                org_name = self.request.user.profile.organization_name
+        except Exception:
+            pass
+        context['organization_name'] = org_name
+        return context
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -259,8 +272,10 @@ def reset_password(request):
 
     try:
         user = User.objects.get(username=username)
-        if not hasattr(user, 'profile') or user.profile.organization_name != organization_name:
-            return Response({'error': 'Invalid organization name'}, status=status.HTTP_400_BAD_REQUEST)
+        if not hasattr(user, 'profile'):
+            return Response({'error': 'User profile not found'}, status=status.HTTP_400_BAD_REQUEST)
+        if user.profile.organization_name.lower() != (organization_name or '').lower():
+            return Response({'error': f'Invalid organization name. Expected: {user.profile.organization_name}'}, status=status.HTTP_400_BAD_REQUEST)
         driver = Driver.objects.get(user=user)
     except (User.DoesNotExist, Driver.DoesNotExist):
         return Response({'error': 'Invalid username or organization name'}, status=status.HTTP_400_BAD_REQUEST)
@@ -289,8 +304,10 @@ def verify_driver_identity(request):
 
     try:
         user = User.objects.get(username=username)
-        if not hasattr(user, 'profile') or user.profile.organization_name != organization_name:
-            return Response({'error': 'Invalid organization name'}, status=status.HTTP_400_BAD_REQUEST)
+        if not hasattr(user, 'profile'):
+            return Response({'error': 'User profile not found'}, status=status.HTTP_400_BAD_REQUEST)
+        if user.profile.organization_name.lower() != (organization_name or '').lower():
+            return Response({'error': f'Invalid organization name. Expected: {user.profile.organization_name}'}, status=status.HTTP_400_BAD_REQUEST)
         driver = Driver.objects.get(user=user)
     except (User.DoesNotExist, Driver.DoesNotExist):
         return Response({'error': 'No driver account found'}, status=status.HTTP_400_BAD_REQUEST)
@@ -324,10 +341,14 @@ def driver_duty(request):
 
     driver.is_on_duty = on_duty
     driver.save(update_fields=['is_on_duty'])
+    # Force refresh driver from DB in case signal processing affects related objects
+    driver.refresh_from_db()
 
     assigned_vehicle = None
     if driver.assigned_vehicles.exists():
         v = driver.assigned_vehicles.first()
+        # Refresh from DB to get the updated is_available after signal fired
+        v.refresh_from_db()
         assigned_vehicle = {
             'id': v.id,
             'name': v.name,
@@ -343,6 +364,7 @@ def driver_duty(request):
         'phone_number': driver.phone_number,
         'license_number': driver.license_number,
         'is_active': driver.is_active,
+        'requires_password_change': driver.requires_password_change,
         'is_on_duty': driver.is_on_duty,
         'assigned_vehicle': assigned_vehicle,
     }

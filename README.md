@@ -57,6 +57,20 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] **Flutter UI enhancements**: custom animations (`SmoothPageRoute`, `AnimatedListItem`), splash screen animation, haptic feedback, staggered list animations, improved bottom nav, polished cards/buttons
 - [x] **Admin-facing issue report view**: backend `IssueReport` now uses `status` workflow (`open` → `acknowledged` → `resolved`); admin endpoints `GET /api/issues/` (owner-scoped list) and `PATCH /api/issues/<id>/` (status update); frontend `IssuesTab` with photo thumbnails, status badges, Acknowledge/Resolve actions, and open-count badge on sidebar nav; fleet table shows warning indicator on vehicles with open driver issues
 
+### Robustness & Polish Pass (latest cycle)
+- [x] **Backend**: Case-insensitive organization name matching across login, password reset, and identity verification flows
+- [x] **Backend**: Fixed DriverMeSerializer KeyError by including `requires_password_change` in duty endpoint response
+- [x] **React Dashboard**: Loading skeletons on all data-fetching components (Vehicles, Maintenance, Issues, Drivers, Dispatch)
+- [x] **React Dashboard**: Empty states with clear messaging ("No vehicles yet", "No maintenance records", "No issue reports")
+- [x] **React Dashboard**: Error banners with dismiss & retry buttons on all CRUD operations
+- [x] **React Dashboard**: Success/error toast notifications on create/update/delete actions
+- [x] **Flutter Driver App**: Report Issue screen shows loading spinner while fetching driver data; displays error if load fails
+- [x] **Flutter Driver App**: Location permission denied shows in-app dialog with "Open Settings" button
+- [x] **Flutter Driver App**: Network loss during location polling retries quietly every 5s; surfaces error only after 30+ seconds of continuous failures
+- [x] **Flutter Driver App**: Trips screen distinguishes "No active trip" (empty state) from network error (retry button)
+- [x] **React Dashboard**: Issue photos displayed as thumbnails in Issues tab with full-size preview modal
+- [x] All error handling maintains API contracts — no breaking changes to endpoints or responses
+
 ### Not Yet Started / Partial
 - [ ] Expense tracking (fuel, maintenance, operational costs)
 - [ ] Operational analytics/reporting dashboard (Chart.js/Recharts)
@@ -193,6 +207,9 @@ Visit **http://localhost:5173** to see the live vehicle map and dispatch console
 
 ### 10. Run the Flutter driver app
 
+The Flutter driver app runs on Android emulators, physical Android devices, or iOS devices.
+Ensure the Django backend is running on `http://localhost:8000` before starting the app.
+
 ```bash
 cd driver_app
 flutter pub get
@@ -201,7 +218,115 @@ flutter run
 
 Log in with a **driver account** created from the dashboard (Admin → Drivers → Add driver, with username + password). The driver's On Duty toggle and Trips tab connect to the same backend.
 
+#### Common Issues & Network Configuration
+
+**Error: "No internet connection" or "Can't reach 127.0.0.1:8000"**
+
+The Flutter app uses `http://127.0.0.1:8000` to connect to the backend. Depending on your setup, you may need to configure the network tunnel:
+
+##### **Android Emulator**
+The emulator can reach `localhost` on the host machine via `10.0.2.2` (built-in alias), but we use `adb reverse` instead for consistency:
+
+```bash
+# Run this once when you start the emulator (or after adb reconnect)
+adb reverse tcp:8000 tcp:8000
+```
+
+Then run:
+```bash
+cd driver_app
+flutter run
+```
+
+The `adb reverse` command tunnels `127.0.0.1:8000` on the emulator to your host machine's localhost.
+
+##### **Physical Android Device** (USB connected)
+1. Connect your device via USB
+2. Enable USB debugging in Developer Options
+3. Run this **every time you connect**:
+   ```bash
+   adb reverse tcp:8000 tcp:8000
+   ```
+4. Then run:
+   ```bash
+   cd driver_app
+   flutter run -d <device_id>
+   ```
+   Or let Flutter auto-detect:
+   ```bash
+   flutter run
+   ```
+
+##### **iOS Device/Simulator**
+1. Make sure your Mac and development machine are on the same network
+2. Check your host machine's local IP:
+   ```bash
+   # macOS/Linux
+   ifconfig | grep "inet " | grep -v 127.0.0.1
+   
+   # Windows (PowerShell)
+   ipconfig | findstr "IPv4"
+   ```
+3. Edit `driver_app/lib/services/api_service.dart` line 76, replace:
+   ```dart
+   static const String _baseUrl = 'http://127.0.0.1:8000';
+   ```
+   with:
+   ```dart
+   static const String _baseUrl = 'http://<YOUR_LOCAL_IP>:8000';
+   ```
+   Example: `http://192.168.1.100:8000`
+4. Run:
+   ```bash
+   cd driver_app
+   flutter run -d <device_id>
+   ```
+
+##### **Web (Desktop Browser)**
+```bash
+cd driver_app
+flutter run -d chrome
+# or firefox, edge, safari
+```
+
 ---
+
+## 🚀 Different Ways to Run the Flutter App
+
+| Method | Command | Notes |
+|--------|---------|-------|
+| **Android Emulator** | `adb reverse tcp:8000 tcp:8000` then `flutter run` | Requires adb reverse tunnel; auto-detects running emulator |
+| **Physical Android** | `adb reverse tcp:8000 tcp:8000` then `flutter run` | USB debugging must be enabled; tunnel required |
+| **iOS Simulator** | `flutter run -d ios` | Edit api_service.dart to use your local IP instead of 127.0.0.1 |
+| **iOS Device** | `flutter run -d <device_id>` | Edit api_service.dart to use your local IP; device must be on same network |
+| **Chrome/Web** | `flutter run -d chrome` | Full web version; useful for testing |
+| **Release Build** | `flutter run --release` | Optimized build; slower compile but faster runtime |
+
+---
+
+## 🔧 Troubleshooting Flutter Network Issues
+
+**"Network error: No internet connection"**
+- ✅ Ensure Django backend is running: `python manage.py runserver`
+- ✅ Check adb reverse is active (Android): `adb reverse --list` should show `tcp:8000 tcp:8000`
+- ✅ Try restarting adb: `adb kill-server && adb devices`
+- ✅ Verify backend IP is correct in api_service.dart (127.0.0.1 for local, or your IP for network)
+
+**"Connection refused"**
+- ✅ Backend isn't running on port 8000
+- ✅ Firewall is blocking port 8000 (Windows: check Windows Defender Firewall)
+- ✅ Run `python manage.py runserver 0.0.0.0:8000` to listen on all interfaces
+
+**"Device not found"**
+- ✅ List connected devices: `flutter devices`
+- ✅ If emulator doesn't appear, launch it manually from Android Studio
+- ✅ Restart Flutter: `flutter clean && flutter pub get`
+
+**"App crashes on login"**
+- ✅ Check backend `/api/auth/me/` returns valid user data
+- ✅ Verify credentials exist: go to Django admin → Users
+- ✅ Check backend logs: `python manage.py runserver` terminal for errors
+
 
 ## 🔌 API Endpoints
 
