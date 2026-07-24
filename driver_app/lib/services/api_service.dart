@@ -303,24 +303,54 @@ class ApiService {
           return const LoginResult(outcome: LoginOutcome.success);
         }
       }
-      return const LoginResult(
+      
+      // Extract error message from server response
+      String? serverMessage;
+      try {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        serverMessage = body['error']?.toString() ??
+            body['detail']?.toString() ??
+            body['non_field_errors']?.first?.toString();
+      } catch (_) {
+        // Response is not valid JSON
+      }
+      
+      // Return appropriate error based on status code
+      if (response.statusCode == 401 || response.statusCode == 400) {
+        return LoginResult(
+          outcome: LoginOutcome.invalidCredentials,
+          detail: serverMessage ?? 'Invalid username, organization, or password',
+        );
+      } else if (response.statusCode >= 500) {
+        return LoginResult(
+          outcome: LoginOutcome.networkError,
+          detail: serverMessage ?? 'Server error. Please try again later.',
+        );
+      }
+      
+      return LoginResult(
         outcome: LoginOutcome.invalidCredentials,
-        detail: 'Invalid username, organization, or password',
+        detail: serverMessage ?? 'Login failed. Please check your credentials and try again.',
       );
     } on SocketException {
       return const LoginResult(
         outcome: LoginOutcome.networkError,
-        detail: 'No internet connection. Check your network and try again.',
+        detail: 'Cannot reach the server. Please ensure adb reverse is set up: adb reverse tcp:8000 tcp:8000',
       );
     } on TimeoutException {
       return const LoginResult(
         outcome: LoginOutcome.networkError,
-        detail: 'Connection timed out. The server may be unreachable.',
+        detail: 'Connection timed out. The server may be unreachable or too slow to respond.',
       );
-    } on http.ClientException {
-      return const LoginResult(
+    } on http.ClientException catch (e) {
+      return LoginResult(
         outcome: LoginOutcome.networkError,
-        detail: 'Network error. Please check your connection.',
+        detail: 'Network error: ${e.message}. Please check your connection.',
+      );
+    } catch (e) {
+      return LoginResult(
+        outcome: LoginOutcome.networkError,
+        detail: 'Unexpected error: ${e.toString()}',
       );
     }
   }

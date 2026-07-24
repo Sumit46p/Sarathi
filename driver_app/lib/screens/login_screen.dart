@@ -32,6 +32,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   bool _obscurePassword = true;
   bool _isLoading = false;
 
+  /// NOTE: If you see "Cannot reach the server", ensure adb reverse is set up:
+  /// Run: adb reverse tcp:8000 tcp:8000
+  /// This tunnels localhost:8000 from your device to the development PC.
+
   @override
   void initState() {
     super.initState();
