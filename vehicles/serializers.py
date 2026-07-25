@@ -3,7 +3,7 @@ from django.contrib.gis.geos import Point
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth.password_validation import validate_password
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, IssueReport
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport
 
 
 class LocationField(serializers.Field):
@@ -105,12 +105,14 @@ class VehicleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'vehicle_type', 'number_plate',
             'is_available', 'admin_blocked', 'location',
-            'driver', 'driver_name',
+            'driver', 'driver_name', 'last_location_at',
+            'total_distance_km',
             'has_active_dispatch', 'active_dispatch_status',
         ]
         read_only_fields = [
             'id', 'driver_name', 'is_available',
             'has_active_dispatch', 'active_dispatch_status',
+            'last_location_at', 'total_distance_km',
         ]
 
 
@@ -185,7 +187,10 @@ class DriverMeSerializer(serializers.Serializer):
 
 
 class MaintenanceRecordSerializer(serializers.ModelSerializer):
-    """Serializer for vehicle maintenance records."""
+    """Serializer for vehicle maintenance records.
+    
+    Supports both calendar-based (recurrence_days) and mileage-based (recurrence_km) recurrence.
+    """
     vehicle_name = serializers.CharField(source='vehicle.name', read_only=True)
     is_overdue = serializers.SerializerMethodField()
 
@@ -194,6 +199,7 @@ class MaintenanceRecordSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'vehicle', 'vehicle_name', 'maintenance_type',
             'description', 'due_date', 'completed', 'completed_at',
+            'recurrence_days', 'recurrence_km',
             'owner', 'is_overdue',
         ]
         read_only_fields = ['id', 'vehicle_name', 'owner', 'completed_at', 'is_overdue']
@@ -201,3 +207,14 @@ class MaintenanceRecordSerializer(serializers.ModelSerializer):
     def get_is_overdue(self, obj):
         from django.utils import timezone
         return not obj.completed and obj.due_date < timezone.now().date()
+
+class MaintenanceTemplateSerializer(serializers.ModelSerializer):
+    """Serializer for reusable maintenance templates."""
+
+    class Meta:
+        model = MaintenanceTemplate
+        fields = [
+            'id', 'name', 'maintenance_type', 'description',
+            'recurrence_days', 'recurrence_km', 'owner', 'created_at',
+        ]
+        read_only_fields = ['id', 'owner', 'created_at']

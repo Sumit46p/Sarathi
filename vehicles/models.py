@@ -73,6 +73,10 @@ class Vehicle(models.Model):
         db_index=True,
         help_text='Last time a GPS update was received from this vehicle',
     )
+    total_distance_km = models.FloatField(
+        default=0,
+        help_text='Cumulative GPS-derived distance (approximate, not true odometer). Updated via location updates with noise filtering.',
+    )
     owner = models.ForeignKey(
         'auth.User',
         on_delete=models.CASCADE,
@@ -282,7 +286,16 @@ class IssueReport(models.Model):
 
 
 class MaintenanceRecord(models.Model):
-    """Tracks maintenance history and schedules for a vehicle."""
+    """Tracks maintenance history and schedules for a vehicle.
+    
+    Supports two types of recurrence:
+    - recurrence_days: Calendar-based (e.g., every 30 days)
+    - recurrence_km: Mileage-based (e.g., every 5000 km driven)
+    
+    When a maintenance is marked completed, the next due date is calculated
+    as max(today + recurrence_days, current_km + recurrence_km) to allow
+    whichever threshold is reached first to trigger the next maintenance.
+    """
 
     MAINTENANCE_TYPE_CHOICES = [
         ('oil_change', 'Oil Change'),
@@ -298,6 +311,17 @@ class MaintenanceRecord(models.Model):
     due_date = models.DateField()
     completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
+    # Recurrence rules - at least one should be set
+    recurrence_days = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text='Repeat every N days (calendar-based recurrence)',
+    )
+    recurrence_km = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text='Repeat every N km driven (GPS-based recurrence)',
+    )
     owner = models.ForeignKey(
         'auth.User',
         on_delete=models.CASCADE,
@@ -311,4 +335,43 @@ class MaintenanceRecord(models.Model):
         ordering = ['due_date']
         indexes = [
             models.Index(fields=['vehicle', 'due_date']),
+        ]
+
+class MaintenanceTemplate(models.Model):
+    """A reusable maintenance rule that can be applied to multiple vehicles.
+    
+    Allows admins to define a maintenance rule once (e.g., "Oil Change every 30 days
+    or 5000 km") and apply it to one vehicle, multiple vehicles, or all vehicles
+    of a specific type in the organization.
+    """
+
+    MAINTENANCE_TYPE_CHOICES = MaintenanceRecord.MAINTENANCE_TYPE_CHOICES
+
+    name = models.CharField(max_length=100, help_text='Template name (e.g., "Standard Oil Change")')
+    maintenance_type = models.CharField(max_length=50, choices=MAINTENANCE_TYPE_CHOICES)
+    description = models.TextField(blank=True)
+    recurrence_days = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text='Repeat every N days (optional)',
+    )
+    recurrence_km = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text='Repeat every N km driven (optional)',
+    )
+    owner = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='maintenance_templates',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.get_maintenance_type_display()})"
+
+    class Meta:
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['owner', 'created_at']),
         ]

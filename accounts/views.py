@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.contrib.auth.models import User
+from .models import get_organization_name
 from .serializers import (
     RegisterSerializer,
     UserSerializer,
@@ -37,10 +38,12 @@ class VerifyAdminUserView(APIView):
         user = User.objects.filter(username=username).first()
         if not user:
             return Response({'error': 'User not found'}, status=404)
-        
-        if not hasattr(user, 'profile') or user.profile.organization_name != organization_name:
-            return Response({'error': 'Invalid organization name'}, status=400)
-        
+
+        # Validate against the canonical (admin's) org name, case-insensitive
+        expected_org = get_organization_name()
+        if not hasattr(user, 'profile') or expected_org.lower() != (organization_name or '').lower():
+            return Response({'error': f'Invalid organization name. Expected: {expected_org}'}, status=400)
+
         return Response({'success': True, 'message': 'User verified'})
 
 class ResetAdminPasswordView(APIView):
@@ -57,10 +60,12 @@ class ResetAdminPasswordView(APIView):
         user = User.objects.filter(username=username).first()
         if not user:
             return Response({'error': 'User not found'}, status=404)
-        
-        if not hasattr(user, 'profile') or user.profile.organization_name != organization_name:
-            return Response({'error': 'Invalid organization name'}, status=400)
-        
+
+        # Validate against the canonical (admin's) org name, case-insensitive
+        expected_org = get_organization_name()
+        if not hasattr(user, 'profile') or expected_org.lower() != (organization_name or '').lower():
+            return Response({'error': f'Invalid organization name. Expected: {expected_org}'}, status=400)
+
         if len(new_password) < 8:
             return Response({'error': 'Password must be at least 8 characters'}, status=400)
         

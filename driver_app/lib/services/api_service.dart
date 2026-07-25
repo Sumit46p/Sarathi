@@ -371,7 +371,7 @@ class ApiService {
   static Future<Map<String, dynamic>?> getDriverMe() async {
     try {
       final response = await _authenticatedRequest(
-        (headers) => http.get(Uri.parse('$_baseUrl/api/drivers/me/'), headers: headers),
+        (headers) => http.get(Uri.parse('$_baseUrl/api/auth/me/'), headers: headers),
       );
       return jsonDecode(response.body) as Map<String, dynamic>;
     } on ApiException catch (e) {

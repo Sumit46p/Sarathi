@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from vehicles.models import Vehicle
-from .models import Profile
+from .models import Profile, get_organization_name
 
 class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Accept either a username or an email address as the login identifier."""
@@ -30,12 +30,20 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError(
                 'User profile not found. Please contact support.'
             )
-        
-        # Case-insensitive organization name comparison
-        if user.profile.organization_name.lower() != (organization_name or '').lower():
+
+        # Validate against the canonical org name (the admin's), not the
+        # user's own profile value — which may still hold the default placeholder.
+        expected_org = get_organization_name()
+        if expected_org.lower() != (organization_name or '').lower():
             raise serializers.ValidationError(
-                f'Invalid organization name. Expected: {user.profile.organization_name}'
+                f'Invalid organization name. Expected: {expected_org}'
             )
+
+        # Keep the user's profile in sync with the canonical org name so the
+        # dashboard and other per-user displays show the real org, not the default.
+        if user.profile.organization_name != expected_org:
+            user.profile.organization_name = expected_org
+            user.profile.save(update_fields=['organization_name'])
 
         if not user.is_active:
             raise serializers.ValidationError(

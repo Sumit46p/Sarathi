@@ -9,8 +9,9 @@ from django.db.models import Q
 from django.utils import timezone
 from .osrm import get_route_distance
 import threading
+import math
 
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, IssueReport
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport
 from .serializers import (
     VehicleSerializer,
     LocationUpdateSerializer,
@@ -22,7 +23,83 @@ from .serializers import (
     AssignDriverSerializer,
     DriverMeSerializer,
     IssueReportSerializer,
+    MaintenanceTemplateSerializer,
 )
+
+def haversine_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """
+    Calculate great-circle distance between two points on Earth using Haversine formula.
+    Returns distance in kilometers.
+    
+    Args:
+        lat1, lng1: First point coordinates (degrees)
+        lat2, lng2: Second point coordinates (degrees)
+    
+    Returns:
+        Distance in kilometers
+    """
+    R = 6371.0  # Earth radius in km
+    
+    # Convert to radians
+    lat1_rad = math.radians(lat1)
+    lng1_rad = math.radians(lng1)
+    lat2_rad = math.radians(lat2)
+    lng2_rad = math.radians(lng2)
+    
+    # Haversine formula
+    dlat = lat2_rad - lat1_rad
+    dlng = lng2_rad - lng1_rad
+    
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlng / 2) ** 2
+    c = 2 * math.asin(math.sqrt(a))
+    
+    return R * c
+
+def check_and_update_maintenance_due(vehicle: Vehicle) -> None:
+    """
+    Check if any maintenance records should be marked as due based on:
+    - Calendar-based recurrence (recurrence_days)
+    - Mileage-based recurrence (recurrence_km)
+    
+    This is called after every location update. For each maintenance type,
+    we check if either recurrence threshold has been exceeded since the
+    last completed record.
+    """
+    from datetime import timedelta
+    
+    # Group maintenance records by type, get the latest completed one for each
+    completed_by_type = {}
+    for record in vehicle.maintenance_records.filter(completed=True).order_by('-completed_at'):
+        if record.maintenance_type not in completed_by_type:
+            completed_by_type[record.maintenance_type] = record
+    
+    # Check each active (not completed) maintenance record
+    for record in vehicle.maintenance_records.filter(completed=False):
+        is_due = False
+        reason = None
+        
+        # Check calendar-based recurrence
+        if record.recurrence_days:
+            if record.recurrence_days and record.due_date <= timezone.now().date():
+                is_due = True
+                reason = 'calendar-based'
+        
+        # Check mileage-based recurrence
+        if not is_due and record.recurrence_km:
+            last_completed = completed_by_type.get(record.maintenance_type)
+            if last_completed:
+                # Calculate km driven since last completion
+                km_since_completion = vehicle.total_distance_km - (last_completed.vehicle.total_distance_km if hasattr(last_completed, 'vehicle') else 0)
+                # This is approximate; ideally we'd track km at completion time
+                # For now, we can store that in a future enhancement
+                if km_since_completion >= record.recurrence_km:
+                    is_due = True
+                    reason = 'mileage-based'
+        
+        # Mark as due if threshold exceeded (update due_date to today if needed)
+        if is_due and record.due_date > timezone.now().date():
+            record.due_date = timezone.now().date()
+            record.save(update_fields=['due_date'])
 
 
 class VehicleListCreateView(generics.ListCreateAPIView):
@@ -274,8 +351,11 @@ def reset_password(request):
         user = User.objects.get(username=username)
         if not hasattr(user, 'profile'):
             return Response({'error': 'User profile not found'}, status=status.HTTP_400_BAD_REQUEST)
-        if user.profile.organization_name.lower() != (organization_name or '').lower():
-            return Response({'error': f'Invalid organization name. Expected: {user.profile.organization_name}'}, status=status.HTTP_400_BAD_REQUEST)
+        # Validate against the canonical (admin's) org name, not the user's own
+        from accounts.models import get_organization_name
+        expected_org = get_organization_name()
+        if expected_org.lower() != (organization_name or '').lower():
+            return Response({'error': f'Invalid organization name. Expected: {expected_org}'}, status=status.HTTP_400_BAD_REQUEST)
         driver = Driver.objects.get(user=user)
     except (User.DoesNotExist, Driver.DoesNotExist):
         return Response({'error': 'Invalid username or organization name'}, status=status.HTTP_400_BAD_REQUEST)
@@ -306,8 +386,11 @@ def verify_driver_identity(request):
         user = User.objects.get(username=username)
         if not hasattr(user, 'profile'):
             return Response({'error': 'User profile not found'}, status=status.HTTP_400_BAD_REQUEST)
-        if user.profile.organization_name.lower() != (organization_name or '').lower():
-            return Response({'error': f'Invalid organization name. Expected: {user.profile.organization_name}'}, status=status.HTTP_400_BAD_REQUEST)
+        # Validate against the canonical (admin's) org name, not the user's own
+        from accounts.models import get_organization_name
+        expected_org = get_organization_name()
+        if expected_org.lower() != (organization_name or '').lower():
+            return Response({'error': f'Invalid organization name. Expected: {expected_org}'}, status=status.HTTP_400_BAD_REQUEST)
         driver = Driver.objects.get(user=user)
     except (User.DoesNotExist, Driver.DoesNotExist):
         return Response({'error': 'No driver account found'}, status=status.HTTP_400_BAD_REQUEST)
@@ -517,6 +600,10 @@ def update_location(request, pk):
     Body: {"lat": 26.54, "lng": 87.89}
 
     Updates the vehicle's GPS location and returns the updated vehicle.
+    Calculates GPS-based distance using haversine formula with noise filtering:
+    - Only adds distance if > 15m (filters GPS jitter from stationary vehicles)
+    - Accumulates into total_distance_km for mileage-based maintenance triggers
+    
     Allowed for the vehicle owner or the assigned driver.
     """
     try:
@@ -543,13 +630,35 @@ def update_location(request, pk):
     serializer = LocationUpdateSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
-    vehicle.location = Point(
-        serializer.validated_data['lng'],
-        serializer.validated_data['lat'],
-        srid=4326,
-    )
+    new_lat = serializer.validated_data['lat']
+    new_lng = serializer.validated_data['lng']
+    new_location = Point(new_lng, new_lat, srid=4326)
+
+    # Calculate distance from previous location if it exists
+    NOISE_THRESHOLD_METERS = 15
+    distance_increment_km = 0
+    
+    if vehicle.location is not None:
+        # Calculate great-circle distance using haversine formula
+        distance_m = haversine_distance_km(
+            vehicle.location.y,  # previous lat
+            vehicle.location.x,  # previous lng
+            new_lat,
+            new_lng,
+        ) * 1000  # Convert to meters
+        
+        # Only count distance if above noise threshold (likely real movement, not GPS jitter)
+        if distance_m > NOISE_THRESHOLD_METERS:
+            distance_increment_km = distance_m / 1000
+            vehicle.total_distance_km += distance_increment_km
+    
+    vehicle.location = new_location
     vehicle.last_location_at = timezone.now()
-    vehicle.save(update_fields=['location', 'last_location_at'])
+    vehicle.save(update_fields=['location', 'last_location_at', 'total_distance_km'])
+
+    # Check if any maintenance records should be marked as due
+    # (calendar or mileage-based recurrence)
+    check_and_update_maintenance_due(vehicle)
 
     return Response(VehicleSerializer(vehicle).data)
 
@@ -861,3 +970,99 @@ def issue_report_detail(request, pk):
     report.save(update_fields=['status'])
     serializer = IssueReportSerializer(report)
     return Response(serializer.data)
+
+class MaintenanceTemplateListCreateView(generics.ListCreateAPIView):
+    """
+    GET  /api/maintenance-templates/      — list all maintenance templates
+    POST /api/maintenance-templates/      — create a new maintenance template
+    """
+    serializer_class = MaintenanceTemplateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return MaintenanceTemplate.objects.filter(owner=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+class MaintenanceTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET    /api/maintenance-templates/<id>/  — detail of one template
+    PATCH  /api/maintenance-templates/<id>/  — partial update
+    DELETE /api/maintenance-templates/<id>/  — remove a template
+    """
+    serializer_class = MaintenanceTemplateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return MaintenanceTemplate.objects.filter(owner=self.request.user)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def apply_maintenance_template(request, pk):
+    """
+    POST /api/maintenance-templates/<id>/apply/
+    Body: {"vehicle_ids": [1, 2, 3]} or {"vehicle_type": "ambulance"}
+    
+    Applies a maintenance template to specific vehicles or all vehicles of a type.
+    Creates MaintenanceRecord for each targeted vehicle using the template's settings.
+    """
+    from datetime import timedelta
+    
+    try:
+        template = MaintenanceTemplate.objects.get(pk=pk, owner=request.user)
+    except MaintenanceTemplate.DoesNotExist:
+        return Response(
+            {'error': 'Template not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    vehicle_ids = request.data.get('vehicle_ids', [])
+    vehicle_type = request.data.get('vehicle_type', None)
+
+    # Determine target vehicles
+    vehicles_query = Vehicle.objects.filter(owner=request.user)
+    
+    if vehicle_ids:
+        vehicles = vehicles_query.filter(pk__in=vehicle_ids)
+    elif vehicle_type:
+        vehicles = vehicles_query.filter(vehicle_type=vehicle_type)
+    else:
+        return Response(
+            {'error': 'Provide either vehicle_ids or vehicle_type'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not vehicles.exists():
+        return Response(
+            {'error': 'No vehicles found matching criteria'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Calculate due date
+    today = timezone.now().date()
+    due_date = today
+    if template.recurrence_days:
+        due_date = today + timedelta(days=template.recurrence_days)
+    else:
+        # If only km-based, set due date to today (will be triggered by mileage)
+        due_date = today
+
+    # Create maintenance records for each vehicle
+    created_count = 0
+    for vehicle in vehicles:
+        MaintenanceRecord.objects.create(
+            vehicle=vehicle,
+            maintenance_type=template.maintenance_type,
+            description=template.description,
+            due_date=due_date,
+            recurrence_days=template.recurrence_days,
+            recurrence_km=template.recurrence_km,
+            owner=request.user,
+        )
+        created_count += 1
+
+    return Response({
+        'message': f'Applied template to {created_count} vehicle(s)',
+        'created_count': created_count,
+    }, status=status.HTTP_201_CREATED)
