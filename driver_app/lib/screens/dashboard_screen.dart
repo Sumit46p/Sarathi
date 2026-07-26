@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'dart:async';
 import '../theme.dart';
 import '../widgets/action_button.dart';
@@ -36,6 +37,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<void>? _forceLogoutSub;
   Timer? _notificationTimer;
   int _unreadNotifications = 0;
+  final AudioPlayer _notificationPlayer = AudioPlayer();
 
   @override
   void initState() {
@@ -54,9 +56,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (!mounted) return;
         final unread = notifications.where((n) => n['read'] == false).length;
         if (unread > _unreadNotifications) {
-          // New notification arrived - play sound
           HapticFeedback.heavyImpact();
-          // Sound will be played in the notifications screen
+          try {
+            await _notificationPlayer.play(AssetSource('sounds/notification.mp3'));
+          } catch (e) {
+            // Ignore sound playback errors
+          }
         }
         setState(() {
           _unreadNotifications = unread;
@@ -374,6 +379,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _locationTimer?.cancel();
     _notificationTimer?.cancel();
     _forceLogoutSub?.cancel();
+    _notificationPlayer.dispose();
     super.dispose();
   }
 
@@ -389,10 +395,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _onItemTapped(int index) {
     HapticFeedback.selectionClick();
     if (index == 2) {
-      setState(() => _unreadNotifications = 0);
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
-      );
+      setState(() => _selectedIndex = index);
     } else {
       setState(() => _selectedIndex = index);
     }
@@ -403,7 +406,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final List<Widget> screens = [
       _buildHomeBody(),
       const TripsScreen(),
-      const TripHistoryScreen(),
+      const NotificationsScreen(),
       const ProfileScreen(),
     ];
 
@@ -842,12 +845,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       }),
       _ActionData('Inspect\nVehicle', Icons.fact_check_rounded, AppTheme.tertiaryColor, () => _handleCameraAction('Inspect Vehicle', 'inspect')),
-      _ActionData('Trip\nHistory', Icons.history_rounded, AppTheme.secondaryColor, () {
-        HapticFeedback.lightImpact();
-        Navigator.of(context).push(
-          SmoothPageRoute(page: const TripHistoryScreen()),
-        );
-      }),
     ];
 
     return Column(

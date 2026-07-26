@@ -273,98 +273,191 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: Text('Trip History', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Colors.white)),
-        backgroundColor: AppTheme.primaryColor,
-        elevation: 0,
-        automaticallyImplyLeading: true,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
-          : _errorMsg != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.cloud_off_rounded, size: 48, color: AppTheme.errorColor),
-                        const SizedBox(height: 16),
-                        Text(_errorMsg!, textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor)),
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          onPressed: _loadTripHistory,
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: Text('Retry', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-                          style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryColor, foregroundColor: Colors.white),
+      body: Column(
+        children: [
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
+                : _errorMsg != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.cloud_off_rounded, size: 48, color: AppTheme.errorColor),
+                              const SizedBox(height: 16),
+                              Text(_errorMsg!, textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor)),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: _loadTripHistory,
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: Text('Retry', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryColor, foregroundColor: Colors.white),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
-                  ),
-                )
-              : _trips.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            TweenAnimationBuilder<double>(
-                              tween: Tween(begin: 0.0, end: 1.0),
-                              duration: const Duration(milliseconds: 800),
-                              curve: Curves.elasticOut,
-                              builder: (context, value, child) {
-                                return Transform.scale(
-                                  scale: value,
-                                  child: Transform.rotate(
-                                    angle: (1 - value) * 0.2,
-                                    child: child,
+                      )
+                    : _trips.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TweenAnimationBuilder<double>(
+                                    tween: Tween(begin: 0.0, end: 1.0),
+                                    duration: const Duration(milliseconds: 800),
+                                    curve: Curves.elasticOut,
+                                    builder: (context, value, child) {
+                                      return Transform.scale(
+                                        scale: value,
+                                        child: Transform.rotate(
+                                          angle: (1 - value) * 0.2,
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(20),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryColor.withValues(alpha: 0.08),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.history_rounded, size: 48, color: AppTheme.primaryColor),
+                                    ),
                                   ),
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.primaryColor.withValues(alpha: 0.08),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(Icons.history_rounded, size: 48, color: AppTheme.primaryColor),
+                                  const SizedBox(height: 24),
+                                  Text(
+                                    'No trips yet',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppTheme.onSurface,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Completed and rejected trips will appear here.',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 13,
+                                      color: AppTheme.outline,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 24),
-                            Text(
-                              'No trips yet',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.onSurface,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Completed and rejected trips will appear here.',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 13,
-                                color: AppTheme.outline,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(20),
-                      itemCount: _trips.length,
-                      itemBuilder: (context, index) {
-                        return AnimatedListItem(
-                          index: index,
-                          delay: const Duration(milliseconds: 60),
-                          child: _buildTripCard(_trips[index]),
-                        );
-                      },
-                    ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(20),
+                            itemCount: _trips.length,
+                            itemBuilder: (context, index) {
+                              return AnimatedListItem(
+                                index: index,
+                                delay: const Duration(milliseconds: 60),
+                                child: _buildTripCard(_trips[index]),
+                              );
+                            },
+                          ),
+          ),
+          _buildBottomNav(2),
+        ],
+      ),
     );
   }
+
+  Widget _buildBottomNav(int activeIndex) {
+    const items = [
+      _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
+      _NavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Trips'),
+      _NavItem(icon: Icons.history_rounded, activeIcon: Icons.history_rounded, label: 'History'),
+      _NavItem(icon: Icons.sentiment_satisfied_alt_outlined, activeIcon: Icons.sentiment_satisfied_alt_rounded, label: 'Me'),
+    ];
+
+    return Container(
+      height: 78,
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceLowest,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, -4)),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          for (int i = 0; i < items.length; i++) _buildNavItem(items[i], i, activeIndex),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(_NavItem item, int index, int activeIndex) {
+    final isActive = activeIndex == index;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        if (index == 2) {
+          // Already on History tab
+          _loadTripHistory();
+        } else {
+          // Navigate back to dashboard and switch tab
+          Navigator.of(context).pop();
+        }
+      },
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              width: isActive ? 40 : 0,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            if (!isActive) const SizedBox(height: 8),
+            AnimatedScale(
+              scale: isActive ? 1.15 : 1.0,
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              child: Icon(
+                isActive ? item.activeIcon : item.icon,
+                color: isActive ? AppTheme.primaryColor : AppTheme.outline,
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 2),
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 10,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: isActive ? AppTheme.primaryColor : AppTheme.outline,
+                letterSpacing: 0.3,
+              ),
+              child: Text(item.label),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  const _NavItem({required this.icon, required this.activeIcon, required this.label});
 }
