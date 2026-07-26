@@ -274,6 +274,12 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        title: Text('Trip History', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Colors.white)),
+        backgroundColor: AppTheme.primaryColor,
+        elevation: 0,
+        automaticallyImplyLeading: true,
+      ),
       body: Column(
         children: [
           Expanded(

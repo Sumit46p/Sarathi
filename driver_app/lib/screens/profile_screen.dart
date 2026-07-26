@@ -5,6 +5,7 @@ import '../theme.dart';
 import '../services/api_service.dart';
 import '../utils/animations.dart';
 import 'login_screen.dart';
+import 'trip_history_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -95,6 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final phone = (_driverData!['phone_number'] ?? '').toString();
     final license = (_driverData!['license_number'] ?? '').toString();
     final isActive = _driverData!['is_active'] == true;
+    final isOnDuty = _driverData!['is_on_duty'] == true;
     final vehicle = _driverData!['assigned_vehicle'] as Map<String, dynamic>?;
 
     final infoFields = <_InfoField>[
@@ -102,6 +104,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _InfoField('Phone Number', phone.isEmpty ? '—' : phone, Icons.phone_rounded),
       _InfoField('License Number', license.isEmpty ? '—' : license, Icons.card_membership_rounded),
       _InfoField('Status', isActive ? 'Active' : 'Inactive', isActive ? Icons.check_circle_rounded : Icons.cancel_rounded),
+      _InfoField('Duty Status', isOnDuty ? 'On Duty' : 'Off Duty', isOnDuty ? Icons.work_rounded : Icons.work_off_rounded),
       if (vehicle != null) ...[
         _InfoField('Vehicle', vehicle['name'] ?? '—', Icons.directions_car_rounded),
         _InfoField('Vehicle Type', (vehicle['vehicle_type'] ?? '—').toString(), Icons.local_shipping_rounded),
@@ -122,6 +125,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 _buildInfoSection(infoFields),
                 const SizedBox(height: 20),
+                _historyTile(),
+                const SizedBox(height: 12),
                 _logoutTile(),
               ],
             ),
@@ -363,6 +368,77 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _historyTile() {
+    return AnimatedListItem(
+      index: 4,
+      delay: const Duration(milliseconds: 80),
+      child: BounceScaleButton(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceLowest,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: AppTheme.outlineVariant,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppTheme.secondaryColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.history_rounded,
+                  color: AppTheme.secondaryColor,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Trip History',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'View completed and rejected trips',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: AppTheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppTheme.outline.withValues(alpha: 0.5),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

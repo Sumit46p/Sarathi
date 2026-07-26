@@ -394,7 +394,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _onItemTapped(int index) {
     HapticFeedback.selectionClick();
     if (index == 2) {
-      setState(() => _selectedIndex = index);
+      setState(() {
+        _selectedIndex = index;
+        _unreadNotifications = 0;
+      });
     } else {
       setState(() => _selectedIndex = index);
     }
@@ -427,7 +430,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     const items = [
       _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
       _NavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Trips'),
-      _NavItem(icon: Icons.history_rounded, activeIcon: Icons.history_rounded, label: 'History'),
+      _NavItem(icon: Icons.notifications_none_rounded, activeIcon: Icons.notifications_active_rounded, label: 'Alerts'),
       _NavItem(icon: Icons.sentiment_satisfied_alt_outlined, activeIcon: Icons.sentiment_satisfied_alt_rounded, label: 'Me'),
     ];
 
@@ -451,6 +454,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildNavItem(_NavItem item, int index) {
     final isActive = _selectedIndex == index;
+    final showBadge = index == 2 && _unreadNotifications > 0;
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
@@ -459,43 +463,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 64,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              width: isActive ? 40 : 0,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  width: isActive ? 40 : 0,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                if (!isActive) const SizedBox(height: 8),
+                AnimatedScale(
+                  scale: isActive ? 1.15 : 1.0,
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(
+                    isActive ? item.activeIcon : item.icon,
+                    color: isActive ? AppTheme.primaryColor : AppTheme.outline,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                    color: isActive ? AppTheme.primaryColor : AppTheme.outline,
+                    letterSpacing: 0.3,
+                  ),
+                  child: Text(item.label),
+                ),
+              ],
             ),
-            if (!isActive) const SizedBox(height: 8),
-            AnimatedScale(
-              scale: isActive ? 1.15 : 1.0,
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              child: Icon(
-                isActive ? item.activeIcon : item.icon,
-                color: isActive ? AppTheme.primaryColor : AppTheme.outline,
-                size: 24,
+            if (showBadge)
+              Positioned(
+                right: 4,
+                top: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '$_unreadNotifications',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 10,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                color: isActive ? AppTheme.primaryColor : AppTheme.outline,
-                letterSpacing: 0.3,
-              ),
-              child: Text(item.label),
-            ),
           ],
         ),
       ),
@@ -637,48 +666,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 3),
                   Text(_getSubGreeting(), style: GoogleFonts.plusJakartaSans(fontSize: 12, color: Colors.white.withValues(alpha: 0.75))),
                 ],
-              ),
-            ),
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                setState(() => _unreadNotifications = 0);
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.notifications_rounded, color: Colors.white, size: 22),
-                    if (_unreadNotifications > 0)
-                      Positioned(
-                        right: -4,
-                        top: -4,
-                        child: Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Text(
-                            '$_unreadNotifications',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
               ),
             ),
           ],
