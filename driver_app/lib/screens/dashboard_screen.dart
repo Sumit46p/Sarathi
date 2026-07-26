@@ -37,6 +37,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _notificationTimer;
   int _unreadNotifications = 0;
   final AudioPlayer _notificationPlayer = AudioPlayer();
+  final Set<String> _beepedNotificationIds = <String>{};
 
   @override
   void initState() {
@@ -54,14 +55,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final notifications = await ApiService.getNotifications();
         if (!mounted) return;
         final unread = notifications.where((n) => n['read'] == false).length;
-        if (unread > _unreadNotifications) {
+        
+        // Beep only for newly arrived notifications that haven't been beeped yet
+        final newNotificationIds = notifications
+            .where((n) {
+              final id = n['id']?.toString();
+              return n['read'] == false && id != null && !_beepedNotificationIds.contains(id);
+            })
+            .map((n) => n['id']!.toString())
+            .toSet();
+        
+        if (newNotificationIds.isNotEmpty) {
           HapticFeedback.heavyImpact();
           try {
             await _notificationPlayer.play(AssetSource('sounds/notification.mp3'));
           } catch (e) {
             // Ignore sound playback errors
           }
+          _beepedNotificationIds.addAll(newNotificationIds);
         }
+        
         setState(() {
           _unreadNotifications = unread;
         });

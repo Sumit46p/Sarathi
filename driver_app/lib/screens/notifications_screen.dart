@@ -89,6 +89,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        title: Text('Alerts', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Colors.white)),
+        backgroundColor: AppTheme.primaryColor,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+      ),
       body: Column(
         children: [
           Expanded(
