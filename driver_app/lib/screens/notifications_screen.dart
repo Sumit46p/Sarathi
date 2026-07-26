@@ -329,5 +329,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return iso;
     }
   }
+}
 
+class _NavItem {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  const _NavItem({required this.icon, required this.activeIcon, required this.label});
 }
