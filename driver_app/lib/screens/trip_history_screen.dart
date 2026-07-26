@@ -368,103 +368,11 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                                 child: _buildTripCard(_trips[index]),
                               );
                             },
-                          ),
+                           ),
           ),
-          _buildBottomNav(2),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBottomNav(int activeIndex) {
-    const items = [
-      _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
-      _NavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Trips'),
-      _NavItem(icon: Icons.history_rounded, activeIcon: Icons.history_rounded, label: 'History'),
-      _NavItem(icon: Icons.sentiment_satisfied_alt_outlined, activeIcon: Icons.sentiment_satisfied_alt_rounded, label: 'Me'),
-    ];
-
-    return Container(
-      height: 78,
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceLowest,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, -4)),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          for (int i = 0; i < items.length; i++) _buildNavItem(items[i], i, activeIndex),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(_NavItem item, int index, int activeIndex) {
-    final isActive = activeIndex == index;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        if (index == 2) {
-          // Already on History tab
-          _loadTripHistory();
-        } else {
-          // Navigate back to dashboard and switch tab
-          Navigator.of(context).pop();
-        }
-      },
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 64,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              width: isActive ? 40 : 0,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            if (!isActive) const SizedBox(height: 8),
-            AnimatedScale(
-              scale: isActive ? 1.15 : 1.0,
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              child: Icon(
-                isActive ? item.activeIcon : item.icon,
-                color: isActive ? AppTheme.primaryColor : AppTheme.outline,
-                size: 24,
-              ),
-            ),
-            const SizedBox(height: 2),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 10,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                color: isActive ? AppTheme.primaryColor : AppTheme.outline,
-                letterSpacing: 0.3,
-              ),
-              child: Text(item.label),
-            ),
-          ],
-        ),
       ),
     );
   }
 }
 
-class _NavItem {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-  const _NavItem({required this.icon, required this.activeIcon, required this.label});
-}
