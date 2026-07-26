@@ -1,0 +1,28 @@
+{% extends "admin/base.html" %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+{% endblock %}
+
+{% block messages %}
+{% if messages %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        {% for message in messages %}
+            Toastify({
+                text: "{{ message|escapejs }}",
+                duration: 3000,
+                close: true,
+                gravity: "top",
+                position: "right",
+                style: {
+                    background: "{% if message.tags == 'success' %}#4caf50{% elif message.tags == 'error' %}#f44336{% else %}#2196f3{% endif %}"
+                }
+            }).showToast();
+        {% endfor %}
+    });
+</script>
+{% endif %}
+{% endblock messages %}

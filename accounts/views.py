@@ -73,3 +73,12 @@ class ResetAdminPasswordView(APIView):
         user.save()
 
         return Response({'success': True, 'message': 'Password reset successfully'})
+
+class OrganizationsView(APIView):
+    permission_classes = (AllowAny,)
+
+    def get(self, request):
+        from .models import Profile
+        orgs = Profile.objects.exclude(organization_name='Default Org').values_list('organization_name', flat=True).distinct()
+        return Response(list(orgs))
+

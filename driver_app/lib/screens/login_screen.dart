@@ -4,6 +4,7 @@ import '../theme.dart';
 import '../widgets/custom_buttons.dart';
 import '../services/api_service.dart';
 import '../utils/animations.dart';
+import 'change_password_screen.dart';
 import 'dashboard_screen.dart';
 import 'forgot_password_screen.dart';
 
@@ -24,13 +25,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   late Animation<Offset> _slideAnimation;
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
-  final _organizationController = TextEditingController();
   final _passwordController = TextEditingController();
   final _usernameFocus = FocusNode();
   final _passwordFocus = FocusNode();
 
   bool _obscurePassword = true;
   bool _isLoading = false;
+  List<String> _organizations = [];
+  bool _isLoadingOrgs = true;
+  String? _selectedOrganization;
 
   /// NOTE: If you see "Cannot reach the server", ensure adb reverse is set up:
   /// Run: adb reverse tcp:8000 tcp:8000
@@ -39,6 +42,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
+    _loadOrganizations();
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -64,6 +68,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _animationController.forward();
   }
 
+  Future<void> _loadOrganizations() async {
+    final orgs = await ApiService.getOrganizations();
+    if (mounted) {
+      setState(() {
+        _organizations = orgs;
+        _isLoadingOrgs = false;
+      });
+    }
+  }
+
 void _handleLogin() async {
  FocusScope.of(context).unfocus();
  
@@ -72,7 +86,7 @@ void _handleLogin() async {
  setState(() => _isLoading = true);
 
  final username = _usernameController.text.trim();
- final organizationName = _organizationController.text.trim();
+ final organizationName = _selectedOrganization ?? '';
  final password = _passwordController.text;
 
  final result = await ApiService.login(username: username, organizationName: organizationName, password: password);
@@ -82,9 +96,18 @@ void _handleLogin() async {
 
  if (result.outcome == LoginOutcome.success) {
  HapticFeedback.mediumImpact();
- Navigator.of(context).pushReplacement(
- SmoothPageRoute(page: const DashboardScreen()),
- );
+ final meData = await ApiService.getDriverMe();
+ final requiresPasswordChange = meData?['requires_password_change'] == true;
+ 
+ if (requiresPasswordChange) {
+   Navigator.of(context).pushReplacement(
+     SmoothPageRoute(page: const ChangePasswordScreen()),
+   );
+ } else {
+   Navigator.of(context).pushReplacement(
+     SmoothPageRoute(page: const DashboardScreen()),
+   );
+ }
  } else {
  HapticFeedback.heavyImpact();
  final isNetwork = result.outcome == LoginOutcome.networkError;
@@ -125,7 +148,6 @@ void _handleLogin() async {
   void dispose() {
     _animationController.dispose();
     _usernameController.dispose();
-    _organizationController.dispose();
     _passwordController.dispose();
     _usernameFocus.dispose();
     _passwordFocus.dispose();
@@ -209,20 +231,32 @@ void _handleLogin() async {
                       ),
                       const SizedBox(height: 16),
 
-                      TextFormField(
-                        controller: _organizationController,
-                        decoration: const InputDecoration(
-                          labelText: 'Organization Name',
-                          hintText: 'Enter your organization name',
-                          prefixIcon: Icon(Icons.business_outlined),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter your organization name';
-                          }
-                          return null;
-                        },
-                      ),
+                      _isLoadingOrgs 
+                          ? const Center(child: CircularProgressIndicator()) 
+                          : DropdownButtonFormField<String>(
+                              value: _selectedOrganization,
+                              decoration: const InputDecoration(
+                                labelText: 'Organization Name',
+                                prefixIcon: Icon(Icons.business_outlined),
+                              ),
+                              items: _organizations.map((org) {
+                                return DropdownMenuItem(
+                                  value: org,
+                                  child: Text(org),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                setState(() {
+                                  _selectedOrganization = val;
+                                });
+                              },
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please select your organization';
+                                }
+                                return null;
+                              },
+                            ),
                       const SizedBox(height: 16),
 
                       TextFormField(
@@ -287,7 +321,11 @@ void _handleLogin() async {
                         onTap: () {
                           setState(() {
                             _usernameController.text = 'Ram1';
-                            _organizationController.text = 'company';
+                            if (_organizations.contains('company')) {
+                              _selectedOrganization = 'company';
+                            } else if (_organizations.isNotEmpty) {
+                              _selectedOrganization = _organizations.first;
+                            }
                             _passwordController.text = 'driver123';
                           });
                           ScaffoldMessenger.of(context).showSnackBar(

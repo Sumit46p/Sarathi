@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../utils/animations.dart';
+import '../services/api_service.dart';
+import 'change_password_screen.dart';
+import 'dashboard_screen.dart';
 import 'login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -88,12 +91,38 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     });
 
     Future.delayed(const Duration(milliseconds: 2800), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          SmoothPageRoute(page: const LoginScreen()),
-        );
-      }
+      if (mounted) _navigateToNextScreen();
     });
+  }
+
+  Future<void> _navigateToNextScreen() async {
+    try {
+      // Try to fetch driver profile with existing tokens
+      final meData = await ApiService.getDriverMe();
+      if (!mounted) return;
+
+      if (meData != null) {
+        // User has valid tokens and is a driver
+        final requiresPasswordChange = meData['requires_password_change'] == true;
+        if (requiresPasswordChange) {
+          Navigator.of(context).pushReplacement(
+            SmoothPageRoute(page: const ChangePasswordScreen()),
+          );
+        } else {
+          Navigator.of(context).pushReplacement(
+            SmoothPageRoute(page: const DashboardScreen()),
+          );
+        }
+        return;
+      }
+    } catch (_) {
+      // Tokens invalid or no driver profile — fall through to login
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      SmoothPageRoute(page: const LoginScreen()),
+    );
   }
 
   @override
