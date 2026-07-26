@@ -300,7 +300,18 @@ class ApiService {
         final refresh = data['refresh'] as String?;
         if (access != null && refresh != null) {
           await _setTokens(access, refresh);
-          return const LoginResult(outcome: LoginOutcome.success);
+          
+          // Validate that this user is actually a driver
+          try {
+            await getDriverMe();
+            return const LoginResult(outcome: LoginOutcome.success);
+          } catch (e) {
+            await clearTokens();
+            return const LoginResult(
+              outcome: LoginOutcome.invalidCredentials,
+              detail: 'Only registered drivers can login to this app.',
+            );
+          }
         }
       }
       
@@ -368,11 +379,25 @@ class ApiService {
     }
   }
 
+  static Future<List<String>> getOrganizations() async {
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/api/auth/organizations/'), headers: _jsonHeaders);
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((e) => e.toString()).toList();
+      }
+      return [];
+    } catch (e) {
+      _log('getOrganizations failed: $e');
+      return [];
+    }
+  }
+
   static Future<Map<String, dynamic>?> getDriverMe() async {
     try {
-      final response = await _authenticatedRequest(
-        (headers) => http.get(Uri.parse('$_baseUrl/api/auth/me/'), headers: headers),
-      );
+        final response = await _authenticatedRequest(
+          (headers) => http.get(Uri.parse('$_baseUrl/api/drivers/me/'), headers: headers),
+        );
       return jsonDecode(response.body) as Map<String, dynamic>;
     } on ApiException catch (e) {
       _log('getDriverMe failed: $e');
@@ -525,10 +550,47 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     } on ApiException catch (e) {
       if (e.kind == ApiErrorKind.notFound) {
-        // 404 means no active dispatch — not an error.
         return null;
       }
       _log('getMyDispatch failed: $e');
+      rethrow;
+    }
+  }
+
+  static Future<List<dynamic>> getTripHistory() async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.get(
+          Uri.parse('$_baseUrl/api/drivers/me/trip-history/'),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List<dynamic>;
+        return data;
+      }
+      return [];
+    } on ApiException catch (e) {
+      _log('getTripHistory failed: $e');
+      rethrow;
+    }
+  }
+
+  static Future<List<dynamic>> getNotifications() async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.get(
+          Uri.parse('$_baseUrl/api/drivers/me/notifications/'),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List<dynamic>;
+        return data;
+      }
+      return [];
+    } on ApiException catch (e) {
+      _log('getNotifications failed: $e');
       rethrow;
     }
   }

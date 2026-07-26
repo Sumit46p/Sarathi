@@ -1066,3 +1066,115 @@ def apply_maintenance_template(request, pk):
         'message': f'Applied template to {created_count} vehicle(s)',
         'created_count': created_count,
     }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def driver_trip_history(request):
+    """
+    GET /api/drivers/me/trip-history/
+    Returns completed and cancelled trips for the driver's assigned vehicle(s).
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    vehicles = driver.assigned_vehicles.all()
+    dispatches = (
+        DispatchRequest.objects
+        .filter(assigned_vehicle__in=vehicles, status__in=['completed', 'cancelled', 'rejected'])
+        .select_related('assigned_vehicle')
+        .order_by('-created_at')
+    )
+
+    history = []
+    for dispatch in dispatches:
+        history.append({
+            'id': dispatch.id,
+            'vehicle_name': dispatch.assigned_vehicle.name if dispatch.assigned_vehicle else None,
+            'vehicle_type': dispatch.assigned_vehicle.vehicle_type if dispatch.assigned_vehicle else None,
+            'number_plate': dispatch.assigned_vehicle.number_plate if dispatch.assigned_vehicle else None,
+            'status': dispatch.status,
+            'created_at': dispatch.created_at.isoformat(),
+            'assigned_at': dispatch.assigned_at.isoformat() if dispatch.assigned_at else None,
+            'accepted_at': dispatch.accepted_at.isoformat() if dispatch.accepted_at else None,
+            'en_route_at': dispatch.en_route_at.isoformat() if dispatch.en_route_at else None,
+            'arrived_at': dispatch.arrived_at.isoformat() if dispatch.arrived_at else None,
+            'completed_at': dispatch.completed_at.isoformat() if dispatch.completed_at else None,
+            'cancelled_at': None,
+            'distance_km': dispatch.distance_km,
+            'duration_min': dispatch.duration_min,
+            'trip_duration_seconds': dispatch.trip_duration_seconds,
+            'response_time_seconds': dispatch.response_time_seconds,
+            'request_lat': dispatch.request_lat,
+            'request_lng': dispatch.request_lng,
+        })
+
+    return Response(history)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def driver_notifications(request):
+    """
+    GET /api/drivers/me/notifications/
+    Returns recent notifications for the driver.
+    Includes assigned trips and admin alerts.
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    vehicles = driver.assigned_vehicles.all()
+    
+    # Get recent dispatches for the driver's vehicles (assigned, accepted, en_route, arrived)
+    recent_dispatches = (
+        DispatchRequest.objects
+        .filter(assigned_vehicle__in=vehicles, status__in=['assigned', 'accepted', 'en_route', 'arrived'])
+        .select_related('assigned_vehicle')
+        .order_by('-created_at')[:20]
+    )
+
+    notifications = []
+    for dispatch in recent_dispatches:
+        notifications.append({
+            'id': f'dispatch_{dispatch.id}',
+            'type': 'trip',
+            'title': f'Trip {dispatch.get_status_display()}',
+            'message': f'Vehicle {dispatch.assigned_vehicle.name if dispatch.assigned_vehicle else "Unknown"} - {dispatch.vehicle_type}',
+            'status': dispatch.status,
+            'timestamp': dispatch.created_at.isoformat(),
+            'read': False,
+            'dispatch_id': dispatch.id,
+        })
+
+    # Get recent issue reports for the driver
+    recent_issues = (
+        IssueReport.objects
+        .filter(driver=driver)
+        .order_by('-created_at')[:10]
+    )
+
+    for issue in recent_issues:
+        notifications.append({
+            'id': f'issue_{issue.id}',
+            'type': 'issue',
+            'title': 'Issue Report Update',
+            'message': issue.description[:100] + ('...' if len(issue.description) > 100 else ''),
+            'status': issue.status,
+            'timestamp': issue.created_at.isoformat(),
+            'read': False,
+        })
+
+    # Sort by timestamp descending
+    notifications.sort(key=lambda x: x['timestamp'], reverse=True)
+
+    return Response(notifications)

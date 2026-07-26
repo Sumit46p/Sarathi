@@ -13,6 +13,8 @@ import '../utils/animations.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'trips_screen.dart';
+import 'trip_history_screen.dart';
+import 'notifications_screen.dart';
 import 'report_issue_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -32,6 +34,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _lastLocationStatus;
   int _consecutiveLocationFailures = 0;
   StreamSubscription<void>? _forceLogoutSub;
+  Timer? _notificationTimer;
+  int _unreadNotifications = 0;
 
   @override
   void initState() {
@@ -40,6 +44,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (mounted) _performLogout();
     });
     _loadProfile();
+    _startNotificationPolling();
+  }
+
+  void _startNotificationPolling() {
+    _notificationTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      try {
+        final notifications = await ApiService.getNotifications();
+        if (!mounted) return;
+        final unread = notifications.where((n) => n['read'] == false).length;
+        if (unread > _unreadNotifications) {
+          // New notification arrived - play sound
+          HapticFeedback.heavyImpact();
+          // Sound will be played in the notifications screen
+        }
+        setState(() {
+          _unreadNotifications = unread;
+        });
+      } catch (e) {
+        // Silently ignore notification polling errors
+      }
+    });
   }
 
   Future<void> _loadProfile() async {
@@ -347,6 +372,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _locationTimer?.cancel();
+    _notificationTimer?.cancel();
     _forceLogoutSub?.cancel();
     super.dispose();
   }
@@ -360,33 +386,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Future<void> _confirmLogout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Log out?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
-        content: Text('Are you sure you want to log out of your account?', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline)),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text('Cancel', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: AppTheme.outline))),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text('Logout', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: AppTheme.errorColor))),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await _performLogout();
+  void _onItemTapped(int index) {
+    HapticFeedback.selectionClick();
+    if (index == 2) {
+      setState(() => _unreadNotifications = 0);
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+      );
+    } else {
+      setState(() => _selectedIndex = index);
     }
   }
-
-  void _onItemTapped(int index) => setState(() => _selectedIndex = index);
 
   @override
   Widget build(BuildContext context) {
     final List<Widget> screens = [
       _buildHomeBody(),
       const TripsScreen(),
-      _buildAlertsBody(),
+      const TripHistoryScreen(),
       const ProfileScreen(),
     ];
 
@@ -408,7 +425,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     const items = [
       _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
       _NavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Trips'),
-      _NavItem(icon: Icons.notifications_none_rounded, activeIcon: Icons.notifications_active_rounded, label: 'Alerts'),
+      _NavItem(icon: Icons.history_rounded, activeIcon: Icons.history_rounded, label: 'History'),
       _NavItem(icon: Icons.sentiment_satisfied_alt_outlined, activeIcon: Icons.sentiment_satisfied_alt_rounded, label: 'Me'),
     ];
 
@@ -620,23 +637,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-              color: AppTheme.surfaceLowest,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              onSelected: _handleMenuSelection,
-              itemBuilder: (ctx) => [
-                PopupMenuItem<String>(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.logout_rounded, size: 18, color: AppTheme.errorColor),
-                      const SizedBox(width: 10),
-                      Text('Logout', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: AppTheme.errorColor)),
-                    ],
-                  ),
+            GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                setState(() => _unreadNotifications = 0);
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
                 ),
-              ],
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.notifications_rounded, color: Colors.white, size: 22),
+                    if (_unreadNotifications > 0)
+                      Positioned(
+                        right: -4,
+                        top: -4,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '$_unreadNotifications',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -656,10 +697,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (hour < 12) return "Let's make today a great one on the road.";
     if (hour < 17) return 'Hope your day is going smoothly!';
     return 'Almost done for today — drive safe!';
-  }
-
-  void _handleMenuSelection(String value) {
-    if (value == 'logout') _confirmLogout();
   }
 
   Widget _buildVehicleCard(String name, String type, String plate) {
@@ -805,6 +842,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       }),
       _ActionData('Inspect\nVehicle', Icons.fact_check_rounded, AppTheme.tertiaryColor, () => _handleCameraAction('Inspect Vehicle', 'inspect')),
+      _ActionData('Trip\nHistory', Icons.history_rounded, AppTheme.secondaryColor, () {
+        HapticFeedback.lightImpact();
+        Navigator.of(context).push(
+          SmoothPageRoute(page: const TripHistoryScreen()),
+        );
+      }),
     ];
 
     return Column(
@@ -978,31 +1021,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Text('Save Log', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildAlertsBody() {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: Text('Alerts', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Colors.white)),
-        backgroundColor: AppTheme.primaryColor,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-      ),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.construction_rounded, size: 48, color: AppTheme.outline),
-              SizedBox(height: 16),
-              Text('Alerts coming soon', style: TextStyle(fontSize: 16, color: AppTheme.outline)),
-            ],
-          ),
-        ),
       ),
     );
   }
