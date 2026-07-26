@@ -14,7 +14,6 @@ import '../utils/animations.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'trips_screen.dart';
-import 'trip_history_screen.dart';
 import 'notifications_screen.dart';
 import 'report_issue_screen.dart';
 

@@ -18,7 +18,6 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
   final _imagePicker = ImagePicker();
   File? _selectedImage;
   bool _submitting = false;
-  Map<String, dynamic>? _driverData;
   bool _loadingDriver = true;
   String? _errorMsg;
 
@@ -30,10 +29,9 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
 
   Future<void> _loadDriverData() async {
     try {
-      final data = await ApiService.getDriverMe();
+      await ApiService.getDriverMe();
       if (mounted) {
         setState(() {
-          _driverData = data;
           _loadingDriver = false;
         });
       }
