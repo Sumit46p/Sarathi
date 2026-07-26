@@ -266,11 +266,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       onTap: () {
         HapticFeedback.selectionClick();
         if (index == 2) {
-          // Already on Alerts tab
-          setState(() => _previousNotificationCount = 0);
           _loadNotifications();
         } else {
-          // Navigate back to dashboard and switch tab
           Navigator.of(context).pop();
         }
       },
