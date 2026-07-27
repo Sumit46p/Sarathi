@@ -1403,3 +1403,48 @@ def emergency_request_detail(request, pk):
     
     serializer = EmergencyRequestSerializer(emergency, context={'request': request})
     return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_emergency_notifications_read(request):
+    """
+    POST /api/emergency/notifications/mark-read/
+    Marks all unread emergency-related notifications as read for the current user.
+    """
+    from accounts.models import Profile
+    
+    try:
+        profile = Profile.objects.get(user=request.user)
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'No profile found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    
+    notifications = Notification.objects.filter(
+        user=request.user,
+        is_read=False,
+        title__startswith='Emergency:'
+    )
+    
+    count = notifications.count()
+    notifications.update(is_read=True)
+    
+    return Response({'marked_read': count})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def unread_emergency_count(request):
+    """
+    GET /api/emergency/notifications/unread-count/
+    Returns the count of unread emergency notifications for the current user.
+    """
+    count = Notification.objects.filter(
+        user=request.user,
+        is_read=False,
+        title__startswith='Emergency:'
+    ).count()
+    
+    return Response({'unread_count': count})

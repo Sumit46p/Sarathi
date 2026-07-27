@@ -3,6 +3,7 @@ from django.contrib.gis.geos import Point
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth.password_validation import validate_password
+import json
 from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, EmergencyRequest
 
 
@@ -21,6 +22,14 @@ class LocationField(serializers.Field):
     def to_internal_value(self, data):
         if data is None:
             return None
+        # Handle JSON string input (e.g., from multipart form data)
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                raise serializers.ValidationError(
+                    'Location must be {"lat": <number>, "lng": <number>}'
+                )
         try:
             lat = float(data['lat'])
             lng = float(data['lng'])

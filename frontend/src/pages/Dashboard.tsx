@@ -198,6 +198,7 @@ export default function Dashboard() {
     assigned_vehicle: number | null;
     created_at: string;
   }>>([]);
+  const [unreadEmergencyCount, setUnreadEmergencyCount] = useState(0);
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -274,6 +275,7 @@ export default function Dashboard() {
       fetchActiveDispatch();
       fetchIssues();
       fetchEmergencies();
+      fetchUnreadEmergencyCount();
     }, 5000);
     return () => {
       mounted = false;
@@ -420,13 +422,33 @@ export default function Dashboard() {
   };
 
   const clearDispatch = () => { setRequestMarker(null); setDispatchResult(null); setDispatchError(null); };
-  const switchTab = (tab: Tab) => { setActiveTab(tab); if (tab === 'dispatch') clearDispatch(); };
+  const switchTab = async (tab: Tab) => {
+    setActiveTab(tab);
+    if (tab === 'dispatch') clearDispatch();
+    if (tab === 'emergency') {
+      try {
+        await api.post('/emergency/notifications/mark-read/');
+        setUnreadEmergencyCount(0);
+      } catch (e) {
+        console.error('Failed to mark emergency notifications as read', e);
+      }
+    }
+  };
+
+  const fetchUnreadEmergencyCount = async () => {
+    try {
+      const { data } = await api.get<{ unread_count: number }>('/emergency/notifications/unread-count/');
+      setUnreadEmergencyCount(data.unread_count);
+    } catch (e) {
+      console.error('Failed to fetch unread emergency count', e);
+    }
+  };
 
   const totalVehicles = vehicles.length;
   const availableVehicles = vehicles.filter(vehicle => vehicle.is_available).length;
   const unavailableVehicles = totalVehicles - availableVehicles;
   const activeDrivers = drivers.filter(driver => driver.is_active).length;
-  const emergencyCount = emergencies.filter(e => e.status === 'pending').length;
+  const emergencyCount = unreadEmergencyCount;
   const selectedVehicle = vehicles.find(vehicle => vehicle.id === selectedVehicleId);
   const selectedCenter = selectedVehicle?.location ? [selectedVehicle.location.lat, selectedVehicle.location.lng] as [number, number] : null;
 

@@ -360,9 +360,6 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
                   ),
                 ),
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please provide a description';
-                  }
                   return null;
                 },
               ),
