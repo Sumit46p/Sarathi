@@ -30,6 +30,7 @@ urlpatterns = [
     path('maintenance-templates/<int:pk>/', views.MaintenanceTemplateDetailView.as_view(), name='maintenance-template-detail'),
     path('maintenance-templates/<int:pk>/apply/', views.apply_maintenance_template, name='maintenance-template-apply'),
     path('drivers/me/report-issue/', views.report_issue, name='driver-report-issue'),
+    path('drivers/me/maintenance-request/', views.driver_maintenance_request, name='driver-maintenance-request'),
     path('issues/', views.issue_report_list, name='issue-report-list'),
     path('issues/<int:pk>/', views.issue_report_detail, name='issue-report-detail'),
     path('emergency/requests/', views.emergency_request_list, name='emergency-request-list'),

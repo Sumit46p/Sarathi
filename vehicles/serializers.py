@@ -209,7 +209,7 @@ class MaintenanceRecordSerializer(serializers.ModelSerializer):
             'id', 'vehicle', 'vehicle_name', 'maintenance_type',
             'description', 'due_date', 'completed', 'completed_at',
             'recurrence_days', 'recurrence_km',
-            'owner', 'is_overdue',
+            'owner', 'is_overdue', 'image',
         ]
         read_only_fields = ['id', 'vehicle_name', 'owner', 'completed_at', 'is_overdue']
 

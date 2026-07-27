@@ -577,6 +577,40 @@ class ApiService {
     }
   }
 
+  static Future<bool> submitMaintenanceRequest({
+    required String description,
+    String? imagePath,
+  }) async {
+    try {
+      final token = await _storage.read(key: 'access_token');
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/api/drivers/me/maintenance-request/'),
+      );
+
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+      request.fields['description'] = description;
+
+      if (imagePath != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('image', imagePath),
+        );
+      }
+
+      final streamed =
+          await request.send().timeout(const Duration(seconds: 30));
+      final response = await http.Response.fromStream(streamed);
+
+      _log('submitMaintenanceRequest status: ${response.statusCode}');
+      return response.statusCode == 201 || response.statusCode == 200;
+    } catch (e) {
+      _log('submitMaintenanceRequest exception: $e');
+      return false;
+    }
+  }
+
   /// Returns the driver's active dispatch, or [null] if there is none (404).
   /// Throws [ApiException] on network/server/auth errors.
   static Future<Map<String, dynamic>?> getMyDispatch() async {

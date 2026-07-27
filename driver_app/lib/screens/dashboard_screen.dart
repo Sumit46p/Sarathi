@@ -838,7 +838,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final actions = [
       _ActionData('SOS\nHelp', Icons.emergency_share_rounded, AppTheme.errorColor, _handleSOS),
       _ActionData('Fuel\nEntry', Icons.local_gas_station_rounded, AppTheme.primaryColor, () => _handleCameraAction('Fuel Entry', 'fuel')),
-      _ActionData('Maintenance', Icons.build_circle_rounded, AppTheme.tertiaryColor, () {
+      _ActionData('Maintenance\nRequest', Icons.build_circle_rounded, AppTheme.tertiaryColor, () {
         HapticFeedback.lightImpact();
         Navigator.of(context).push(
           SmoothPageRoute(page: const MaintenanceScreen()),

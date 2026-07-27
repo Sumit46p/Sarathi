@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
 import '../utils/animations.dart';
@@ -73,15 +75,208 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
     }
   }
 
+  Future<void> _submitMaintenanceRequest() async {
+    final descriptionController = TextEditingController();
+    File? selectedImage;
+    bool isLoading = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            'Request Maintenance',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: AppTheme.onSurface),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Describe the issue and optionally attach a photo.',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  color: AppTheme.outline,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descriptionController,
+                maxLines: 4,
+                maxLength: 500,
+                decoration: InputDecoration(
+                  hintText: 'Describe the maintenance issue...',
+                  filled: true,
+                  fillColor: AppTheme.surfaceLowest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppTheme.primaryColor, width: 1.5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (selectedImage != null) ...[
+                Container(
+                  height: 150,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    image: DecorationImage(
+                      image: FileImage(selectedImage!),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final picker = ImagePicker();
+                        final XFile? image = await picker.pickImage(
+                          source: ImageSource.camera,
+                          maxWidth: 1024,
+                          maxHeight: 1024,
+                          imageQuality: 80,
+                        );
+                        if (image != null) {
+                          setDialogState(() {
+                            selectedImage = File(image.path);
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                      label: Text('Camera', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primaryColor,
+                        side: BorderSide(color: AppTheme.primaryColor.withValues(alpha: 0.3)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final picker = ImagePicker();
+                        final XFile? image = await picker.pickImage(
+                          source: ImageSource.gallery,
+                          maxWidth: 1024,
+                          maxHeight: 1024,
+                          imageQuality: 80,
+                        );
+                        if (image != null) {
+                          setDialogState(() {
+                            selectedImage = File(image.path);
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.photo_library_rounded, size: 18),
+                      label: Text('Gallery', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primaryColor,
+                        side: BorderSide(color: AppTheme.primaryColor.withValues(alpha: 0.3)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline, fontWeight: FontWeight.w600)),
+            ),
+            ElevatedButton(
+              onPressed: isLoading
+                  ? null
+                  : () async {
+                      if (descriptionController.text.trim().isEmpty && selectedImage == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please provide a description or image'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+
+                      setDialogState(() => isLoading = true);
+
+                      final success = await ApiService.submitMaintenanceRequest(
+                        description: descriptionController.text.trim().isEmpty
+                            ? 'Maintenance request (image attached)'
+                            : descriptionController.text.trim(),
+                        imagePath: selectedImage?.path,
+                      );
+
+                      if (!dialogContext.mounted) return;
+
+                      Navigator.of(dialogContext).pop();
+
+                      if (success) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Maintenance request sent to admin'),
+                            backgroundColor: AppTheme.secondaryColor,
+                          ),
+                        );
+                        await _loadMaintenance();
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to send request'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+              ),
+              child: isLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    )
+                  : Text('Submit', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: Text('Maintenance', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Colors.white)),
+        title: Text('Maintenance Requests', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Colors.white)),
         backgroundColor: AppTheme.primaryColor,
         elevation: 0,
         automaticallyImplyLeading: true,
+        actions: [
+          IconButton(
+            onPressed: _submitMaintenanceRequest,
+            icon: const Icon(Icons.add_rounded, color: Colors.white),
+            tooltip: 'Request Maintenance',
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
@@ -146,7 +341,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Maintenance records will appear here when assigned to your vehicle.',
+                              'Tap + to request maintenance for your vehicle.',
                               textAlign: TextAlign.center,
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 13,
@@ -165,7 +360,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                         final record = _records[index];
                         final isOverdue = record['is_overdue'] == true;
                         final status = record['completed'] ? 'completed' : (isOverdue ? 'overdue' : 'pending');
-                        
+
                         return AnimatedListItem(
                           index: index,
                           delay: const Duration(milliseconds: 60),

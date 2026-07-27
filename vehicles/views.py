@@ -912,6 +912,47 @@ def upcoming_maintenance(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def driver_maintenance_request(request):
+    """
+    POST /api/drivers/me/maintenance-request/
+    Body (multipart/form-data):
+      - description (text, optional)
+      - image (file, optional)
+    Allows a driver to submit a maintenance request to the admin.
+    """
+    description = request.data.get('description', '').strip()
+    image = request.data.get('image') if 'image' in request.data else None
+
+    if not description and not image:
+        return Response(
+            {'error': 'Please provide a description or image'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Get the driver's assigned vehicle
+    try:
+        driver = Driver.objects.get(user=request.user)
+        vehicle = driver.assigned_vehicles.first()
+    except Driver.DoesNotExist:
+        vehicle = None
+
+    # Create a pending maintenance record for the driver
+    record = MaintenanceRecord.objects.create(
+        vehicle=vehicle,
+        maintenance_type='other',
+        description=description or 'Maintenance request from driver',
+        due_date=timezone.now().date(),
+        completed=False,
+        owner=request.user,
+        image=image,
+    )
+
+    serializer = MaintenanceRecordSerializer(record)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def report_issue(request):
     """
     POST /api/drivers/me/report-issue/

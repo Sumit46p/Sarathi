@@ -327,6 +327,7 @@ class MaintenanceRecord(models.Model):
         on_delete=models.CASCADE,
         related_name='maintenance_records',
     )
+    image = models.ImageField(upload_to='maintenance_images/', null=True, blank=True)
 
     def __str__(self):
         return f"{self.get_maintenance_type_display()} for {self.vehicle.name} due {self.due_date}"
