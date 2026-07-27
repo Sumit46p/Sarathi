@@ -24,9 +24,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _organizationController = TextEditingController();
   String? _selectedOrganization;
   List<String> _organizations = [];
-  bool _isLoadingOrgs = true;
   bool _obscurePassword = true;
   bool _isLoading = false;
 
@@ -60,15 +60,22 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   Future<void> _loadOrganizations() async {
-    final orgs = await ApiService.getOrganizations();
-    if (mounted) {
-      setState(() {
-        _organizations = orgs;
-        _isLoadingOrgs = false;
-        if (_organizations.isNotEmpty && _selectedOrganization == null) {
-          _selectedOrganization = _organizations.first;
-        }
-      });
+    try {
+      final orgs = await ApiService.getOrganizations();
+      if (mounted) {
+        setState(() {
+          _organizations = orgs;
+          if (_organizations.isNotEmpty && _selectedOrganization == null) {
+            _selectedOrganization = _organizations.first;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _organizations = [];
+        });
+      }
     }
   }
 
@@ -80,7 +87,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       setState(() => _isLoading = true);
 
       final username = _usernameController.text.trim();
-      final organizationName = _selectedOrganization ?? '';
+      final organizationName = _organizations.isEmpty
+          ? _organizationController.text.trim()
+          : (_selectedOrganization ?? '');
       final password = _passwordController.text;
 
       final result = await ApiService.login(
@@ -147,6 +156,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _animationController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _organizationController.dispose();
     super.dispose();
   }
 
@@ -171,38 +181,35 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SizedBox(height: 20),
                       Center(
                         child: Container(
-                          width: 80,
-                          height: 80,
+                          padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: AppTheme.primaryColor,
-                            borderRadius: BorderRadius.circular(24),
+                            color: Colors.white,
+                            shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                                blurRadius: 20,
-                                offset: const Offset(0, 8),
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 10,
+                                spreadRadius: 2,
                               ),
                             ],
                           ),
-                          child: const Icon(
-                            Icons.local_shipping_rounded,
-                            color: Colors.white,
-                            size: 40,
+                          child: const CircleAvatar(
+                            radius: 50,
+                            backgroundColor: Colors.transparent,
+                            backgroundImage: AssetImage('assets/images/logo.png'),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
                       Text(
                         'Sarathi',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w800,
-                          color: isDark ? Colors.white : AppTheme.primaryColor,
-                          letterSpacing: -0.5,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -211,8 +218,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? Colors.white70 : AppTheme.outline,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                       const SizedBox(height: 36),
@@ -260,57 +266,75 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 16),
+                             const SizedBox(height: 16),
 
-                            _isLoadingOrgs
-                                ? const Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.all(12.0),
-                                      child: SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryColor),
-                                      ),
-                                    ),
-                                  )
+                             _organizations.isEmpty
+                                 ? TextFormField(
+                                     controller: _organizationController,
+                                     decoration: InputDecoration(
+                                       labelText: 'Organization Name',
+                                       hintText: 'Enter your organization name',
+                                       prefixIcon: const Icon(Icons.business_outlined),
+                                       filled: true,
+                                       fillColor: isDark ? AppTheme.background : const Color(0xFFF5F7FA),
+                                       border: OutlineInputBorder(
+                                         borderRadius: BorderRadius.circular(12),
+                                         borderSide: BorderSide.none,
+                                       ),
+                                       enabledBorder: OutlineInputBorder(
+                                         borderRadius: BorderRadius.circular(12),
+                                         borderSide: BorderSide.none,
+                                       ),
+                                       focusedBorder: OutlineInputBorder(
+                                         borderRadius: BorderRadius.circular(12),
+                                         borderSide: BorderSide(color: AppTheme.primaryColor, width: 1.5),
+                                       ),
+                                     ),
+                                     validator: (value) {
+                                       if (value == null || value.isEmpty) {
+                                         return 'Please enter your organization name';
+                                       }
+                                       return null;
+                                     },
+                                   )
                                 : DropdownButtonFormField<String>(
                                     initialValue: _selectedOrganization,
-                                    decoration: InputDecoration(
-                                      labelText: 'Organization Name',
-                                      prefixIcon: const Icon(Icons.business_outlined),
-                                      filled: true,
-                                      fillColor: isDark ? AppTheme.background : const Color(0xFFF5F7FA),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(color: AppTheme.primaryColor, width: 1.5),
-                                      ),
-                                    ),
-                                    items: _organizations.map((org) {
-                                      return DropdownMenuItem(
-                                        value: org,
-                                        child: Text(org),
-                                      );
-                                    }).toList(),
-                                    onChanged: (val) {
-                                      setState(() {
-                                        _selectedOrganization = val;
-                                      });
-                                    },
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Please select your organization';
-                                      }
-                                      return null;
-                                    },
-                                  ),
+                                     decoration: InputDecoration(
+                                       labelText: 'Organization Name',
+                                       prefixIcon: const Icon(Icons.business_outlined),
+                                       filled: true,
+                                       fillColor: isDark ? AppTheme.background : const Color(0xFFF5F7FA),
+                                       border: OutlineInputBorder(
+                                         borderRadius: BorderRadius.circular(12),
+                                         borderSide: BorderSide.none,
+                                       ),
+                                       enabledBorder: OutlineInputBorder(
+                                         borderRadius: BorderRadius.circular(12),
+                                         borderSide: BorderSide.none,
+                                       ),
+                                       focusedBorder: OutlineInputBorder(
+                                         borderRadius: BorderRadius.circular(12),
+                                         borderSide: BorderSide(color: AppTheme.primaryColor, width: 1.5),
+                                       ),
+                                     ),
+                                     items: _organizations.map((org) {
+                                       return DropdownMenuItem(
+                                         value: org,
+                                         child: Text(org),
+                                       );
+                                     }).toList(),
+                                     onChanged: (val) {
+                                       setState(() {
+                                         _selectedOrganization = val;
+                                       });
+                                     },
+                                     validator: (value) {
+                                       if (value == null || value.isEmpty) {
+                                         return 'Please select your organization';
+                                       }
+                                       return null;
+                                     },
+                                   ),
                             const SizedBox(height: 16),
 
                             TextFormField(
