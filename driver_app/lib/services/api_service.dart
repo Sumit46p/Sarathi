@@ -72,8 +72,26 @@ class ApiService {
   // - On physical Android: adb reverse tcp:8000 tcp:8000 tunnels it to the PC
   // - On emulator: 10.0.2.2 would be needed but adb reverse works too
   // - On desktop/web: 127.0.0.1 is localhost directly
-  // Run `adb reverse tcp:8000 tcp:8000` each time you connect the phone.
-  static const String _baseUrl = 'http://127.0.0.1:8000';
+  // For physical device wireless debugging, replace with your PC's local IP.
+  // Find your IP: Windows -> `ipconfig` -> look for IPv4 Address.
+  // Example: 'http://192.168.1.100:8000'
+  // Run Django with: python manage.py runserver 0.0.0.0:8000
+  static const String _wirelessIp = 'http://192.168.2.100:8000';
+  static String _baseUrl = 'http://127.0.0.1:8000';
+  static bool _baseUrlInitialized = false;
+
+  static Future<void> _ensureBaseUrl() async {
+    if (_baseUrlInitialized) return;
+    try {
+      final response = await http
+          .get(Uri.parse('http://127.0.0.1:8000/api/drivers/'))
+          .timeout(const Duration(milliseconds: 600));
+      _baseUrl = 'http://127.0.0.1:8000';
+    } catch (_) {
+      _baseUrl = _wirelessIp;
+    }
+    _baseUrlInitialized = true;
+  }
 
   static const _storage = FlutterSecureStorage();
 
@@ -129,6 +147,7 @@ class ApiService {
         kind: ApiErrorKind.unauthorized,
       );
     }
+    await _ensureBaseUrl();
     try {
       final response = await http
           .post(
@@ -179,6 +198,7 @@ class ApiService {
   static Future<http.Response> _authenticatedRequest(
     Future<http.Response> Function(Map<String, String> headers) fn,
   ) async {
+    await _ensureBaseUrl();
     var headers = await _authHeaders();
     http.Response response;
     try {
@@ -279,6 +299,7 @@ class ApiService {
     required String password,
     required String organizationName,
   }) async {
+    await _ensureBaseUrl();
     try {
       final response = await http
           .post(
@@ -390,6 +411,25 @@ class ApiService {
     } catch (e) {
       _log('getOrganizations failed: $e');
       return [];
+    }
+  }
+
+  static Future<List<dynamic>> getMaintenanceRecords() async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.get(
+          Uri.parse('$_baseUrl/api/maintenance/'),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List<dynamic>;
+        return data;
+      }
+      return [];
+    } on ApiException catch (e) {
+      _log('getMaintenanceRecords failed: $e');
+      rethrow;
     }
   }
 
@@ -772,10 +812,16 @@ class ApiService {
     String? imagePath,
   }) async {
     try {
+      await _ensureBaseUrl();
+      final token = await _storage.read(key: 'access_token');
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('$_baseUrl/api/emergency/requests/create/'),
       );
+
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
       request.fields['emergency_type'] = emergencyType;
       if (description != null && description.isNotEmpty) {
         request.fields['description'] = description;
@@ -792,6 +838,7 @@ class ApiService {
       final streamed = await request.send().timeout(const Duration(seconds: 30));
       final response = await http.Response.fromStream(streamed);
 
+      _log('createEmergencyRequest status: ${response.statusCode}');
       if (response.statusCode == 201 || response.statusCode == 200) {
         return true;
       } else {

@@ -11,7 +11,7 @@ from .osrm import get_route_distance
 import threading
 import math
 
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification, EmergencyRequest
 from .serializers import (
     VehicleSerializer,
     LocationUpdateSerializer,
@@ -24,6 +24,8 @@ from .serializers import (
     DriverMeSerializer,
     IssueReportSerializer,
     MaintenanceTemplateSerializer,
+    EmergencyRequestSerializer,
+    EmergencyRequestCreateSerializer,
 )
 
 def haversine_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -848,12 +850,19 @@ class MaintenanceRecordListCreateView(generics.ListCreateAPIView):
     """
     GET  /api/maintenance/      — list all maintenance records
     POST /api/maintenance/      — create a new maintenance record
+    
+    For staff users (is_staff=True), returns records for their organization.
+    For admin users, returns all records.
     """
     serializer_class = MaintenanceRecordSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return MaintenanceRecord.objects.filter(owner=self.request.user)
+        user = self.request.user
+        if user.is_staff:
+            # Staff users see records for their organization
+            return MaintenanceRecord.objects.filter(owner=user)
+        return MaintenanceRecord.objects.filter(owner=user)
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -868,7 +877,10 @@ class MaintenanceRecordDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return MaintenanceRecord.objects.filter(owner=self.request.user)
+        user = self.request.user
+        if user.is_staff:
+            return MaintenanceRecord.objects.filter(owner=user)
+        return MaintenanceRecord.objects.filter(owner=user)
 
     def perform_update(self, serializer):
         # Auto-set completed_at when completed is marked True
@@ -1224,18 +1236,17 @@ def create_emergency_request(request):
     # Get all admin users in the same organization
     driver = Driver.objects.filter(user=request.user).first()
     if driver:
-        org_name = getattr(driver, 'organization_name', None)
-        if not org_name:
-            try:
-                profile = Profile.objects.get(user=request.user)
-                org_name = profile.organization_name
-            except Profile.DoesNotExist:
-                pass
+        org_name = None
+        try:
+            profile = Profile.objects.get(user=request.user)
+            org_name = profile.organization_name
+        except Profile.DoesNotExist:
+            pass
         
         if org_name:
             admin_users = User.objects.filter(
                 profile__organization_name=org_name,
-                profile__is_admin=True
+                is_staff=True,
             )
             for admin in admin_users:
                 Notification.objects.create(

@@ -16,6 +16,7 @@ import 'trips_screen.dart';
 import 'notifications_screen.dart';
 import 'report_issue_screen.dart';
 import 'emergency_screen.dart';
+import 'maintenance_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -837,13 +838,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final actions = [
       _ActionData('SOS\nHelp', Icons.emergency_share_rounded, AppTheme.errorColor, _handleSOS),
       _ActionData('Fuel\nEntry', Icons.local_gas_station_rounded, AppTheme.primaryColor, () => _handleCameraAction('Fuel Entry', 'fuel')),
-      _ActionData('Report\nIssue', Icons.build_circle_rounded, const Color(0xFF7C3AED), () {
+      _ActionData('Maintenance', Icons.build_circle_rounded, AppTheme.tertiaryColor, () {
+        HapticFeedback.lightImpact();
+        Navigator.of(context).push(
+          SmoothPageRoute(page: const MaintenanceScreen()),
+        );
+      }),
+      _ActionData('Report\nIssue', Icons.report_rounded, const Color(0xFF7C3AED), () {
         HapticFeedback.lightImpact();
         Navigator.of(context).push(
           SmoothPageRoute(page: const ReportIssueScreen()),
         );
       }),
-      _ActionData('Inspect\nVehicle', Icons.fact_check_rounded, AppTheme.tertiaryColor, () => _handleCameraAction('Inspect Vehicle', 'inspect')),
+      _ActionData('Inspect\nVehicle', Icons.fact_check_rounded, const Color(0xFF10B981), () => _handleCameraAction('Inspect Vehicle', 'inspect')),
     ];
 
     return Column(
