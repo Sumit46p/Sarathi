@@ -860,8 +860,7 @@ class MaintenanceRecordListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         user = self.request.user
         if user.is_staff:
-            # Staff users see records for their organization
-            return MaintenanceRecord.objects.filter(owner=user)
+            return MaintenanceRecord.objects.all()
         return MaintenanceRecord.objects.filter(owner=user)
 
     def perform_create(self, serializer):
@@ -879,7 +878,7 @@ class MaintenanceRecordDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         user = self.request.user
         if user.is_staff:
-            return MaintenanceRecord.objects.filter(owner=user)
+            return MaintenanceRecord.objects.all()
         return MaintenanceRecord.objects.filter(owner=user)
 
     def perform_update(self, serializer):
