@@ -64,7 +64,7 @@ interface DispatchResult {
   geometry?: Array<[number, number]> | null;
 }
 
-type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues';
+type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues' | 'emergency';
 type StatusFilter = 'all' | 'available' | 'unavailable';
 
 const VEHICLE_TYPES = [
@@ -187,6 +187,17 @@ export default function Dashboard() {
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [activeDispatch, setActiveDispatch] = useState<DispatchResult | null>(null);
   const [issues, setIssues] = useState<IssueReport[]>([]);
+  const [emergencies, setEmergencies] = useState<Array<{
+    id: number;
+    user: number;
+    emergency_type: string;
+    description: string;
+    location: { lat: number; lng: number } | null;
+    image: string | null;
+    status: string;
+    assigned_vehicle: number | null;
+    created_at: string;
+  }>>([]);
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -234,6 +245,15 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchEmergencies = useCallback(async () => {
+    try {
+      const { data } = await api.get('/emergency/requests/');
+      setEmergencies(previous => JSON.stringify(previous) === JSON.stringify(data) ? previous : data);
+    } catch (error) {
+      console.error('Failed to fetch emergencies', error);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
@@ -253,12 +273,13 @@ export default function Dashboard() {
       fetchDrivers();
       fetchActiveDispatch();
       fetchIssues();
+      fetchEmergencies();
     }, 5000);
     return () => {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, [fetchDrivers, fetchVehicles, fetchActiveDispatch]);
+  }, [fetchDrivers, fetchVehicles, fetchActiveDispatch, fetchIssues, fetchEmergencies]);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
@@ -339,6 +360,33 @@ export default function Dashboard() {
     catch (error) { console.error('Failed to delete vehicle', error); setDataError('Vehicle could not be deleted.'); toast.error('Vehicle could not be deleted.'); }
   };
 
+  const handleDispatchEmergency = async (emergencyId: number) => {
+    const vehicleId = window.prompt('Enter vehicle ID to dispatch:');
+    if (!vehicleId) return;
+    try {
+      await api.post(`/emergency/requests/${emergencyId}/dispatch/`, { vehicle_id: parseInt(vehicleId) });
+      await fetchEmergencies();
+      await fetchVehicles();
+      toast.success('Vehicle dispatched to emergency');
+    } catch (error: unknown) {
+      const responseError = error as { response?: { data?: { error?: string } } };
+      toast.error(responseError.response?.data?.error || 'Failed to dispatch vehicle');
+    }
+  };
+
+  const handleResolveEmergency = async (emergencyId: number) => {
+    if (!window.confirm('Mark this emergency as resolved?')) return;
+    try {
+      await api.post(`/emergency/requests/${emergencyId}/resolve/`);
+      await fetchEmergencies();
+      await fetchVehicles();
+      toast.success('Emergency marked as resolved');
+    } catch (error: unknown) {
+      const responseError = error as { response?: { data?: { error?: string } } };
+      toast.error(responseError.response?.data?.error || 'Failed to resolve emergency');
+    }
+  };
+
   const handleDispatch = async () => {
     if (!requestMarker) return;
     setDispatchLoading(true); setDispatchError(null); setDispatchResult(null);
@@ -378,6 +426,7 @@ export default function Dashboard() {
   const availableVehicles = vehicles.filter(vehicle => vehicle.is_available).length;
   const unavailableVehicles = totalVehicles - availableVehicles;
   const activeDrivers = drivers.filter(driver => driver.is_active).length;
+  const emergencyCount = emergencies.filter(e => e.status === 'pending').length;
   const selectedVehicle = vehicles.find(vehicle => vehicle.id === selectedVehicleId);
   const selectedCenter = selectedVehicle?.location ? [selectedVehicle.location.lat, selectedVehicle.location.lng] as [number, number] : null;
 
@@ -418,6 +467,7 @@ export default function Dashboard() {
     maintenance: { title: 'Vehicle maintenance', eyebrow: 'Service' },
     settings: { title: 'Workspace settings', eyebrow: 'Configuration' },
     issues: { title: 'Reported issues', eyebrow: 'Driver feedback' },
+    emergency: { title: 'Emergency requests', eyebrow: 'SOS alerts' },
   };
 
   const renderEmpty = (title: string, text: string) => (
@@ -435,6 +485,7 @@ export default function Dashboard() {
           <button id="nav-drivers" className={`nav-item ${activeTab === 'drivers' ? 'active' : ''}`} onClick={() => switchTab('drivers')}><Users size={17} /><span>Drivers</span></button>
           <button id="nav-maintenance" className={`nav-item ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => switchTab('maintenance')}><Wrench size={17} /><span>Maintenance</span></button>
           <button id="nav-issues" className={`nav-item ${activeTab === 'issues' ? 'active' : ''}`} onClick={() => switchTab('issues')}><AlertTriangle size={17} /><span>Issues</span>{issues.filter(i => i.status === 'open').length > 0 && <span className="nav-badge">{issues.filter(i => i.status === 'open').length}</span>}</button>
+          <button id="nav-emergency" className={`nav-item ${activeTab === 'emergency' ? 'active' : ''}`} onClick={() => switchTab('emergency')}><AlertCircle size={17} /><span>Emergency</span><span className="nav-badge" style={{ backgroundColor: '#dc2626' }}>{emergencyCount}</span></button>
           <p className="nav-label nav-label-secondary">System</p>
           <button id="nav-settings" className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => switchTab('settings')}><Settings size={17} /><span>Settings</span></button>
         </nav>
@@ -528,6 +579,58 @@ export default function Dashboard() {
 
           {activeTab === 'maintenance' && <MaintenanceTab />}
           {activeTab === 'issues' && <IssuesTab />}
+
+          {activeTab === 'emergency' && <section className="tab-content" aria-labelledby="emergency-heading">
+            <div className="page-heading"><div><h2 id="emergency-heading">Emergency requests</h2><p>Active SOS alerts requiring immediate response.</p></div></div>
+            <div className="section-toolbar"><div><h2>All emergencies</h2><span>{emergencies.length} requests</span></div></div>
+            {emergencies.length === 0 ? renderEmpty('No emergency requests', 'Emergency SOS alerts will appear here.') : (
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Type</th>
+                      <th>User</th>
+                      <th>Description</th>
+                      <th>Location</th>
+                      <th>Status</th>
+                      <th>Assigned Vehicle</th>
+                      <th>Created</th>
+                      <th><span className="sr-only">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {emergencies.map(emergency => (
+                      <tr key={emergency.id}>
+                        <td><strong>#{emergency.id}</strong></td>
+                        <td><span className="type-label">{formatType(emergency.emergency_type)}</span></td>
+                        <td>User #{emergency.user}</td>
+                        <td>{emergency.description ? <span title={emergency.description}>{emergency.description.length > 50 ? emergency.description.slice(0, 50) + '...' : emergency.description}</span> : '—'}</td>
+                        <td>{emergency.location ? <span className="coordinate"><MapPin size={13} />{emergency.location.lat.toFixed(4)}, {emergency.location.lng.toFixed(4)}</span> : <span className="muted">Not provided</span>}</td>
+                        <td><span className={`status-badge ${emergency.status === 'pending' ? 'unavailable' : emergency.status === 'dispatched' ? 'on-trip' : 'available'}`}><span />{formatType(emergency.status)}</span></td>
+                        <td>{emergency.assigned_vehicle ? <span>Vehicle #{emergency.assigned_vehicle}</span> : <span className="muted">Unassigned</span>}</td>
+                        <td>{new Date(emergency.created_at).toLocaleString()}</td>
+                        <td>
+                          <div className="row-actions">
+                            {emergency.status === 'pending' && (
+                              <button className="icon-button" onClick={() => handleDispatchEmergency(emergency.id)} title="Dispatch vehicle" aria-label={`Dispatch for emergency ${emergency.id}`}>
+                                <Radio size={15} />
+                              </button>
+                            )}
+                            {emergency.status === 'dispatched' && (
+                              <button className="icon-button" onClick={() => handleResolveEmergency(emergency.id)} title="Mark resolved" aria-label={`Resolve emergency ${emergency.id}`}>
+                                <CheckCircle2 size={15} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>}
 
           {activeTab === 'settings' && <section className="tab-content" aria-labelledby="settings-heading"><div className="page-heading"><div><h2 id="settings-heading">Workspace settings</h2><p>Configuration for your Sarthi operations workspace.</p></div></div><div className="settings-panel"><div className="settings-icon"><Settings size={20} /></div><div><h3>Configuration is not available yet</h3><p>No settings API is currently exposed. This section is intentionally read-only to avoid changing backend behavior.</p></div></div></section>}
         </div>

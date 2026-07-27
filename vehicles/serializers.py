@@ -3,7 +3,7 @@ from django.contrib.gis.geos import Point
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth.password_validation import validate_password
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, EmergencyRequest
 
 
 class LocationField(serializers.Field):
@@ -218,3 +218,43 @@ class MaintenanceTemplateSerializer(serializers.ModelSerializer):
             'recurrence_days', 'recurrence_km', 'owner', 'created_at',
         ]
         read_only_fields = ['id', 'owner', 'created_at']
+
+
+class EmergencyRequestSerializer(serializers.ModelSerializer):
+    """Serializer for emergency SOS requests."""
+    location = LocationField(required=False, allow_null=True)
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EmergencyRequest
+        fields = [
+            'id', 'user', 'emergency_type', 'description', 'location',
+            'image', 'image_url', 'status', 'assigned_vehicle',
+            'created_at', 'updated_at', 'resolved_at',
+        ]
+        read_only_fields = ['id', 'user', 'status', 'assigned_vehicle', 'created_at', 'updated_at', 'resolved_at']
+
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+
+class EmergencyRequestCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating emergency requests from the driver app."""
+    location = LocationField(required=False, allow_null=True)
+
+    class Meta:
+        model = EmergencyRequest
+        fields = ['emergency_type', 'description', 'location', 'image']
+        extra_kwargs = {
+            'description': {'required': False, 'allow_blank': True},
+        }
+
+
+class EmergencyRequestDispatchSerializer(serializers.Serializer):
+    """Serializer for dispatching a vehicle to an emergency request."""
+    vehicle_id = serializers.IntegerField(required=True, help_text='ID of the vehicle to dispatch')

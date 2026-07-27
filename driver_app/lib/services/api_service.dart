@@ -764,4 +764,94 @@ class ApiService {
   }
 
   static void _log(String message) => print('[ApiService] $message');
+
+  static Future<bool> createEmergencyRequest({
+    required String emergencyType,
+    String? description,
+    Map<String, double>? location,
+    String? imagePath,
+  }) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/api/emergency/requests/create/'),
+      );
+      request.fields['emergency_type'] = emergencyType;
+      if (description != null && description.isNotEmpty) {
+        request.fields['description'] = description;
+      }
+      if (location != null) {
+        request.fields['location'] = jsonEncode(location);
+      }
+      if (imagePath != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('image', imagePath),
+        );
+      }
+
+      final streamed = await request.send().timeout(const Duration(seconds: 30));
+      final response = await http.Response.fromStream(streamed);
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return true;
+      } else {
+        _log('createEmergencyRequest failed [${response.statusCode}]: ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      _log('createEmergencyRequest exception: $e');
+      return false;
+    }
+  }
+
+  static Future<List<dynamic>> getEmergencyRequests() async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.get(
+          Uri.parse('$_baseUrl/api/emergency/requests/'),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List<dynamic>;
+        return data;
+      }
+      return [];
+    } on ApiException catch (e) {
+      _log('getEmergencyRequests failed: $e');
+      rethrow;
+    }
+  }
+
+  static Future<bool> dispatchEmergencyRequest({
+    required int requestId,
+    required int vehicleId,
+  }) async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.post(
+          Uri.parse('$_baseUrl/api/emergency/requests/$requestId/dispatch/'),
+          headers: headers,
+          body: jsonEncode({'vehicle_id': vehicleId}),
+        ),
+      );
+      return response.statusCode == 200;
+    } on ApiException {
+      return false;
+    }
+  }
+
+  static Future<bool> resolveEmergencyRequest(int requestId) async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.post(
+          Uri.parse('$_baseUrl/api/emergency/requests/$requestId/resolve/'),
+          headers: headers,
+        ),
+      );
+      return response.statusCode == 200;
+    } on ApiException {
+      return false;
+    }
+  }
 }

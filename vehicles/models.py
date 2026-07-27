@@ -375,3 +375,97 @@ class MaintenanceTemplate(models.Model):
         indexes = [
             models.Index(fields=['owner', 'created_at']),
         ]
+
+
+class Notification(models.Model):
+    """Persistent notification for a driver/user."""
+    NOTIFICATION_TYPES = [
+        ('trip', 'Trip'),
+        ('issue', 'Issue'),
+        ('admin', 'Admin'),
+        ('system', 'System'),
+    ]
+
+    user = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='notifications',
+        help_text='The user who receives this notification.',
+    )
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, default='system')
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    related_dispatch = models.ForeignKey(
+        'DispatchRequest',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='notifications',
+    )
+    related_issue = models.ForeignKey(
+        'IssueReport',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='notifications',
+    )
+    is_read = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    def __str__(self):
+        return f"{self.title} - {self.user.username}"
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_read', 'created_at']),
+        ]
+
+
+class EmergencyRequest(models.Model):
+    """Represents an SOS/emergency request from a user."""
+    EMERGENCY_TYPES = [
+        ('medical', 'Medical Emergency'),
+        ('accident', 'Accident'),
+        ('breakdown', 'Vehicle Breakdown'),
+        ('other', 'Other'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('dispatched', 'Dispatched'),
+        ('resolved', 'Resolved'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    user = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='emergency_requests',
+        help_text='The user who submitted the emergency request.',
+    )
+    emergency_type = models.CharField(max_length=20, choices=EMERGENCY_TYPES, default='other')
+    description = models.TextField(blank=True)
+    location = models.PointField(null=True, blank=True, help_text='Emergency location (lng, lat)')
+    image = models.ImageField(upload_to='emergency_images/', null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    assigned_vehicle = models.ForeignKey(
+        'Vehicle',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='emergency_requests',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Emergency {self.emergency_type} - {self.user.username} - {self.status}"
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'status', 'created_at']),
+            models.Index(fields=['status', 'created_at']),
+        ]

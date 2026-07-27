@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'dart:async';
 import '../theme.dart';
@@ -16,6 +15,7 @@ import 'profile_screen.dart';
 import 'trips_screen.dart';
 import 'notifications_screen.dart';
 import 'report_issue_screen.dart';
+import 'emergency_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -899,47 +899,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// SOS — shows a confirmation dialog then dials emergency services.
+  /// SOS — opens the emergency request screen.
   void _handleSOS() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.red[50],
-        title: Row(
-          children: [
-            const Icon(Icons.emergency_share_rounded, color: Colors.red, size: 26),
-            const SizedBox(width: 10),
-            Text('SOS Emergency', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: Colors.red)),
-          ],
-        ),
-        content: Text(
-          'This will call emergency services (100).\nOnly use this in a real emergency.',
-          style: GoogleFonts.plusJakartaSans(color: Colors.red[800]),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline, fontWeight: FontWeight.w600)),
-          ),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.call_rounded, size: 18),
-            label: Text('Call 100', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final uri = Uri(scheme: 'tel', path: '100');
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri);
-              } else if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Could not open the dialler'), backgroundColor: Colors.red),
-                );
-              }
-            },
-          ),
-        ],
-      ),
+    HapticFeedback.heavyImpact();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const EmergencyScreen()),
     );
   }
 

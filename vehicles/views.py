@@ -11,7 +11,7 @@ from .osrm import get_route_distance
 import threading
 import math
 
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification
 from .serializers import (
     VehicleSerializer,
     LocationUpdateSerializer,
@@ -820,6 +820,16 @@ def dispatch_vehicle(request):
         used_osrm=osrm_succeeded,
     )
 
+    # Create notification for the driver
+    if nearest.driver and nearest.driver.user:
+        Notification.objects.create(
+            user=nearest.driver.user,
+            notification_type='trip',
+            title='New Trip Assigned',
+            message=f'Vehicle {nearest.name} ({nearest.vehicle_type}) has been assigned a new trip.',
+            related_dispatch=dispatch,
+        )
+
     return Response({
         'dispatch': DispatchRequestSerializer(dispatch).data,
         'assigned_vehicle': {
@@ -919,6 +929,15 @@ def report_issue(request):
         driver=driver,
         description=description,
         image=image,
+    )
+
+    # Create notification for the driver
+    Notification.objects.create(
+        user=driver.user,
+        notification_type='issue',
+        title='Issue Report Submitted',
+        message=description[:200],
+        related_issue=report,
     )
 
     serializer = IssueReportSerializer(report)
@@ -1178,3 +1197,209 @@ def driver_notifications(request):
     notifications.sort(key=lambda x: x['timestamp'], reverse=True)
 
     return Response(notifications)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_emergency_request(request):
+    """
+    POST /api/emergency/requests/
+    Body: {
+      "emergency_type": "medical|accident|breakdown|other",
+      "description": "...",
+      "location": {"lat": ..., "lng": ...} or null,
+      "image": <file> (optional)
+    }
+    Creates an emergency SOS request from the driver.
+    """
+    serializer = EmergencyRequestCreateSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    
+    emergency = serializer.save(user=request.user)
+    
+    # Create notification for all admins of the organization
+    from django.contrib.auth.models import User
+    from accounts.models import Profile
+    
+    # Get all admin users in the same organization
+    driver = Driver.objects.filter(user=request.user).first()
+    if driver:
+        org_name = getattr(driver, 'organization_name', None)
+        if not org_name:
+            try:
+                profile = Profile.objects.get(user=request.user)
+                org_name = profile.organization_name
+            except Profile.DoesNotExist:
+                pass
+        
+        if org_name:
+            admin_users = User.objects.filter(
+                profile__organization_name=org_name,
+                profile__is_admin=True
+            )
+            for admin in admin_users:
+                Notification.objects.create(
+                    user=admin,
+                    notification_type='admin',
+                    title=f'Emergency: {emergency.get_emergency_type_display()}',
+                    message=f'Emergency request from {request.user.username}: {emergency.description or "No description"}',
+                )
+    
+    return Response(EmergencyRequestSerializer(emergency, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def emergency_request_list(request):
+    """
+    GET /api/emergency/requests/
+    Returns all emergency requests for the current admin's organization.
+    Supports filtering by status via ?status=pending|dispatched|resolved|cancelled
+    """
+    from django.contrib.auth.models import User
+    from accounts.models import Profile
+    
+    # Get the current user's organization
+    try:
+        profile = Profile.objects.get(user=request.user)
+        org_name = profile.organization_name
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'No profile found for this user'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    
+    # Get all drivers in the same organization
+    drivers = Driver.objects.filter(owner__profile__organization_name=org_name)
+    driver_users = [d.user.id for d in drivers]
+    
+    # Get emergency requests from users in this organization
+    status_filter = request.query_params.get('status')
+    queryset = EmergencyRequest.objects.filter(user__in=driver_users).select_related('user', 'assigned_vehicle')
+    
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+    
+    queryset = queryset.order_by('-created_at')
+    
+    serializer = EmergencyRequestSerializer(queryset, many=True, context={'request': request})
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def emergency_request_dispatch(request, pk):
+    """
+    POST /api/emergency/requests/<id>/dispatch/
+    Body: {"vehicle_id": 123}
+    Dispatches the nearest available vehicle to the emergency request.
+    """
+    try:
+        emergency = EmergencyRequest.objects.get(pk=pk)
+    except EmergencyRequest.DoesNotExist:
+        return Response(
+            {'error': 'Emergency request not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    
+    if emergency.status != 'pending':
+        return Response(
+            {'error': f'Emergency request is already {emergency.status}'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    vehicle_id = request.data.get('vehicle_id')
+    if not vehicle_id:
+        return Response(
+            {'error': 'vehicle_id is required'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    try:
+        vehicle = Vehicle.objects.get(pk=vehicle_id, is_available=True)
+    except Vehicle.DoesNotExist:
+        return Response(
+            {'error': 'Vehicle not found or not available'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    
+    # Update emergency request
+    emergency.status = 'dispatched'
+    emergency.assigned_vehicle = vehicle
+    emergency.save(update_fields=['status', 'assigned_vehicle', 'updated_at'])
+    
+    # Mark vehicle as unavailable
+    vehicle.is_available = False
+    vehicle.save(update_fields=['is_available'])
+    
+    # Create notification for the user who requested help
+    Notification.objects.create(
+        user=emergency.user,
+        notification_type='admin',
+        title='Emergency Help Dispatched',
+        message=f'Help is on the way! Vehicle {vehicle.name} ({vehicle.vehicle_type}) has been dispatched to your location.',
+    )
+    
+    serializer = EmergencyRequestSerializer(emergency, context={'request': request})
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def emergency_request_resolve(request, pk):
+    """
+    POST /api/emergency/requests/<id>/resolve/
+    Marks an emergency request as resolved.
+    """
+    try:
+        emergency = EmergencyRequest.objects.get(pk=pk)
+    except EmergencyRequest.DoesNotExist:
+        return Response(
+            {'error': 'Emergency request not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    
+    if emergency.status == 'resolved':
+        return Response(
+            {'error': 'Emergency request is already resolved'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    # Free up the vehicle if one was assigned
+    if emergency.assigned_vehicle:
+        emergency.assigned_vehicle.is_available = True
+        emergency.assigned_vehicle.save(update_fields=['is_available'])
+    
+    emergency.status = 'resolved'
+    emergency.resolved_at = timezone.now()
+    emergency.save(update_fields=['status', 'resolved_at', 'updated_at'])
+    
+    # Notify the user
+    Notification.objects.create(
+        user=emergency.user,
+        notification_type='system',
+        title='Emergency Resolved',
+        message='Your emergency request has been marked as resolved. Stay safe!',
+    )
+    
+    serializer = EmergencyRequestSerializer(emergency, context={'request': request})
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def emergency_request_detail(request, pk):
+    """
+    GET /api/emergency/requests/<id>/
+    Returns details of a specific emergency request.
+    """
+    try:
+        emergency = EmergencyRequest.objects.get(pk=pk)
+    except EmergencyRequest.DoesNotExist:
+        return Response(
+            {'error': 'Emergency request not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    
+    serializer = EmergencyRequestSerializer(emergency, context={'request': request})
+    return Response(serializer.data)

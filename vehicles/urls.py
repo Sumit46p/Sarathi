@@ -32,4 +32,9 @@ urlpatterns = [
     path('drivers/me/report-issue/', views.report_issue, name='driver-report-issue'),
     path('issues/', views.issue_report_list, name='issue-report-list'),
     path('issues/<int:pk>/', views.issue_report_detail, name='issue-report-detail'),
+    path('emergency/requests/', views.emergency_request_list, name='emergency-request-list'),
+    path('emergency/requests/create/', views.create_emergency_request, name='emergency-request-create'),
+    path('emergency/requests/<int:pk>/', views.emergency_request_detail, name='emergency-request-detail'),
+    path('emergency/requests/<int:pk>/dispatch/', views.emergency_request_dispatch, name='emergency-request-dispatch'),
+    path('emergency/requests/<int:pk>/resolve/', views.emergency_request_resolve, name='emergency-request-resolve'),
 ]
