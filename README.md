@@ -37,12 +37,14 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] Token refresh flow
 ....................................
 ### Driver Mobile App (Flutter) — built
-- [x] JWT login (username/email + password)
+- [x] JWT login (username/email + password + organization_name)
 - [x] **On Duty toggle** → sets `Driver.is_on_duty` (requests location permission, sends immediate GPS fix + 5s polling)
 - [x] Driver's assigned vehicle shown from `/api/drivers/me/`
 - [x] **Trips tab**: live dispatch route on a map + status transitions (Accept / En Route / Arrived / Complete)
 - [x] **First-login password change** (forced when `requires_password_change` is true)
 - [x] **Report Issue** screen: submit descriptions + optional photo via `POST /api/drivers/me/report-issue/`
+- [x] **Emergency SOS** screen: send emergency requests with location, description, and photo via `POST /api/emergency/requests/create/`
+- [x] **Maintenance Request** screen: request maintenance with description and image via `POST /api/drivers/me/maintenance-request/`
 - [x] Profile, Alerts, SOS placeholders
 
 ### Implemented (completed in this cycle)
@@ -368,6 +370,7 @@ Auth: `Authorization: Bearer <access_token>`.
 | PATCH | `/api/drivers/me/duty/` | Set `{"is_on_duty": true|false}` (drives vehicle availability) |
 | PATCH | `/api/drivers/me/change-password/` | **First-login password change** (sets `requires_password_change = False`) |
 | POST | `/api/drivers/me/report-issue/` | Submit an issue report with optional photo (`multipart/form-data`: `description` + `image`) |
+| POST | `/api/drivers/me/maintenance-request/` | Submit a maintenance request with optional photo (`multipart/form-data`: `description` + `image`) |
 | GET | `/api/drivers/me/dispatch/` | Active dispatch for the driver's vehicle (status + route geometry) |
 | POST | `/api/drivers/me/dispatch/transition/` | **Driver** advances the dispatch (accept/en_route/arrived/completed/cancelled) |
 | GET | `/api/drivers/<id>/` | Driver detail |
@@ -390,6 +393,17 @@ Auth: `Authorization: Bearer <access_token>`.
 | GET | `/api/issues/` | List owner-scoped driver-issued reports (newest first) |
 | GET | `/api/issues/<id>/` | Issue detail |
 | PATCH | `/api/issues/<id>/` | Update status (`open`, `acknowledged`, `resolved`) |
+
+### Emergency (`/api/emergency/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| POST | `/api/emergency/requests/create/` | Driver submits emergency SOS (description, location, image) |
+| GET | `/api/emergency/requests/` | Admin lists all emergency requests |
+| GET | `/api/emergency/requests/<id>/` | Emergency detail |
+| POST | `/api/emergency/requests/<id>/dispatch/` | Admin dispatches vehicle to emergency |
+| POST | `/api/emergency/requests/<id>/resolve/` | Admin marks emergency resolved |
+| GET | `/api/emergency/notifications/unread-count/` | Count of unread emergency notifications |
+| POST | `/api/emergency/notifications/mark-read/` | Mark all emergency notifications as read |
 
 **Location format** — all location endpoints use plain JSON `{"lat": 26.65, "lng": 87.89}`.
 
@@ -439,6 +453,24 @@ curl -X PATCH http://localhost:8000/api/drivers/me/change-password/ \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <driver_token>" \
   -d '{"new_password": "newSecurePass123"}'
+```
+
+Driver submits an emergency request (multipart):
+```bash
+curl -X POST http://localhost:8000/api/emergency/requests/create/ \
+  -H "Authorization: Bearer <driver_token>" \
+  -F "emergency_type=medical" \
+  -F "description=Heart attack" \
+  -F "location={\"lat\": 26.65, \"lng\": 87.90}" \
+  -F "image=@/path/to/photo.jpg"
+```
+
+Driver submits a maintenance request (multipart):
+```bash
+curl -X POST http://localhost:8000/api/drivers/me/maintenance-request/ \
+  -H "Authorization: Bearer <driver_token>" \
+  -F "description=Engine oil leak" \
+  -F "image=@/path/to/photo.jpg"
 ```
 
 Driver gets own profile + assigned vehicle:
@@ -537,6 +569,12 @@ same JWT backend.
 - **Report Issue**: drivers can submit issue reports with an optional photo
   (`POST /api/drivers/me/report-issue/`). Accessible from the Quick Actions
   grid on the home tab.
+- **Emergency SOS**: drivers can send emergency requests with location, description,
+  and photo (`POST /api/emergency/requests/create/`). Accessible from the SOS
+  quick action on the home tab.
+- **Maintenance Request**: drivers can request maintenance with description and
+  image (`POST /api/drivers/me/maintenance-request/`). Accessible from the
+  Maintenance quick action on the home tab.
 - **UI Enhancements**: custom page transitions, staggered animations, haptic
   feedback, splash screen animation, animated bottom navigation, and polished
   cards/buttons. See `driver_app/UI_ENHANCEMENTS.md` for details.
@@ -575,13 +613,14 @@ Sarathi/
 │   ├── wsgi.py
 │   └── asgi.py
 ├── vehicles/                       # Vehicle tracking + dispatch + drivers
-│   ├── models.py                   # Vehicle + DispatchRequest + Driver + IssueReport + MaintenanceRecord
+│   ├── models.py                   # Vehicle + DispatchRequest + Driver + IssueReport + MaintenanceRecord + Notification + EmergencyRequest
 │   ├── serializers.py             # DRF serializers ({lat, lng}, driver login,
-│   │                              #   driver duty/dispatch/change-password/report-issue)
+│   │                              #   driver duty/dispatch/change-password/report-issue/maintenance-request/emergency)
 │   ├── views.py                    # CRUD, nearest, dispatch, driver_me,
 │   │                              #   driver_duty, driver_dispatch + transition,
 │   │                              #   admin dispatch_transition, report_issue,
-│   │                              #   driver_change_password, maintenance CRUD
+│   │                              #   driver_change_password, maintenance CRUD,
+│   │                              #   driver_maintenance_request, emergency CRUD
 │   ├── urls.py                    # /api/vehicles/, /api/drivers/, /api/dispatch/,
 │   │                              #   /api/maintenance/
 │   ├── osrm.py                    # OSRM real-road routing helper
@@ -602,10 +641,13 @@ Sarathi/
 │   │   │   ├── login_screen.dart   # JWT login with haptic feedback
 │   │   │   ├── dashboard_screen.dart # Home + On Duty toggle + live GPS + quick actions
 │   │   │   ├── report_issue_screen.dart # Issue report with photo upload
+│   │   │   ├── emergency_screen.dart # Emergency SOS with location, photo, description
+│   │   │   ├── maintenance_screen.dart # Maintenance request with description and image
 │   │   │   ├── trips_screen.dart       # Live dispatch route + transitions
 │   │   │   ├── profile_screen.dart
-│   │   │   ├── alerts_screen.dart
-│   │   │   └── sos_screen.dart
+│   │   │   ├── notifications_screen.dart # Alerts and notifications
+│   │   │   ├── trip_history_screen.dart # Completed and rejected trips
+│   │   │   └── report_issue_screen.dart
 │   │   ├── widgets/
 │   │   │   ├── custom_buttons.dart # Animated primary/secondary buttons
 │   │   │   └── ...
