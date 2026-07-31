@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth.password_validation import validate_password
 import json
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, EmergencyRequest
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, EmergencyRequest, FuelEntry
 
 
 class LocationField(serializers.Field):
@@ -282,3 +282,18 @@ class EmergencyRequestCreateSerializer(serializers.ModelSerializer):
 class EmergencyRequestDispatchSerializer(serializers.Serializer):
     """Serializer for dispatching a vehicle to an emergency request."""
     vehicle_id = serializers.IntegerField(required=True, help_text='ID of the vehicle to dispatch')
+
+
+class FuelEntrySerializer(serializers.ModelSerializer):
+    """Serializer for fuel fill-up entries."""
+    vehicle_name = serializers.CharField(source='vehicle.name', read_only=True)
+    driver_name = serializers.CharField(source='driver.name', read_only=True)
+
+    class Meta:
+        model = FuelEntry
+        fields = [
+            'id', 'vehicle', 'vehicle_name', 'driver', 'driver_name',
+            'liters', 'cost_per_liter', 'total_cost', 'odometer_km',
+            'notes', 'fueled_at', 'created_at',
+        ]
+        read_only_fields = ['id', 'vehicle_name', 'driver_name', 'created_at']

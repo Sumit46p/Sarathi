@@ -470,3 +470,53 @@ class EmergencyRequest(models.Model):
             models.Index(fields=['user', 'status', 'created_at']),
             models.Index(fields=['status', 'created_at']),
         ]
+
+
+class FuelEntry(models.Model):
+    """Records a fuel fill-up event for a vehicle by a driver."""
+    vehicle = models.ForeignKey(
+        'Vehicle',
+        on_delete=models.CASCADE,
+        related_name='fuel_entries',
+        help_text='The vehicle that was refuelled.',
+    )
+    driver = models.ForeignKey(
+        'Driver',
+        on_delete=models.CASCADE,
+        related_name='fuel_entries',
+        help_text='The driver who logged the fuel entry.',
+    )
+    liters = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        help_text='Amount of fuel added in litres.',
+    )
+    cost_per_liter = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        help_text='Price per litre in NPR.',
+    )
+    total_cost = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        help_text='Total fuel cost in NPR.',
+    )
+    odometer_km = models.DecimalField(
+        max_digits=10, decimal_places=1,
+        null=True, blank=True,
+        help_text='Odometer reading at the time of fuelling (km).',
+    )
+    notes = models.TextField(blank=True)
+    fueled_at = models.DateTimeField(
+        default=timezone.now,
+        db_index=True,
+        help_text='Date and time of the fuel fill-up.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Fuel {self.liters}L – {self.vehicle.name} by {self.driver.name}"
+
+    class Meta:
+        ordering = ['-fueled_at']
+        indexes = [
+            models.Index(fields=['driver', 'fueled_at']),
+            models.Index(fields=['vehicle', 'fueled_at']),
+        ]

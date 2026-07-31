@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { api } from '../api/auth';
+
 import {
   AlertTriangle,
   CheckCircle2,
@@ -22,19 +22,14 @@ export default function IssuesTab() {
   const [reports, setReports] = useState<IssueReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [vehicles, setVehicles] = useState<{ id: number; name: string }[]>([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [updatingId, setUpdatingId] = useState<number | null>(null);
 
   const fetchIssues = useCallback(async () => {
     try {
-      const [reportsRes, vehiclesRes] = await Promise.all([
-        fetchIssueReports(),
-        api.get('/vehicles/'),
-      ]);
+      const reportsRes = await fetchIssueReports();
       setReports(reportsRes);
-      setVehicles(vehiclesRes.data);
       setDataError(null);
     } catch (error) {
       console.error('Failed to fetch issue reports', error);
@@ -83,10 +78,7 @@ export default function IssuesTab() {
     </section>
   );
 
-  const vehicleOptions = [
-    { value: 'all', label: 'All vehicles' },
-    ...vehicles.map(v => ({ value: String(v.id), label: v.name })),
-  ];
+
 
   return (
     <section className="tab-content" aria-labelledby="issues-heading">

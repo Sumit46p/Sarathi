@@ -11,7 +11,7 @@ from .osrm import get_route_distance
 import threading
 import math
 
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification, EmergencyRequest
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification, EmergencyRequest, FuelEntry
 from .serializers import (
     VehicleSerializer,
     LocationUpdateSerializer,
@@ -26,6 +26,7 @@ from .serializers import (
     MaintenanceTemplateSerializer,
     EmergencyRequestSerializer,
     EmergencyRequestCreateSerializer,
+    FuelEntrySerializer,
 )
 
 def haversine_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -1506,3 +1507,124 @@ def unread_emergency_count(request):
     ).count()
     
     return Response({'unread_count': count})
+
+
+# ---------------------------------------------------------------------------
+# Fuel Entry Views
+# ---------------------------------------------------------------------------
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def fuel_entry_list_create(request):
+    """
+    GET  /api/fuel/  — Admin: list all entries for their org's vehicles.
+                       Driver: list their own fuel entries.
+    POST /api/fuel/  — Driver: create a new fuel entry.
+    """
+    # Check if driver
+    driver = None
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        pass
+
+    if request.method == 'GET':
+        if driver:
+            entries = FuelEntry.objects.filter(driver=driver).select_related('vehicle', 'driver')
+        else:
+            # Admin: return all entries for vehicles owned by this admin
+            entries = FuelEntry.objects.filter(
+                vehicle__owner=request.user
+            ).select_related('vehicle', 'driver')
+        serializer = FuelEntrySerializer(entries, many=True)
+        return Response(serializer.data)
+
+    # POST — driver creates entry
+    if not driver:
+        return Response(
+            {'error': 'Only drivers can create fuel entries'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # Resolve the vehicle automatically from driver profile
+    vehicle = driver.assigned_vehicles.first()
+    if not vehicle:
+        return Response(
+            {'error': 'No vehicle is assigned to you'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = request.data.copy()
+    data['driver'] = driver.id
+    data['vehicle'] = vehicle.id
+
+    # Auto-calculate total_cost if not provided
+    if 'total_cost' not in data or not data['total_cost']:
+        try:
+            data['total_cost'] = float(data['liters']) * float(data['cost_per_liter'])
+        except (KeyError, ValueError, TypeError):
+            pass
+
+    serializer = FuelEntrySerializer(data=data)
+    if serializer.is_valid():
+        entry = serializer.save()
+        return Response(FuelEntrySerializer(entry).data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def fuel_entry_detail(request, pk):
+    """
+    GET    /api/fuel/<id>/  — Retrieve a single fuel entry.
+    DELETE /api/fuel/<id>/  — Driver deletes their own entry; admin can delete any.
+    """
+    try:
+        entry = FuelEntry.objects.select_related('vehicle', 'driver').get(pk=pk)
+    except FuelEntry.DoesNotExist:
+        return Response({'error': 'Fuel entry not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Permission: driver can only see/delete own entries; admin can do anything
+    try:
+        driver = Driver.objects.get(user=request.user)
+        if entry.driver != driver:
+            return Response({'error': 'Not authorised'}, status=status.HTTP_403_FORBIDDEN)
+    except Driver.DoesNotExist:
+        # Is admin — check vehicle ownership
+        if entry.vehicle.owner != request.user:
+            return Response({'error': 'Not authorised'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'GET':
+        return Response(FuelEntrySerializer(entry).data)
+
+    # DELETE
+    entry.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Driver Maintenance Request Delete
+# ---------------------------------------------------------------------------
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def driver_maintenance_request_delete(request, pk):
+    """
+    DELETE /api/drivers/me/maintenance-request/<id>/
+    Allows a driver to delete one of their own maintenance records.
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        record = MaintenanceRecord.objects.get(pk=pk, driver=driver)
+    except MaintenanceRecord.DoesNotExist:
+        return Response({'error': 'Record not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    record.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)

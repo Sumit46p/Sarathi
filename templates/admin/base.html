@@ -4,7 +4,137 @@
 {{ block.super }}
 <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
 <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
-{% endblock %}
+<style>
+.admin-notification-wrapper { position: relative; }
+.admin-notification-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: #4b5563;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.admin-notification-bell:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+.admin-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 2px #fff;
+}
+.admin-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+  border: 1px solid #e5e7eb;
+  z-index: 9999;
+  overflow: hidden;
+  display: none;
+}
+.admin-dropdown.open { display: block; }
+.admin-dropdown-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.admin-dropdown-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+.admin-dropdown-list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.admin-notification-item {
+  display: flex;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #f9fafb;
+  transition: background 0.15s ease;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+.admin-notification-item:last-child { border-bottom: none; }
+.admin-notification-item:hover { background: #f9fafb; }
+.admin-notification-item.unread { background: #eff6ff; }
+.admin-notification-item.unread:hover { background: #dbeafe; }
+.admin-notification-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.admin-notification-body { flex: 1; min-width: 0; }
+.admin-notification-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 2px;
+}
+.admin-notification-message {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.admin-notification-time {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+.admin-dropdown-footer {
+  padding: 10px 20px;
+  border-top: 1px solid #f3f4f6;
+  text-align: center;
+}
+.admin-dropdown-footer a {
+  font-size: 12px;
+  color: #4f46e5;
+  text-decoration: none;
+  font-weight: 500;
+}
+.admin-dropdown-footer a:hover { text-decoration: underline; }
+.admin-empty {
+  padding: 32px 20px;
+  text-align: center;
+  color: #9ca3af;
+}
+</style>
+{% endblock extrahead %}
 
 {% block messages %}
 {% if messages %}
@@ -18,7 +148,7 @@
                 gravity: "top",
                 position: "right",
                 style: {
-                    background: "{% if message.tags == 'success' %}#4caf50{% elif message.tags == 'error' %}#f44336{% else %}#2196f3{% endif %}"
+                    background: "{% if message.tags == 'success' %}#10b981{% elif message.tags == 'error' %}#ef4444{% else %}#3b82f6{% endif %}"
                 }
             }).showToast();
         {% endfor %}
@@ -26,3 +156,92 @@
 </script>
 {% endif %}
 {% endblock messages %}
+
+{% block header %}
+<div id="header">
+  <div id="branding">
+    <h1 id="site-name"><a href="{% url 'admin:index' %}">Sarathi Administration</a></h1>
+  </div>
+  <div style="display: flex; align-items: center; gap: 8px; margin-right: 16px;">
+    {% load admin_notifications %}
+    <div class="admin-notification-wrapper">
+      <button class="admin-notification-bell" onclick="toggleAdminNotifications()" aria-label="Notifications">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        </svg>
+        {% admin_notification_count as count %}
+        {% if count > 0 %}
+          <span class="admin-badge">{{ count }}</span>
+        {% endif %}
+      </button>
+      <div id="adminNotificationDropdown" class="admin-dropdown">
+        <div class="admin-dropdown-header">
+          <h3>Notifications</h3>
+          {% if count > 0 %}
+            <a href="{% url 'admin:vehicles_notification_changelist' %}" style="font-size: 12px; color: #4f46e5; text-decoration: none; font-weight: 500;">View all</a>
+          {% endif %}
+        </div>
+        <div class="admin-dropdown-list">
+          {% admin_notifications 10 as notifs %}
+          {% if notifs %}
+            {% for n in notifs %}
+              <a href="{% url 'admin:vehicles_notification_change' n.id %}" class="admin-notification-item {% if not n.is_read %}unread{% endif %}">
+                <div class="admin-notification-icon" style="background: {% if n.notification_type == 'emergency' %}#fef2f2{% elif n.notification_type == 'trip' %}#ecfdf5{% elif n.notification_type == 'issue' %}#fffbeb{% elif n.notification_type == 'admin' %}#eff6ff{% else %}#f9fafb{% endif %}; color: {% if n.notification_type == 'emergency' %}#dc2626{% elif n.notification_type == 'trip' %}#059669{% elif n.notification_type == 'issue' %}#d97706{% elif n.notification_type == 'admin' %}#2563eb{% else %}#6b7280{% endif %};">
+                  {% if n.notification_type == 'emergency' %}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                  {% elif n.notification_type == 'trip' %}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  {% elif n.notification_type == 'issue' %}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                  {% elif n.notification_type == 'admin' %}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+                  {% else %}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  {% endif %}
+                </div>
+                <div class="admin-notification-body">
+                  <div class="admin-notification-title">{{ n.title }}</div>
+                  <div class="admin-notification-message">{{ n.message|truncatechars:100 }}</div>
+                  <div class="admin-notification-time">{{ n.created_at|timesince }} ago</div>
+                </div>
+              </a>
+            {% endfor %}
+          {% else %}
+            <div class="admin-empty">
+              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 12px; opacity: 0.2;"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+              <p style="margin: 0; font-size: 13px; font-weight: 500; color: #6b7280;">No notifications yet</p>
+              <p style="margin: 4px 0 0; font-size: 12px; color: #9ca3af;">You&apos;re all caught up</p>
+            </div>
+          {% endif %}
+        </div>
+        {% if count > 0 %}
+          <div class="admin-dropdown-footer">
+            <a href="{% url 'admin:vehicles_notification_changelist' %}">View all notifications</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    {% if user.is_authenticated %}
+      <span style="font-size: 13px; color: #4b5563; font-weight: 500;">{{ user.get_short_name|default:user.username }}</span>
+    {% endif %}
+  </div>
+</div>
+<script>
+function toggleAdminNotifications() {
+  var dropdown = document.getElementById('adminNotificationDropdown');
+  if (dropdown) {
+    dropdown.classList.toggle('open');
+  }
+}
+document.addEventListener('click', function(e) {
+  var wrapper = document.querySelector('.admin-notification-wrapper');
+  if (wrapper && !wrapper.contains(e.target)) {
+    var dropdown = document.getElementById('adminNotificationDropdown');
+    if (dropdown) {
+      dropdown.classList.remove('open');
+    }
+  }
+});
+</script>
+{% endblock header %}

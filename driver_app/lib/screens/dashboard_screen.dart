@@ -17,6 +17,7 @@ import 'notifications_screen.dart';
 import 'report_issue_screen.dart';
 import 'emergency_screen.dart';
 import 'maintenance_screen.dart';
+import 'fuel_entry_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -837,7 +838,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildQuickActionsSection() {
     final actions = [
       _ActionData('SOS\nHelp', Icons.emergency_share_rounded, AppTheme.errorColor, _handleSOS),
-      _ActionData('Fuel\nEntry', Icons.local_gas_station_rounded, AppTheme.primaryColor, () => _handleCameraAction('Fuel Entry', 'fuel')),
+      _ActionData('Fuel\nEntry', Icons.local_gas_station_rounded, AppTheme.primaryColor, () {
+        HapticFeedback.lightImpact();
+        Navigator.of(context).push(
+          SmoothPageRoute(page: const FuelEntryScreen()),
+        );
+      }),
       _ActionData('Maintenance\nRequest', Icons.build_circle_rounded, AppTheme.tertiaryColor, () {
         HapticFeedback.lightImpact();
         Navigator.of(context).push(

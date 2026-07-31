@@ -611,6 +611,69 @@ class ApiService {
     }
   }
 
+  static Future<bool> deleteMaintenanceRecord(int id) async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.delete(
+          Uri.parse('$_baseUrl/api/drivers/me/maintenance-request/$id/'),
+          headers: headers,
+        ),
+      );
+      return response.statusCode == 204;
+    } on ApiException catch (e) {
+      _log('deleteMaintenanceRecord exception: $e');
+      return false;
+    }
+  }
+
+  static Future<List<dynamic>> getFuelEntries() async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.get(
+          Uri.parse('$_baseUrl/api/fuel/'),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      }
+      return [];
+    } on ApiException catch (e) {
+      _log('getFuelEntries failed: $e');
+      rethrow;
+    }
+  }
+
+  static Future<bool> createFuelEntry({
+    required double liters,
+    required double costPerLiter,
+    double? odometerKm,
+    String? notes,
+  }) async {
+    try {
+      final body = {
+        'liters': liters,
+        'cost_per_liter': costPerLiter,
+      };
+      if (odometerKm != null) body['odometer_km'] = odometerKm;
+      if (notes != null && notes.isNotEmpty) body['notes'] = notes;
+
+      final response = await _authenticatedRequest(
+        (headers) => http.post(
+          Uri.parse('$_baseUrl/api/fuel/'),
+          headers: headers,
+          body: jsonEncode(body),
+        ),
+      );
+      
+      _log('createFuelEntry status: ${response.statusCode}');
+      return response.statusCode == 201 || response.statusCode == 200;
+    } on ApiException catch (e) {
+      _log('createFuelEntry exception: $e');
+      return false;
+    }
+  }
+
   /// Returns the driver's active dispatch, or [null] if there is none (404).
   /// Throws [ApiException] on network/server/auth errors.
   static Future<Map<String, dynamic>?> getMyDispatch() async {

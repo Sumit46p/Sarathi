@@ -75,6 +75,52 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
     }
   }
 
+  Future<void> _confirmDelete(int id) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Delete Record', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+        content: Text('Are you sure you want to delete this maintenance request?', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: Text('Delete', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final success = await ApiService.deleteMaintenanceRecord(id);
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Maintenance record deleted.'),
+              backgroundColor: AppTheme.errorColor,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          _loadMaintenance();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Failed to delete record.'),
+              backgroundColor: AppTheme.errorColor,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _submitMaintenanceRequest() async {
     final descriptionController = TextEditingController();
     File? selectedImage;
@@ -90,9 +136,10 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
             'Request Maintenance',
             style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: AppTheme.onSurface),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Describe the issue and optionally attach a photo.',
@@ -193,6 +240,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                 ],
               ),
             ],
+            ),
           ),
           actions: [
             TextButton(
@@ -400,22 +448,37 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                                           ),
                                         ],
                                       ),
-                                      if (record['vehicle_name'] != null)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.primaryColor.withValues(alpha: 0.08),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            record['vehicle_name'].toString(),
-                                            style: GoogleFonts.plusJakartaSans(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppTheme.primaryColor,
+                                      Row(
+                                        children: [
+                                          if (record['vehicle_name'] != null)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.primaryColor.withValues(alpha: 0.08),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                record['vehicle_name'].toString(),
+                                                style: GoogleFonts.plusJakartaSans(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.primaryColor,
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ),
+                                          if (status == 'pending') ...[
+                                            const SizedBox(width: 8),
+                                            InkWell(
+                                              onTap: () => _confirmDelete(record['id']),
+                                              borderRadius: BorderRadius.circular(20),
+                                              child: const Padding(
+                                                padding: EdgeInsets.all(4),
+                                                child: Icon(Icons.delete_outline_rounded, size: 20, color: AppTheme.errorColor),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 12),

@@ -12,7 +12,9 @@ import L from 'leaflet';
 import { api } from '../api/auth';
 import MaintenanceTab from '../components/MaintenanceTab';
 import IssuesTab from '../components/IssuesTab';
+import FuelTab from '../components/FuelTab';
 import ThemeToggle from '../components/ThemeToggle';
+import NotificationBell, { type NotificationItem } from '../components/NotificationBell';
 import { toast } from '../components/toast';
 import NEPAL_GEOJSON from '../data/nepalBorder';
 
@@ -158,11 +160,13 @@ export default function Dashboard() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [unreadIssuesCount, setUnreadIssuesCount] = useState(0);
+  const [unreadMaintenanceCount, setUnreadMaintenanceCount] = useState(0);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [showVehiclePanel, setShowVehiclePanel] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [vehicleQuery, setVehicleQuery] = useState('');
   const [driverQuery, setDriverQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -207,7 +211,6 @@ export default function Dashboard() {
       const response = await api.get('/vehicles/');
       setVehicles(previous => JSON.stringify(previous) === JSON.stringify(response.data) ? previous : response.data);
       setDataError(null);
-      setLastUpdated(new Date());
     } catch (error) {
       console.error('Failed to fetch vehicles', error);
       setDataError('Fleet data could not be refreshed. Existing data is still shown.');
@@ -255,9 +258,22 @@ export default function Dashboard() {
     try {
       const { data } = await api.get<IssueReport[]>('/issues/');
       if (prevIssuesRef.current !== null) {
-        const newIds = data.map(i => i.id).filter(id => !prevIssuesRef.current!.includes(id));
-        if (newIds.length > 0) {
+        const newIssues = data.filter(i => !prevIssuesRef.current!.includes(i.id));
+        if (newIssues.length > 0) {
           toast.error('⚠️ New Maintenance Issue Reported');
+          setUnreadIssuesCount(c => activeTab === 'issues' ? 0 : c + newIssues.length);
+          
+          setNotifications(prev => [
+            ...newIssues.map(i => ({
+              id: Date.now() + Math.random(),
+              type: 'issue' as const,
+              title: `Issue: ${i.vehicle_name}`,
+              message: i.description,
+              is_read: false,
+              created_at: i.created_at
+            })),
+            ...prev
+          ]);
         }
       }
       prevIssuesRef.current = data.map(i => i.id);
@@ -274,9 +290,21 @@ export default function Dashboard() {
     try {
       const { data } = await api.get('/emergency/requests/');
       if (prevEmergenciesRef.current !== null) {
-        const newIds = data.map((e: any) => e.id).filter((id: number) => !prevEmergenciesRef.current!.includes(id));
-        if (newIds.length > 0) {
-          toast.error('🚨 New Emergency SOS Received!', { duration: 6000 });
+        const newEmergencies = data.filter((e: any) => !prevEmergenciesRef.current!.includes(e.id));
+        if (newEmergencies.length > 0) {
+          toast.error('🚨 New Emergency SOS Received!', 6000);
+          
+          setNotifications(prev => [
+            ...newEmergencies.map((e: any) => ({
+              id: Date.now() + Math.random(),
+              type: 'emergency' as const,
+              title: `Emergency: ${e.emergency_type}`,
+              message: e.description || 'Emergency assistance requested',
+              is_read: false,
+              created_at: e.created_at
+            })),
+            ...prev
+          ]);
         }
       }
       prevEmergenciesRef.current = data.map((e: any) => e.id);
@@ -285,6 +313,36 @@ export default function Dashboard() {
       console.error('Failed to fetch emergencies', error);
     }
   }, []);
+
+  const prevMaintenanceRef = useRef<number[] | null>(null);
+
+  const fetchMaintenance = useCallback(async () => {
+    try {
+      const { data } = await api.get('/maintenance/');
+      if (prevMaintenanceRef.current !== null) {
+        const newReqs = data.filter((m: any) => !prevMaintenanceRef.current!.includes(m.id));
+        if (newReqs.length > 0) {
+          setUnreadMaintenanceCount(c => activeTab === 'maintenance' ? 0 : c + newReqs.length);
+          toast.info('New Maintenance Request');
+          
+          setNotifications(prev => [
+            ...newReqs.map((m: any) => ({
+              id: Date.now() + Math.random(),
+              type: 'admin' as const,
+              title: `Maintenance: ${m.vehicle_name}`,
+              message: m.maintenance_type,
+              is_read: false,
+              created_at: m.created_at || new Date().toISOString()
+            })),
+            ...prev
+          ]);
+        }
+      }
+      prevMaintenanceRef.current = data.map((m: any) => m.id);
+    } catch (error) {
+      console.error('Failed to fetch maintenance', error);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     let mounted = true;
@@ -295,7 +353,7 @@ export default function Dashboard() {
       } catch (error) {
         console.error('Failed to fetch user profile', error);
       }
-      await Promise.all([fetchVehicles(), fetchDrivers(), fetchActiveDispatch()]);
+      await Promise.all([fetchVehicles(), fetchDrivers(), fetchActiveDispatch(), fetchMaintenance()]);
       if (mounted) setInitialLoading(false);
     };
 
@@ -306,13 +364,14 @@ export default function Dashboard() {
       fetchActiveDispatch();
       fetchIssues();
       fetchEmergencies();
+      fetchMaintenance();
       fetchUnreadEmergencyCount();
     }, 5000);
     return () => {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, [fetchDrivers, fetchVehicles, fetchActiveDispatch, fetchIssues, fetchEmergencies]);
+  }, [fetchDrivers, fetchVehicles, fetchActiveDispatch, fetchIssues, fetchEmergencies, fetchMaintenance]);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
@@ -541,8 +600,14 @@ export default function Dashboard() {
           <button id="nav-overview" className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => switchTab('dashboard')}><LayoutDashboard size={17} /><span>Overview</span></button>
           <button id="nav-dispatch" className={`nav-item ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => switchTab('dispatch')}><Radio size={17} /><span>Dispatch</span><span className="nav-live-dot" /></button>
           <button id="nav-drivers" className={`nav-item ${activeTab === 'drivers' ? 'active' : ''}`} onClick={() => switchTab('drivers')}><Users size={17} /><span>Drivers</span></button>
-          <button id="nav-maintenance" className={`nav-item ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => switchTab('maintenance')}><Wrench size={17} /><span>Maintenance</span></button>
-          <button id="nav-issues" className={`nav-item ${activeTab === 'issues' ? 'active' : ''}`} onClick={() => switchTab('issues')}><AlertTriangle size={17} /><span>Issues</span>{issues.filter(i => i.status === 'open').length > 0 && <span className="nav-badge">{issues.filter(i => i.status === 'open').length}</span>}</button>
+          <button id="nav-maintenance" className={`nav-item ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => { setActiveTab('maintenance'); setUnreadMaintenanceCount(0); }}>
+            <Wrench size={17} /><span>Maintenance</span>
+            {unreadMaintenanceCount > 0 && <span className="nav-badge">{unreadMaintenanceCount > 99 ? '99+' : unreadMaintenanceCount}</span>}
+          </button>
+          <button id="nav-issues" className={`nav-item ${activeTab === 'issues' ? 'active' : ''}`} onClick={() => { setActiveTab('issues'); setUnreadIssuesCount(0); }}>
+            <AlertTriangle size={17} /><span>Issues</span>
+            {unreadIssuesCount > 0 && <span className="nav-badge">{unreadIssuesCount > 99 ? '99+' : unreadIssuesCount}</span>}
+          </button>
           <button id="nav-emergency" className={`nav-item ${activeTab === 'emergency' ? 'active' : ''}`} onClick={() => switchTab('emergency')}><AlertCircle size={17} /><span>Emergency</span>{emergencyCount > 0 && <span className="nav-badge" style={{ backgroundColor: '#dc2626' }}>{emergencyCount}</span>}</button>
           <button id="nav-fuel" className={`nav-item ${activeTab === 'fuel' ? 'active' : ''}`} onClick={() => switchTab('fuel')}><Droplets size={17} /><span>Fuel Entry</span></button>
           <p className="nav-label nav-label-secondary">System</p>
@@ -555,8 +620,13 @@ export default function Dashboard() {
         <header className="topbar">
           <div className="topbar-title"><span>{pageMeta[activeTab].eyebrow}</span><h1>{pageMeta[activeTab].title}</h1></div>
           <div className="topbar-actions">
-            <div className="sync-status"><RefreshCw size={13} />{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Connecting'}</div>
+            <NotificationBell 
+              notifications={notifications}
+              onMarkRead={(ids) => setNotifications(prev => prev.map(n => ids.includes(n.id) ? { ...n, is_read: true } : n))}
+              onDelete={(id) => setNotifications(prev => prev.filter(n => n.id !== id))}
+            />
             <ThemeToggle />
+            <span className="live-date">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
             <button id="logout-button" className="icon-button" onClick={handleLogout} title="Log out" aria-label="Log out"><LogOut size={17} /></button>
           </div>
         </header>
@@ -695,20 +765,8 @@ export default function Dashboard() {
 
           {activeTab === 'settings' && <section className="tab-content" aria-labelledby="settings-heading"><div className="page-heading"><div><h2 id="settings-heading">Workspace settings</h2><p>Configuration for your Sarthi operations workspace.</p></div></div><div className="settings-panel"><div className="settings-icon"><Settings size={20} /></div><div><h3>Configuration is not available yet</h3><p>No settings API is currently exposed. This section is intentionally read-only to avoid changing backend behavior.</p></div></div></section>}
 
-          {activeTab === 'fuel' && <section className="tab-content" aria-labelledby="fuel-heading">
-            <div className="page-heading">
-              <div>
-                <h2 id="fuel-heading">Fuel entry log</h2>
-                <p>Track and record fuel fill-ups for each vehicle in your fleet.</p>
-              </div>
-            </div>
-            <div className="settings-panel" style={{ textAlign: 'center', padding: '48px 24px' }}>
-              <div className="settings-icon"><Droplets size={24} /></div>
-              <div>
-                <h3>Fuel Entry Coming Soon</h3>
-                <p>This section will allow drivers and admins to log fuel fill-up records, track consumption per vehicle, and generate fuel expense reports.</p>
-              </div>
-            </div>
+          {activeTab === 'fuel' && <section className="tab-content w-full" aria-labelledby="fuel-heading">
+            <FuelTab />
           </section>}
         </div>
       </main>
