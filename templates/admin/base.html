@@ -4,26 +4,96 @@
 {{ block.super }}
 <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
 <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-.admin-notification-wrapper { position: relative; }
-.admin-notification-bell {
+/* ============================================
+   ADMIN NOTIFICATION & MESSAGE SYSTEM
+   Modern, Clean, Professional Enterprise UI
+   ============================================ */
+
+:root {
+  --notif-primary: #4f46e5;
+  --notif-primary-hover: #4338ca;
+  --notif-badge: #ef4444;
+  --notif-badge-text: #ffffff;
+  --notif-bg-light: #ffffff;
+  --notif-bg-hover: #f8fafc;
+  --notif-bg-unread: #f0f9ff;
+  --notif-bg-unread-hover: #e0f2fe;
+  --notif-border: #e2e8f0;
+  --notif-text-primary: #0f172a;
+  --notif-text-secondary: #64748b;
+  --notif-text-muted: #94a3b8;
+  --notif-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+  --notif-shadow-lg: 0 25px 50px -12px rgba(0,0,0,0.25);
+  --notif-radius: 16px;
+  --notif-radius-sm: 12px;
+  --notif-transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --notif-icon-size: 20px;
+  --notif-avatar-size: 40px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --notif-bg-light: #1e293b;
+    --notif-bg-hover: #334155;
+    --notif-bg-unread: #1e3a5f;
+    --notif-bg-unread-hover: #1e40af;
+    --notif-border: #334155;
+    --notif-text-primary: #f1f5f9;
+    --notif-text-secondary: #94a3b8;
+    --notif-text-muted: #64748b;
+    --notif-shadow: 0 20px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.3);
+    --notif-shadow-lg: 0 25px 50px -12px rgba(0,0,0,0.5);
+  }
+}
+
+/* Icon Button Base */
+.admin-icon-btn {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--notif-radius-sm);
   color: #4b5563;
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--notif-transition);
+  outline: none;
+  text-decoration: none;
 }
-.admin-notification-bell:hover {
+
+.admin-icon-btn:hover {
   background: #f3f4f6;
   color: #111827;
+  transform: scale(1.05);
 }
+
+.admin-icon-btn:active {
+  transform: scale(0.95);
+}
+
+.admin-icon-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3);
+}
+
+.admin-icon-btn svg,
+.admin-icon-btn i {
+  width: var(--notif-icon-size);
+  height: var(--notif-icon-size);
+  transition: transform var(--notif-transition);
+}
+
+.admin-icon-btn:hover svg,
+.admin-icon-btn:hover i {
+  transform: scale(1.1);
+}
+
+/* Badge */
 .admin-badge {
   position: absolute;
   top: 4px;
@@ -31,107 +101,515 @@
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  background: #ef4444;
-  color: #fff;
+  background: var(--notif-badge);
+  color: var(--notif-badge-text);
   font-size: 10px;
   font-weight: 700;
   line-height: 18px;
   text-align: center;
   border-radius: 9999px;
-  box-shadow: 0 0 0 2px #fff;
+  box-shadow: 0 0 0 2px var(--notif-bg-light);
+  animation: badgePulse 2s ease-in-out infinite;
+  z-index: 10;
 }
+
+.admin-badge.pill {
+  border-radius: 9999px;
+  padding: 0 6px;
+  min-width: 20px;
+  height: 20px;
+  line-height: 20px;
+  font-size: 11px;
+}
+
+@keyframes badgePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+/* Dropdown Container */
+.admin-dropdown-container {
+  position: relative;
+  display: inline-flex;
+}
+
 .admin-dropdown {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 380px;
+  width: 400px;
   max-width: calc(100vw - 32px);
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
-  border: 1px solid #e5e7eb;
+  background: var(--notif-bg-light);
+  border-radius: var(--notif-radius);
+  box-shadow: var(--notif-shadow-lg);
+  border: 1px solid var(--notif-border);
   z-index: 9999;
   overflow: hidden;
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px) scale(0.95);
+  transition: all var(--notif-transition);
 }
-.admin-dropdown.open { display: block; }
+
+.admin-dropdown.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+}
+
+/* Dropdown Header */
 .admin-dropdown-header {
   padding: 16px 20px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--notif-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  background: linear-gradient(to right, rgba(79, 70, 229, 0.03), transparent);
 }
+
 .admin-dropdown-header h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--notif-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.admin-dropdown-header .unread-count {
+  font-size: 12px;
+  color: var(--notif-text-secondary);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.admin-dropdown-header .header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-btn-text {
+  padding: 6px 12px;
+  font-size: 12px;
   font-weight: 600;
-  color: #111827;
+  color: var(--notif-primary);
+  background: rgba(79, 70, 229, 0.08);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all var(--notif-transition);
+  text-decoration: none;
+  white-space: nowrap;
 }
+
+.admin-btn-text:hover {
+  background: rgba(79, 70, 229, 0.15);
+  color: var(--notif-primary-hover);
+}
+
+/* Dropdown List */
 .admin-dropdown-list {
-  max-height: 360px;
+  max-height: 400px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
 }
+
+.admin-dropdown-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-dropdown-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-dropdown-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.admin-dropdown-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Notification Item */
 .admin-notification-item {
   display: flex;
-  gap: 12px;
-  padding: 14px 20px;
-  border-bottom: 1px solid #f9fafb;
-  transition: background 0.15s ease;
+  gap: 14px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--notif-border);
+  transition: all var(--notif-transition);
   cursor: pointer;
   text-decoration: none;
   color: inherit;
+  position: relative;
 }
-.admin-notification-item:last-child { border-bottom: none; }
-.admin-notification-item:hover { background: #f9fafb; }
-.admin-notification-item.unread { background: #eff6ff; }
-.admin-notification-item.unread:hover { background: #dbeafe; }
-.admin-notification-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+
+.admin-notification-item:last-child {
+  border-bottom: none;
+}
+
+.admin-notification-item:hover {
+  background: var(--notif-bg-hover);
+}
+
+.admin-notification-item.unread {
+  background: var(--notif-bg-unread);
+  border-left: 3px solid var(--notif-primary);
+}
+
+.admin-notification-item.unread:hover {
+  background: var(--notif-bg-unread-hover);
+}
+
+/* Unread indicator dot */
+.admin-unread-dot {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  background: var(--notif-primary);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--notif-bg-light);
+}
+
+/* Avatar */
+.admin-avatar {
+  width: var(--notif-avatar-size);
+  height: var(--notif-avatar-size);
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  font-weight: 600;
+  font-size: 14px;
+  color: #fff;
+  position: relative;
 }
-.admin-notification-body { flex: 1; min-width: 0; }
+
+.admin-avatar-sm {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+/* Notification Body */
+.admin-notification-body {
+  flex: 1;
+  min-width: 0;
+  padding-right: 8px;
+}
+
 .admin-notification-title {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
-  margin-bottom: 2px;
+  color: var(--notif-text-primary);
+  margin-bottom: 4px;
+  line-height: 1.4;
 }
+
 .admin-notification-message {
   font-size: 12px;
-  color: #6b7280;
-  line-height: 1.4;
+  color: var(--notif-text-secondary);
+  line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  margin-bottom: 4px;
 }
+
 .admin-notification-time {
   font-size: 11px;
-  color: #9ca3af;
-  margin-top: 4px;
+  color: var(--notif-text-muted);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
+
+.admin-notification-time::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  border-radius: 50%;
+  opacity: 0.5;
+}
+
+/* Notification Actions */
+.admin-notification-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity var(--notif-transition);
+}
+
+.admin-notification-item:hover .admin-notification-actions {
+  opacity: 1;
+}
+
+.admin-action-btn {
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--notif-text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all var(--notif-transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-action-btn:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.admin-action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Dropdown Footer */
 .admin-dropdown-footer {
-  padding: 10px 20px;
-  border-top: 1px solid #f3f4f6;
+  padding: 12px 20px;
+  border-top: 1px solid var(--notif-border);
   text-align: center;
+  background: var(--notif-bg-hover);
 }
+
 .admin-dropdown-footer a {
-  font-size: 12px;
-  color: #4f46e5;
+  font-size: 13px;
+  color: var(--notif-primary);
   text-decoration: none;
+  font-weight: 600;
+  transition: color var(--notif-transition);
+}
+
+.admin-dropdown-footer a:hover {
+  color: var(--notif-primary-hover);
+  text-decoration: underline;
+}
+
+/* Empty State */
+.admin-empty {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--notif-text-muted);
+}
+
+.admin-empty-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  background: var(--notif-bg-hover);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--notif-text-muted);
+}
+
+.admin-empty-icon svg {
+  width: 32px;
+  height: 32px;
+  opacity: 0.5;
+}
+
+.admin-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--notif-text-primary);
+  margin: 0 0 4px;
+}
+
+.admin-empty-text {
+  font-size: 12px;
+  color: var(--notif-text-secondary);
+  margin: 0;
+}
+
+/* Message specific styles */
+.admin-message-item {
+  display: flex;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--notif-border);
+  transition: all var(--notif-transition);
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+}
+
+.admin-message-item:last-child {
+  border-bottom: none;
+}
+
+.admin-message-item:hover {
+  background: var(--notif-bg-hover);
+}
+
+.admin-message-item.unread {
+  background: var(--notif-bg-unread);
+  border-left: 3px solid #10b981;
+}
+
+.admin-message-item.unread:hover {
+  background: var(--notif-bg-unread-hover);
+}
+
+.admin-message-avatar {
+  position: relative;
+}
+
+.admin-online-indicator {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  background: #10b981;
+  border: 2px solid var(--notif-bg-light);
+  border-radius: 50%;
+}
+
+.admin-message-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-message-sender {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--notif-text-primary);
+  margin-bottom: 2px;
+}
+
+.admin-message-preview {
+  font-size: 12px;
+  color: var(--notif-text-secondary);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.admin-message-time {
+  font-size: 11px;
+  color: var(--notif-text-muted);
   font-weight: 500;
 }
-.admin-dropdown-footer a:hover { text-decoration: underline; }
-.admin-empty {
-  padding: 32px 20px;
-  text-align: center;
-  color: #9ca3af;
+
+.admin-message-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: var(--notif-badge);
+  color: var(--notif-badge-text);
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 9999px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Ripple effect */
+.admin-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-ripple::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(79, 70, 229, 0.2);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.4s ease, height 0.4s ease;
+}
+
+.admin-ripple:active::after {
+  width: 200%;
+  height: 200%;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .admin-dropdown {
+    width: calc(100vw - 32px);
+    right: -60px;
+  }
+  
+  .admin-icon-btn {
+    width: 36px;
+    height: 36px;
+  }
+  
+  :root {
+    --notif-icon-size: 18px;
+    --notif-avatar-size: 36px;
+  }
+}
+
+/* Animation keyframes */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.admin-dropdown.open .admin-notification-item,
+.admin-dropdown.open .admin-message-item {
+  animation: slideIn 0.2s ease-out forwards;
+}
+
+.admin-dropdown.open .admin-notification-item:nth-child(1),
+.admin-dropdown.open .admin-message-item:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.admin-dropdown.open .admin-notification-item:nth-child(2),
+.admin-dropdown.open .admin-message-item:nth-child(2) {
+  animation-delay: 0.04s;
+}
+.admin-dropdown.open .admin-notification-item:nth-child(3),
+.admin-dropdown.open .admin-message-item:nth-child(3) {
+  animation-delay: 0.06s;
+}
+.admin-dropdown.open .admin-notification-item:nth-child(4),
+.admin-dropdown.open .admin-message-item:nth-child(4) {
+  animation-delay: 0.08s;
+}
+.admin-dropdown.open .admin-notification-item:nth-child(5),
+.admin-dropdown.open .admin-message-item:nth-child(5) {
+  animation-delay: 0.1s;
 }
 </style>
 {% endblock extrahead %}
@@ -164,40 +642,65 @@
   </div>
   <div style="display: flex; align-items: center; gap: 8px; margin-right: 16px;">
     {% load admin_notifications %}
-    <div class="admin-notification-wrapper">
-      <button class="admin-notification-bell" onclick="toggleAdminNotifications()" aria-label="Notifications">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    
+    <!-- Notifications -->
+    <div class="admin-dropdown-container">
+      <button 
+        class="admin-icon-btn admin-ripple" 
+        onclick="toggleAdminNotifications()" 
+        aria-label="Notifications"
+        title="Notifications"
+        type="button"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
         </svg>
         {% admin_notification_count as count %}
         {% if count > 0 %}
-          <span class="admin-badge">{{ count }}</span>
+          <span class="admin-badge" aria-label="{{ count }} unread notifications">{{ count }}</span>
         {% endif %}
       </button>
-      <div id="adminNotificationDropdown" class="admin-dropdown">
+      
+      <div id="adminNotificationDropdown" class="admin-dropdown" role="menu" aria-label="Notifications menu">
         <div class="admin-dropdown-header">
-          <h3>Notifications</h3>
-          {% if count > 0 %}
-            <a href="{% url 'admin:vehicles_notification_changelist' %}" style="font-size: 12px; color: #4f46e5; text-decoration: none; font-weight: 500;">View all</a>
+          <div>
+            <h3>Notifications</h3>
+            {% if count > 0 %}
+              <div class="unread-count">{{ count }} unread</div>
+            {% endif %}
+          </div>
+          {% if count >  ̈0 %}
+            <div class="header-actions">
+              <button class="admin-btn-text" onclick="markAllNotificationsRead()" type="button">
+                Mark all read
+              </button>
+            </div>
           {% endif %}
         </div>
+        
         <div class="admin-dropdown-list">
           {% admin_notifications 10 as notifs %}
           {% if notifs %}
             {% for n in notifs %}
-              <a href="{% url 'admin:vehicles_notification_change' n.id %}" class="admin-notification-item {% if not n.is_read %}unread{% endif %}">
-                <div class="admin-notification-icon" style="background: {% if n.notification_type == 'emergency' %}#fef2f2{% elif n.notification_type == 'trip' %}#ecfdf5{% elif n.notification_type == 'issue' %}#fffbeb{% elif n.notification_type == 'admin' %}#eff6ff{% else %}#f9fafb{% endif %}; color: {% if n.notification_type == 'emergency' %}#dc2626{% elif n.notification_type == 'trip' %}#059669{% elif n.notification_type == 'issue' %}#d97706{% elif n.notification_type == 'admin' %}#2563eb{% else %}#6b7280{% endif %};">
+              <a href="{% url 'admin:vehicles_notification_change' n.id %}" 
+                 class="admin-notification-item {% if not n.is_read %}unread{% endif %}" 
+                 role="menuitem"
+                 aria-label="{% if not n.is_read %}Unread: {% endif %}{{ n.title }}">
+                {% if not n.is_read %}
+                  <div class="admin-unread-dot" aria-hidden="true"></div>
+                {% endif %}
+                <div class="admin-avatar admin-avatar-sm" style="background: {% if n.notification_type == 'emergency' %}#fef2f2; color: #dc2626{% elif n.notification_type == 'trip' %}#ecfdf5; color: #059669{% elif n.notification_type == 'issue' %}#fffbeb; color: #d97706{% elif n.notification_type == 'admin' %}#eff6ff; color: #2563eb{% else %}#f9fafb; color: #6b7280{% endif %};">
                   {% if n.notification_type == 'emergency' %}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                    <i class="fa-solid fa-triangle-exclamation"></i>
                   {% elif n.notification_type == 'trip' %}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <i class="fa-solid fa-circle-check"></i>
                   {% elif n.notification_type == 'issue' %}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                    <i class="fa-solid fa-circle-exclamation"></i>
                   {% elif n.notification_type == 'admin' %}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+                    <i class="fa-solid fa-shield-halved"></i>
                   {% else %}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <i class="fa-solid fa-info"></i>
                   {% endif %}
                 </div>
                 <div class="admin-notification-body">
@@ -205,16 +708,27 @@
                   <div class="admin-notification-message">{{ n.message|truncatechars:100 }}</div>
                   <div class="admin-notification-time">{{ n.created_at|timesince }} ago</div>
                 </div>
+                <div class="admin-notification-actions">
+                  <button class="admin-action-btn" onclick="event.stopPropagation(); deleteNotification({{ n.id }})" title="Delete" aria-label="Delete notification">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  </button>
+                </div>
               </a>
             {% endfor %}
           {% else %}
             <div class="admin-empty">
-              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 12px; opacity: 0.2;"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-              <p style="margin: 0; font-size: 13px; font-weight: 500; color: #6b7280;">No notifications yet</p>
-              <p style="margin: 4px 0 0; font-size: 12px; color: #9ca3af;">You&apos;re all caught up</p>
+              <div class="admin-empty-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                  <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                </svg>
+              </div>
+              <p class="admin-empty-title">No notifications yet</p>
+              <p class="admin-empty-text">You're all caught up</p>
             </div>
           {% endif %}
         </div>
+        
         {% if count > 0 %}
           <div class="admin-dropdown-footer">
             <a href="{% url 'admin:vehicles_notification_changelist' %}">View all notifications</a>
@@ -222,25 +736,155 @@
         {% endif %}
       </div>
     </div>
+
+    <!-- Messages (placeholder) -->
+    <div class="admin-dropdown-container">
+      <button 
+        class="admin-icon-btn admin-ripple" 
+        onclick="toggleAdminMessages()" 
+        aria-label="Messages"
+        title="Messages"
+        type="button"
+      >
+        <i class="fa-regular fa-comment-dots" style="font-size: var(--notif-icon-size);"></i>
+        <span class="admin-badge" aria-label="0 unread messages" style="display: none;">0</span>
+      </button>
+      
+      <div id="adminMessageDropdown" class="admin-dropdown" role="menu" aria-label="Messages menu">
+        <div class="admin-dropdown-header">
+          <div>
+            <h3>Messages</h3>
+            <div class="unread-count">0 unread</div>
+          </div>
+          <div class="header-actions">
+            <button class="admin-btn-text" onclick="markAllMessagesRead()" type="button">
+              Mark all read
+            </button>
+          </div>
+        </div>
+        
+        <div class="admin-dropdown-list">
+          <div class="admin-empty">
+            <div class="admin-empty-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+            </div>
+            <p class="admin-empty-title">No messages yet</p>
+            <p class="admin-empty-text">Conversations will appear here</p>
+          </div>
+        </div>
+        
+        <div class="admin-dropdown-footer">
+          <a href="#">Open Inbox</a>
+        </div>
+      </div>
+    </div>
+
     {% if user.is_authenticated %}
       <span style="font-size: 13px; color: #4b5563; font-weight: 500;">{{ user.get_short_name|default:user.username }}</span>
     {% endif %}
   </div>
 </div>
+
 <script>
+// Notification dropdown toggle
 function toggleAdminNotifications() {
-  var dropdown = document.getElementById('adminNotificationDropdown');
+  const dropdown = document.getElementById('adminNotificationDropdown');
+  const messageDropdown = document.getElementById('adminMessageDropdown');
+  
+  if (messageDropdown) {
+    messageDropdown.classList.remove('open');
+  }
+  
   if (dropdown) {
     dropdown.classList.toggle('open');
   }
 }
+
+// Message dropdown toggle
+function toggleAdminMessages() {
+  const dropdown = document.getElementById('adminMessageDropdown');
+  const notificationDropdown = document.getElementById('adminNotificationDropdown');
+  
+  if (notificationDropdown) {
+    notificationDropdown.classList.remove('open');
+  }
+  
+  if (dropdown) {
+    dropdown.classList.toggle('open');
+  }
+}
+
+// Mark all notifications as read
+function markAllNotificationsRead() {
+  const unreadItems = document.querySelectorAll('#adminNotificationDropdown .admin-notification-item.unread');
+  unreadItems.forEach(item => {
+    item.classList.remove('unread');
+    const dot = item.querySelector('.admin-unread-dot');
+    if (dot) dot.remove();
+  });
+  
+  // Update badge
+  const badge = document.querySelector('.admin-dropdown-container:first-child .admin-badge');
+  if (badge) {
+    badge.style.display = 'none';
+  }
+  
+  // Update unread count text
+  const unreadCountEl = document.querySelector('#adminNotificationDropdown .unread-count');
+  if (unreadCountEl) {
+    unreadCountEl.textContent = '0 unread';
+  }
+}
+
+// Mark all messages as read
+function markAllMessagesRead() {
+  const unreadItems = document.querySelectorAll('#adminMessageDropdown .admin-message-item.unread');
+  unreadItems.forEach(item => {
+    item.classList.remove('unread');
+  });
+  
+  const badge = document.querySelector('.admin-dropdown-container:nth-child(2) .admin-badge');
+  if (badge) {
+    badge.style.display = 'none';
+  }
+  
+  const unreadCountEl = document.querySelector('#adminMessageDropdown .unread-count');
+  if (unreadCountEl) {
+    unreadCountEl.textContent = '0 unread';
+  }
+}
+
+// Delete notification
+function deleteNotification(id) {
+  if (confirm('Delete this notification?')) {
+    // In a real app, you would make an API call here
+    console.log('Delete notification:', id);
+    location.reload();
+  }
+}
+
+// Close dropdowns when clicking outside
 document.addEventListener('click', function(e) {
-  var wrapper = document.querySelector('.admin-notification-wrapper');
-  if (wrapper && !wrapper.contains(e.target)) {
-    var dropdown = document.getElementById('adminNotificationDropdown');
-    if (dropdown) {
-      dropdown.classList.remove('open');
+  const wrappers = document.querySelectorAll('.admin-dropdown-container');
+  wrappers.forEach(wrapper => {
+    if (!wrapper.contains(e.target)) {
+      const dropdown = wrapper.querySelector('.admin-dropdown');
+      if (dropdown) {
+        dropdown.classList.remove('open');
+      }
     }
+  });
+});
+
+// Keyboard accessibility
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const dropdowns = document.querySelectorAll('.admin-dropdown.open');
+    dropdowns.forEach(dropdown => {
+      dropdown.classList.remove('open');
+    });
   }
 });
 </script>
