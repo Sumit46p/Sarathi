@@ -9,7 +9,7 @@ import {
   Truck,
   X,
 } from 'lucide-react';
-import { fetchIssueReports, updateIssueStatus, getIssueImageUrl, type IssueReport } from '../api/issues';
+import { fetchIssueReports, updateIssueStatus, type IssueReport } from '../api/issues';
 import { toast } from './toast';
 
 const STATUS_BADGES: Record<string, { className: string; label: string }> = {
@@ -26,7 +26,6 @@ export default function IssuesTab() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [updatingId, setUpdatingId] = useState<number | null>(null);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const fetchIssues = useCallback(async () => {
     try {
@@ -182,7 +181,6 @@ export default function IssuesTab() {
             </thead>
             <tbody>
               {filteredReports.map(report => {
-                const preview = getIssueImageUrl(report.image);
                 const isOpen = report.status === 'open';
                 const isAcknowledged = report.status === 'acknowledged';
                 return (
@@ -200,17 +198,10 @@ export default function IssuesTab() {
                       </div>
                     </td>
                     <td>
-                      {preview ? (
-                        <button
-                          className="issue-photo-thumb"
-                          onClick={() => setPreviewImage(preview)}
-                          title="View full image"
-                          aria-label={`View photo for issue ${report.id}`}
-                        >
-                          <img src={preview} alt="" loading="lazy" />
-                        </button>
+                      {report.image_url ? (
+                        <a href={report.image_url} target="_blank" rel="noreferrer" className="link" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>View</a>
                       ) : (
-                        <span className="muted">No photo</span>
+                        <span className="muted">None</span>
                       )}
                     </td>
                     <td>
@@ -274,23 +265,6 @@ export default function IssuesTab() {
         </div>
       )}
 
-      {/* Image preview modal */}
-      {previewImage && (
-        <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setPreviewImage(null); }}>
-          <div className="modal-content modal-compact" role="dialog" aria-modal="true" aria-labelledby="issue-preview-title">
-            <div className="modal-header">
-              <div>
-                <span>Issue photo</span>
-                <h2 id="issue-preview-title">Full size image</h2>
-              </div>
-              <button className="icon-button" onClick={() => setPreviewImage(null)} aria-label="Close preview"><X size={17} /></button>
-            </div>
-            <div className="modal-body" style={{ display: 'flex', justifyContent: 'center', background: 'var(--bg-tertiary)' }}>
-              <img src={previewImage} alt="Issue photo" style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 8, objectFit: 'contain' }} />
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

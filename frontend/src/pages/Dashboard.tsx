@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity, AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, CircleDot,
-  Gauge, LayoutDashboard, LogOut, MapPin, Navigation, Phone, Plus,
+  Droplets, Gauge, LayoutDashboard, LogOut, MapPin, Navigation, Phone, Plus,
   Radio, RefreshCw, Search, Settings, ShieldCheck, Trash2, Truck,
   UserRound, Users, Wrench, X,
 } from 'lucide-react';
@@ -64,7 +64,7 @@ interface DispatchResult {
   geometry?: Array<[number, number]> | null;
 }
 
-type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues' | 'emergency';
+type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues' | 'emergency' | 'fuel';
 type StatusFilter = 'all' | 'available' | 'unavailable';
 
 const VEHICLE_TYPES = [
@@ -194,6 +194,8 @@ export default function Dashboard() {
     description: string;
     location: { lat: number; lng: number } | null;
     image: string | null;
+    image_url?: string;
+    driver_vehicle_id?: number | null;
     status: string;
     assigned_vehicle: number | null;
     created_at: string;
@@ -222,12 +224,23 @@ export default function Dashboard() {
     }
   }, []);
 
+  const prevDispatchStatusRef = useRef<string | null>(null);
+
   const fetchActiveDispatch = useCallback(async () => {
     try {
       const response = await api.get('/dispatch/active/');
+      const currentStatus = response.data.status;
+      if (prevDispatchStatusRef.current !== null && prevDispatchStatusRef.current !== currentStatus) {
+        toast.success(`Trip status updated to: ${currentStatus}`);
+      }
+      prevDispatchStatusRef.current = currentStatus;
       setActiveDispatch(response.data);
     } catch (error) {
       if ((error as { response?: { status?: number } })?.response?.status === 404) {
+        if (prevDispatchStatusRef.current !== null && prevDispatchStatusRef.current !== 'completed' && prevDispatchStatusRef.current !== 'cancelled') {
+           toast.success('Trip completed or cancelled.');
+        }
+        prevDispatchStatusRef.current = null;
         setActiveDispatch(null);
         setDispatchResult(null);
       } else {
@@ -236,9 +249,18 @@ export default function Dashboard() {
     }
   }, []);
 
+  const prevIssuesRef = useRef<number[] | null>(null);
+
   const fetchIssues = useCallback(async () => {
     try {
       const { data } = await api.get<IssueReport[]>('/issues/');
+      if (prevIssuesRef.current !== null) {
+        const newIds = data.map(i => i.id).filter(id => !prevIssuesRef.current!.includes(id));
+        if (newIds.length > 0) {
+          toast.error('⚠️ New Maintenance Issue Reported');
+        }
+      }
+      prevIssuesRef.current = data.map(i => i.id);
       setIssues(previous => JSON.stringify(previous) === JSON.stringify(data) ? previous : data);
     } catch (error) {
       console.error('Failed to fetch issues', error);
@@ -246,9 +268,18 @@ export default function Dashboard() {
     }
   }, []);
 
+  const prevEmergenciesRef = useRef<number[] | null>(null);
+
   const fetchEmergencies = useCallback(async () => {
     try {
       const { data } = await api.get('/emergency/requests/');
+      if (prevEmergenciesRef.current !== null) {
+        const newIds = data.map((e: any) => e.id).filter((id: number) => !prevEmergenciesRef.current!.includes(id));
+        if (newIds.length > 0) {
+          toast.error('🚨 New Emergency SOS Received!', { duration: 6000 });
+        }
+      }
+      prevEmergenciesRef.current = data.map((e: any) => e.id);
       setEmergencies(previous => JSON.stringify(previous) === JSON.stringify(data) ? previous : data);
     } catch (error) {
       console.error('Failed to fetch emergencies', error);
@@ -426,12 +457,16 @@ export default function Dashboard() {
     setActiveTab(tab);
     if (tab === 'dispatch') clearDispatch();
     if (tab === 'emergency') {
+      toast.clearAll();
       try {
         await api.post('/emergency/notifications/mark-read/');
         setUnreadEmergencyCount(0);
       } catch (e) {
         console.error('Failed to mark emergency notifications as read', e);
       }
+    }
+    if (tab === 'issues') {
+      toast.clearAll();
     }
   };
 
@@ -490,6 +525,7 @@ export default function Dashboard() {
     settings: { title: 'Workspace settings', eyebrow: 'Configuration' },
     issues: { title: 'Reported issues', eyebrow: 'Driver feedback' },
     emergency: { title: 'Emergency requests', eyebrow: 'SOS alerts' },
+    fuel: { title: 'Fuel entry log', eyebrow: 'Fuel management' },
   };
 
   const renderEmpty = (title: string, text: string) => (
@@ -507,7 +543,8 @@ export default function Dashboard() {
           <button id="nav-drivers" className={`nav-item ${activeTab === 'drivers' ? 'active' : ''}`} onClick={() => switchTab('drivers')}><Users size={17} /><span>Drivers</span></button>
           <button id="nav-maintenance" className={`nav-item ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => switchTab('maintenance')}><Wrench size={17} /><span>Maintenance</span></button>
           <button id="nav-issues" className={`nav-item ${activeTab === 'issues' ? 'active' : ''}`} onClick={() => switchTab('issues')}><AlertTriangle size={17} /><span>Issues</span>{issues.filter(i => i.status === 'open').length > 0 && <span className="nav-badge">{issues.filter(i => i.status === 'open').length}</span>}</button>
-          <button id="nav-emergency" className={`nav-item ${activeTab === 'emergency' ? 'active' : ''}`} onClick={() => switchTab('emergency')}><AlertCircle size={17} /><span>Emergency</span><span className="nav-badge" style={{ backgroundColor: '#dc2626' }}>{emergencyCount}</span></button>
+          <button id="nav-emergency" className={`nav-item ${activeTab === 'emergency' ? 'active' : ''}`} onClick={() => switchTab('emergency')}><AlertCircle size={17} /><span>Emergency</span>{emergencyCount > 0 && <span className="nav-badge" style={{ backgroundColor: '#dc2626' }}>{emergencyCount}</span>}</button>
+          <button id="nav-fuel" className={`nav-item ${activeTab === 'fuel' ? 'active' : ''}`} onClick={() => switchTab('fuel')}><Droplets size={17} /><span>Fuel Entry</span></button>
           <p className="nav-label nav-label-secondary">System</p>
           <button id="nav-settings" className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => switchTab('settings')}><Settings size={17} /><span>Settings</span></button>
         </nav>
@@ -612,8 +649,9 @@ export default function Dashboard() {
                     <tr>
                       <th>ID</th>
                       <th>Type</th>
-                      <th>User</th>
+                      <th>User / Vehicle</th>
                       <th>Description</th>
+                      <th>Attachment</th>
                       <th>Location</th>
                       <th>Status</th>
                       <th>Assigned Vehicle</th>
@@ -626,8 +664,9 @@ export default function Dashboard() {
                       <tr key={emergency.id}>
                         <td><strong>#{emergency.id}</strong></td>
                         <td><span className="type-label">{formatType(emergency.emergency_type)}</span></td>
-                        <td>User #{emergency.user}</td>
+                        <td>{emergency.driver_vehicle_id ? `Vehicle #${emergency.driver_vehicle_id}` : `User #${emergency.user}`}</td>
                         <td>{emergency.description ? <span title={emergency.description}>{emergency.description.length > 50 ? emergency.description.slice(0, 50) + '...' : emergency.description}</span> : '—'}</td>
+                        <td>{emergency.image_url ? <a href={emergency.image_url} target="_blank" rel="noreferrer" className="link" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>View</a> : <span className="muted">None</span>}</td>
                         <td>{emergency.location ? <span className="coordinate"><MapPin size={13} />{emergency.location.lat.toFixed(4)}, {emergency.location.lng.toFixed(4)}</span> : <span className="muted">Not provided</span>}</td>
                         <td><span className={`status-badge ${emergency.status === 'pending' ? 'unavailable' : emergency.status === 'dispatched' ? 'on-trip' : 'available'}`}><span />{formatType(emergency.status)}</span></td>
                         <td>{emergency.assigned_vehicle ? <span>Vehicle #{emergency.assigned_vehicle}</span> : <span className="muted">Unassigned</span>}</td>
@@ -655,6 +694,22 @@ export default function Dashboard() {
           </section>}
 
           {activeTab === 'settings' && <section className="tab-content" aria-labelledby="settings-heading"><div className="page-heading"><div><h2 id="settings-heading">Workspace settings</h2><p>Configuration for your Sarthi operations workspace.</p></div></div><div className="settings-panel"><div className="settings-icon"><Settings size={20} /></div><div><h3>Configuration is not available yet</h3><p>No settings API is currently exposed. This section is intentionally read-only to avoid changing backend behavior.</p></div></div></section>}
+
+          {activeTab === 'fuel' && <section className="tab-content" aria-labelledby="fuel-heading">
+            <div className="page-heading">
+              <div>
+                <h2 id="fuel-heading">Fuel entry log</h2>
+                <p>Track and record fuel fill-ups for each vehicle in your fleet.</p>
+              </div>
+            </div>
+            <div className="settings-panel" style={{ textAlign: 'center', padding: '48px 24px' }}>
+              <div className="settings-icon"><Droplets size={24} /></div>
+              <div>
+                <h3>Fuel Entry Coming Soon</h3>
+                <p>This section will allow drivers and admins to log fuel fill-up records, track consumption per vehicle, and generate fuel expense reports.</p>
+              </div>
+            </div>
+          </section>}
         </div>
       </main>
 

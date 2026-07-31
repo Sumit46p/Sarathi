@@ -7,6 +7,7 @@ export interface IssueReport {
   vehicle_name: string;
   description: string;
   image: string | null;
+  image_url?: string;
   status: 'open' | 'acknowledged' | 'resolved';
   created_at: string;
 }

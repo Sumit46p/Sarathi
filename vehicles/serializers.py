@@ -46,13 +46,22 @@ class LocationField(serializers.Field):
 
 class IssueReportSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(required=False, allow_null=True)
+    image_url = serializers.SerializerMethodField()
     driver_name = serializers.CharField(source='driver.name', read_only=True)
     vehicle_name = serializers.SerializerMethodField()
 
     class Meta:
         model = IssueReport
-        fields = ['id', 'driver', 'driver_name', 'vehicle_name', 'description', 'image', 'status', 'created_at']
+        fields = ['id', 'driver', 'driver_name', 'vehicle_name', 'description', 'image', 'image_url', 'status', 'created_at']
         read_only_fields = ['id', 'driver', 'driver_name', 'vehicle_name', 'status', 'created_at']
+
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
 
     def get_vehicle_name(self, obj):
         vehicle = obj.driver.assigned_vehicles.first()
@@ -233,15 +242,21 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
     """Serializer for emergency SOS requests."""
     location = LocationField(required=False, allow_null=True)
     image_url = serializers.SerializerMethodField()
+    driver_vehicle_id = serializers.SerializerMethodField()
 
     class Meta:
         model = EmergencyRequest
         fields = [
             'id', 'user', 'emergency_type', 'description', 'location',
-            'image', 'image_url', 'status', 'assigned_vehicle',
+            'image', 'image_url', 'driver_vehicle_id', 'status', 'assigned_vehicle',
             'created_at', 'updated_at', 'resolved_at',
         ]
         read_only_fields = ['id', 'user', 'status', 'assigned_vehicle', 'created_at', 'updated_at', 'resolved_at']
+
+    def get_driver_vehicle_id(self, obj):
+        if hasattr(obj.user, 'driver') and obj.user.driver.assigned_vehicle_id:
+            return obj.user.driver.assigned_vehicle_id
+        return None
 
     def get_image_url(self, obj):
         if obj.image:

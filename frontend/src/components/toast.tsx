@@ -31,10 +31,31 @@ function emit(): void {
   for (const listener of listeners) listener(toasts);
 }
 
+function playBeep() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioContextClass) {
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+    }
+  } catch (e) {
+    console.error('Audio playback failed', e);
+  }
+}
+
 function addToast(kind: ToastKind, message: string, duration = 3200): void {
   const entry: ToastEntry = { id: nextId++, kind, message };
   toasts = [...toasts, entry];
   emit();
+  playBeep();
   if (duration > 0) {
     window.setTimeout(() => dismiss(entry.id), duration);
   }
@@ -49,6 +70,10 @@ export const toast = {
   success: (message: string, duration?: number) => addToast('success', message, duration),
   error: (message: string, duration?: number) => addToast('error', message, duration),
   info: (message: string, duration?: number) => addToast('info', message, duration),
+  clearAll: () => {
+    toasts = [];
+    emit();
+  }
 };
 
 function useToasts(): ToastEntry[] {

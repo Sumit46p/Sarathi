@@ -992,7 +992,7 @@ def report_issue(request):
         related_issue=report,
     )
 
-    serializer = IssueReportSerializer(report)
+    serializer = IssueReportSerializer(report, context={'request': request})
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -1005,7 +1005,7 @@ def issue_report_list(request):
     sorted newest first.
     """
     reports = IssueReport.objects.filter(driver__owner=request.user).select_related('driver')
-    serializer = IssueReportSerializer(reports, many=True)
+    serializer = IssueReportSerializer(reports, many=True, context={'request': request})
     return Response(serializer.data)
 
 
@@ -1027,7 +1027,7 @@ def issue_report_detail(request, pk):
         )
 
     if request.method == 'GET':
-        serializer = IssueReportSerializer(report)
+        serializer = IssueReportSerializer(report, context={'request': request})
         return Response(serializer.data)
 
     new_status = request.data.get('status')
@@ -1039,7 +1039,7 @@ def issue_report_detail(request, pk):
 
     report.status = new_status
     report.save(update_fields=['status'])
-    serializer = IssueReportSerializer(report)
+    serializer = IssueReportSerializer(report, context={'request': request})
     return Response(serializer.data)
 
 class MaintenanceTemplateListCreateView(generics.ListCreateAPIView):
@@ -1288,12 +1288,19 @@ def create_emergency_request(request):
                 profile__organization_name=org_name,
                 is_staff=True,
             )
+            driver_name = f"User {request.user.username}"
+            if hasattr(request.user, 'driver'):
+                if request.user.driver.assigned_vehicle_id:
+                    driver_name = f"Vehicle #{request.user.driver.assigned_vehicle_id}"
+                else:
+                    driver_name = f"Driver {request.user.driver.name}"
+                    
             for admin in admin_users:
                 Notification.objects.create(
                     user=admin,
                     notification_type='admin',
                     title=f'Emergency: {emergency.get_emergency_type_display()}',
-                    message=f'Emergency request from {request.user.username}: {emergency.description or "No description"}',
+                    message=f'Emergency request from {driver_name}: {emergency.description or "No description"}',
                 )
     
     return Response(EmergencyRequestSerializer(emergency, context={'request': request}).data, status=status.HTTP_201_CREATED)
