@@ -120,21 +120,14 @@ export default function MaintenanceTab() {
     }
   };
 
-  const groupedRecords = useMemo(() => {
-    const filtered = records.filter(r => {
+  const filteredRecords = useMemo(() => {
+    return records.filter(r => {
       const matchesQuery = !query.trim() || 
         r.vehicle_name.toLowerCase().includes(query.toLowerCase()) ||
         formatType(r.maintenance_type).toLowerCase().includes(query.toLowerCase());
       const matchesVehicle = vehicleFilter === 'all' || r.vehicle === Number(vehicleFilter);
       return matchesQuery && matchesVehicle;
     });
-
-    const groups: Record<string, MaintenanceRecord[]> = {};
-    for (const r of filtered) {
-      if (!groups[r.vehicle_name]) groups[r.vehicle_name] = [];
-      groups[r.vehicle_name].push(r);
-    }
-    return groups;
   }, [records, query, vehicleFilter]);
 
   const overdueCount = records.filter(r => r.is_overdue).length;
@@ -224,7 +217,7 @@ export default function MaintenanceTab() {
         </div>
       </div>
 
-      {Object.keys(groupedRecords).length === 0 ? (
+      {filteredRecords.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon"><Wrench size={20} /></div>
           <h3>No maintenance records</h3>
@@ -243,15 +236,14 @@ export default function MaintenanceTab() {
               </tr>
             </thead>
             <tbody>
-              {Object.entries(groupedRecords).map(([vehicleName, vehicleRecords]) =>
-                vehicleRecords.map((rec, idx) => (
+              {filteredRecords.map((rec) => (
                   <tr key={rec.id} className={rec.is_overdue ? 'overdue-row' : ''}>
-                    {idx === 0 && <td rowSpan={vehicleRecords.length}>
+                    <td>
                       <div className="primary-cell">
                         <div className="entity-icon"><Truck size={17} /></div>
-                        <div><strong>{vehicleName}</strong></div>
+                        <div><strong>{rec.vehicle_name || 'Unassigned'}</strong></div>
                       </div>
-                    </td>}
+                    </td>
                     <td><span>{formatType(rec.maintenance_type)}</span>{rec.description ? <span className="muted" style={{ display: 'block', fontSize: '.65rem', marginTop: 2 }}>{rec.description}</span> : null}</td>
                     <td><span className={rec.is_overdue ? 'overdue-date' : ''}>{rec.due_date}</span></td>
                     <td>
@@ -280,15 +272,14 @@ export default function MaintenanceTab() {
                           className="icon-button danger"
                           onClick={() => handleDeleteRecord(rec.id)}
                           title="Delete record"
-                          aria-label={`Delete ${vehicleName} record`}
+                          aria-label={`Delete ${rec.vehicle_name} record`}
                         >
                           <Trash2 size={15} />
                         </button>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>

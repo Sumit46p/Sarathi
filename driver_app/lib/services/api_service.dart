@@ -651,7 +651,7 @@ class ApiService {
     String? notes,
   }) async {
     try {
-      final body = {
+      final Map<String, dynamic> body = {
         'liters': liters,
         'cost_per_liter': costPerLiter,
       };

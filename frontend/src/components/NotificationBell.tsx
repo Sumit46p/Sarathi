@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import { Bell, Trash2, CheckCircle2, AlertTriangle, Info, ShieldCheck, X, CheckCheck } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Bell, Trash2, CheckCircle2, AlertTriangle, Info, ShieldCheck, CheckCheck, X } from 'lucide-react';
 
 export interface NotificationItem {
   id: number;
@@ -11,11 +11,41 @@ export interface NotificationItem {
 }
 
 const TYPE_CONFIG: Record<string, { icon: typeof Bell; color: string; bg: string; border: string; label: string }> = {
-  trip: { icon: CheckCircle2, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Trip' },
-  issue: { icon: AlertTriangle, color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', label: 'Issue' },
-  emergency: { icon: AlertTriangle, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', label: 'Emergency' },
-  admin: { icon: ShieldCheck, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200', label: 'Admin' },
-  system: { icon: Info, color: 'text-gray-700', bg: 'bg-gray-50', border: 'border-gray-200', label: 'System' },
+  trip: {
+    icon: CheckCircle2,
+    color: 'text-emerald-600 dark:text-emerald-300',
+    bg: 'bg-emerald-50 dark:bg-emerald-500/15',
+    border: 'border-emerald-200 dark:border-emerald-500/30',
+    label: 'Trip',
+  },
+  issue: {
+    icon: AlertTriangle,
+    color: 'text-amber-600 dark:text-amber-300',
+    bg: 'bg-amber-50 dark:bg-amber-500/15',
+    border: 'border-amber-200 dark:border-amber-500/30',
+    label: 'Issue',
+  },
+  emergency: {
+    icon: AlertTriangle,
+    color: 'text-rose-600 dark:text-rose-300',
+    bg: 'bg-rose-50 dark:bg-rose-500/15',
+    border: 'border-rose-200 dark:border-rose-500/30',
+    label: 'Emergency',
+  },
+  admin: {
+    icon: ShieldCheck,
+    color: 'text-blue-600 dark:text-blue-300',
+    bg: 'bg-blue-50 dark:bg-blue-500/15',
+    border: 'border-blue-200 dark:border-blue-500/30',
+    label: 'Admin',
+  },
+  system: {
+    icon: Info,
+    color: 'text-indigo-600 dark:text-indigo-300',
+    bg: 'bg-indigo-50 dark:bg-indigo-500/15',
+    border: 'border-indigo-200 dark:border-indigo-500/30',
+    label: 'System',
+  },
 };
 
 function formatTime(iso: string) {
@@ -43,174 +73,207 @@ export default function NotificationBell({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
-  const displayNotifications = showAll ? notifications : notifications.slice(0, 5);
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const displayNotifications = showAll ? notifications : notifications.slice(0, 10);
 
+  // Lock background scroll while the panel is open, and allow Escape to close it.
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isOpen]);
 
   const handleMarkAllRead = () => {
-    const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
     if (unreadIds.length > 0) onMarkRead(unreadIds);
   };
 
   const handleClearAll = () => {
-    const ids = notifications.map(n => n.id);
+    const ids = notifications.map((n) => n.id);
     if (ids.length > 0 && window.confirm('Clear all notifications?')) {
-      ids.forEach(id => onDelete(id));
+      ids.forEach((id) => onDelete(id));
+      setIsOpen(false);
     }
   };
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative">
+      {/* Bell trigger */}
       <button
-        className="relative p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 group"
+        className="relative flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
         onClick={() => {
-          setIsOpen(!isOpen);
+          setIsOpen(true);
           setShowAll(false);
         }}
-        aria-label="Notifications"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+        aria-expanded={isOpen}
       >
-        <Bell className="w-5 h-5 text-gray-600 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors" />
+        <Bell className="h-5 w-5" strokeWidth={1.75} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-lg ring-2 ring-white dark:ring-gray-900 animate-pulse">
+          <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1 text-[10px] font-semibold leading-none text-white dark:border-gray-900">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-3 w-[420px] max-w-[calc(100vw-32px)] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden transform origin-top-right transition-all animate-in fade-in zoom-in-95 duration-200">
-          {/* Header */}
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gradient-to-r from-gray-50 to-white dark:from-gray-800/50 dark:to-gray-900">
-            <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white text-base">Notifications</h3>
-              {unreadCount > 0 && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{unreadCount} unread</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {unreadCount > 0 && (
-                <button
-                  onClick={handleMarkAllRead}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                >
-                  <CheckCheck size={13} />
-                  Mark all read
-                </button>
-              )}
-              {notifications.length > 0 && (
-                <button
-                  onClick={handleClearAll}
-                  className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                  title="Clear all"
-                >
-                  <Trash2 size={14} />
-                </button>
-              )}
-            </div>
-          </div>
+        <div className="fixed inset-0 z-[100] flex items-start justify-center px-4 pb-4 pt-[8vh] sm:pt-[10vh]">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-gray-900/60 backdrop-blur-md transition-opacity dark:bg-black/80"
+            onClick={() => setIsOpen(false)}
+            aria-hidden="true"
+          />
 
-          {/* Notification list */}
-          <div className="max-h-[480px] overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="py-16 px-4 text-center">
-                <div className="mx-auto w-16 h-16 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center mb-4">
-                  <Bell className="w-8 h-8 text-gray-300 dark:text-gray-600" />
-                </div>
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-200">No notifications yet</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">We&apos;ll notify you when something arrives</p>
+          {/* Panel */}
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Notifications"
+            className="relative flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between gap-4 border-b border-gray-100 px-6 py-4 dark:border-gray-800">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">Notifications</h3>
+                {unreadCount > 0 ? (
+                  <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                    {unreadCount} unread
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">You&apos;re all caught up</p>
+                )}
               </div>
-            ) : (
-              <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                {displayNotifications.map(notification => {
-                  const config = TYPE_CONFIG[notification.type] || TYPE_CONFIG.system;
-                  const Icon = config.icon;
-                  const isUnread = !notification.is_read;
 
-                  return (
-                    <div
-                      key={notification.id}
-                      className={`group relative flex gap-3 p-4 hover:bg-gray-50 dark:hover:bg-gray-800/60 transition-all duration-150 cursor-pointer ${
-                        isUnread ? 'bg-blue-50/40 dark:bg-blue-900/10' : ''
-                      }`}
-                      onClick={() => {
-                        if (isUnread) onMarkRead([notification.id]);
-                      }}
-                    >
-                      {/* Type indicator */}
-                      <div className={`flex-shrink-0 mt-0.5 w-9 h-9 rounded-xl ${config.bg} border ${config.border} flex items-center justify-center`}>
-                        <Icon className={`w-4 h-4 ${config.color}`} />
-                      </div>
+              <div className="flex items-center gap-1">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllRead}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-500/10"
+                  >
+                    <CheckCheck size={15} />
+                    <span className="hidden sm:inline">Mark all read</span>
+                  </button>
+                )}
+                {notifications.length > 0 && (
+                  <button
+                    onClick={handleClearAll}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-rose-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-rose-400"
+                    title="Clear all"
+                    aria-label="Clear all notifications"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
 
-                      {/* Content */}
-                      <div className="flex-1 min-w-0 pr-8">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-sm ${isUnread ? 'font-semibold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-200'}`}>
-                              {notification.title}
-                            </span>
-                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${config.bg} ${config.color} ${config.border} border`}>
-                              {config.label}
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-gray-400 dark:text-gray-500 whitespace-nowrap mt-0.5">
-                            {formatTime(notification.created_at)}
-                          </span>
+            {/* List */}
+            <div className="flex-1 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="flex flex-col items-center px-6 py-20 text-center">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+                    <Bell className="h-6 w-6 text-gray-400 dark:text-gray-500" strokeWidth={1.75} />
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">No notifications yet</p>
+                  <p className="mt-1 max-w-xs text-sm text-gray-500 dark:text-gray-400">
+                    We&apos;ll let you know when something needs your attention.
+                  </p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {displayNotifications.map((notification) => {
+                    const config = TYPE_CONFIG[notification.type] || TYPE_CONFIG.system;
+                    const Icon = config.icon;
+                    const isUnread = !notification.is_read;
+
+                    return (
+                      <li
+                        key={notification.id}
+                        className={`group relative flex gap-3 px-6 py-4 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/60 ${isUnread ? 'bg-blue-50/60 dark:bg-blue-500/[0.06]' : ''
+                          }`}
+                      >
+                        <button
+                          className="absolute inset-0 h-full w-full cursor-pointer"
+                          onClick={() => isUnread && onMarkRead([notification.id])}
+                          aria-label={isUnread ? `Mark "${notification.title}" as read` : notification.title}
+                        />
+
+                        {/* Icon */}
+                        <div
+                          className={`relative z-[1] mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border ${config.bg} ${config.border}`}
+                        >
+                          <Icon className={`h-4.5 w-4.5 ${config.color}`} strokeWidth={2} />
                         </div>
-                        <p className={`text-xs leading-relaxed line-clamp-2 ${isUnread ? 'text-gray-700 dark:text-gray-200' : 'text-gray-500 dark:text-gray-400'}`}>
-                          {notification.message}
-                        </p>
-                      </div>
 
-                      {/* Actions */}
-                      <div className="absolute right-2 top-3 flex flex-col items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* Content */}
+                        <div className="relative z-[1] min-w-0 flex-1 pr-8">
+                          <p
+                            className={`text-sm font-semibold ${isUnread ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}
+                          >
+                            {notification.title}
+                          </p>
+                          <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                            {formatTime(notification.created_at)}
+                          </p>
+                          <p
+                            className={`mt-2 text-sm leading-relaxed ${isUnread ? 'text-gray-700 dark:text-gray-200' : 'text-gray-500 dark:text-gray-400'}`}
+                          >
+                            {notification.message}
+                          </p>
+                        </div>
+
+                        {isUnread && (
+                          <span className="absolute right-6 top-4 z-[1] h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
+                        )}
+
+                        {/* Delete action */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             onDelete(notification.id);
                           }}
-                          className="p-1.5 text-gray-400 hover:text-red-500 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                          className="absolute right-4 top-1/2 z-[2] -translate-y-1/2 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-400 opacity-0 shadow-sm transition-opacity hover:text-rose-600 group-hover:opacity-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500 dark:hover:text-rose-400"
                           title="Delete notification"
+                          aria-label="Delete notification"
                         >
                           <Trash2 size={14} />
                         </button>
-                        {isUnread && (
-                          <div className="w-2 h-2 bg-blue-500 rounded-full mt-0.5" title="Unread" />
-                        )}
-                      </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
 
-                      {/* Unread indicator */}
-                      {isUnread && (
-                        <div className="absolute left-0 top-4 bottom-4 w-[3px] bg-blue-500 rounded-r-full" />
-                      )}
-                    </div>
-                  );
-                })}
+            {/* Footer */}
+            {notifications.length > 10 && (
+              <div className="border-t border-gray-100 px-6 py-3 text-center dark:border-gray-800">
+                <button
+                  onClick={() => setShowAll(!showAll)}
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  {showAll ? 'Show less' : `View all ${notifications.length} notifications`}
+                </button>
               </div>
             )}
           </div>
-
-          {/* Footer */}
-          {notifications.length > 5 && (
-            <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
-              <button
-                onClick={() => setShowAll(!showAll)}
-                className="w-full text-center text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-              >
-                {showAll ? 'Show less' : `View all ${notifications.length} notifications`}
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>

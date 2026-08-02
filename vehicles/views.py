@@ -11,6 +11,38 @@ from .osrm import get_route_distance
 import threading
 import math
 
+
+def get_org_user_ids(user):
+    """
+    Return a list of User IDs that belong to the same organization as *user*.
+
+    All admin/staff accounts whose Profile.organization_name matches the
+    requesting user's org name are considered part of the same organization.
+    This lets multiple admin accounts (e.g. 'uday' and 'toppabahun') share
+    the same pool of drivers, vehicles, and other resources.
+
+    Falls back to [user.id] when no profile is found so existing per-user
+    data is always visible.
+    """
+    from accounts.models import Profile
+    try:
+        org_name = user.profile.organization_name
+    except Exception:
+        return [user.id]
+
+    if not org_name or org_name == 'Default Org':
+        return [user.id]
+
+    ids = list(
+        Profile.objects
+        .filter(organization_name__iexact=org_name)
+        .values_list('user_id', flat=True)
+    )
+    # Always include the current user even if their profile is oddly configured
+    if user.id not in ids:
+        ids.append(user.id)
+    return ids
+
 from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification, EmergencyRequest, FuelEntry
 from .serializers import (
     VehicleSerializer,
@@ -114,9 +146,13 @@ class VehicleListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Vehicle.objects.filter(owner=self.request.user)
+        return Vehicle.objects.filter(owner__in=get_org_user_ids(self.request.user))
 
     def perform_create(self, serializer):
+        # Only staff/admin accounts may register vehicles.
+        if not self.request.user.is_staff:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Only admin accounts can register vehicles.')
         serializer.save(owner=self.request.user)
 
 
@@ -171,7 +207,7 @@ class DriverListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Driver.objects.filter(owner=self.request.user)
+        return Driver.objects.filter(owner__in=get_org_user_ids(self.request.user))
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -199,7 +235,7 @@ class DriverDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Driver.objects.filter(owner=self.request.user)
+        return Driver.objects.filter(owner__in=get_org_user_ids(self.request.user))
 
     def perform_destroy(self, instance):
         """Delete the linked Django User when the driver is removed so the
@@ -248,7 +284,7 @@ def active_dispatch(request):
         DispatchRequest.objects
         .select_related('assigned_vehicle')
         .filter(
-            assigned_vehicle__owner=request.user,
+            assigned_vehicle__owner__in=get_org_user_ids(request.user),
             status__in=ACTIVE_DISPATCH_STATUSES,
         )
         .order_by('-created_at')
@@ -560,7 +596,7 @@ def dispatch_transition(request, pk):
     Lets the dispatcher accept/reject from the dashboard; first acceptor wins.
     """
     try:
-        vehicle = Vehicle.objects.get(pk=pk, owner=request.user)
+        vehicle = Vehicle.objects.get(pk=pk, owner__in=get_org_user_ids(request.user))
     except Vehicle.DoesNotExist:
         return Response(
             {'error': 'Vehicle not found or access denied'},
@@ -674,7 +710,7 @@ def assign_driver(request, pk):
     Body: {"driver_id": 5} or {"driver_id": null}
     """
     try:
-        vehicle = Vehicle.objects.get(pk=pk, owner=request.user)
+        vehicle = Vehicle.objects.get(pk=pk, owner__in=get_org_user_ids(request.user))
     except Vehicle.DoesNotExist:
         return Response(
             {'error': 'Vehicle not found or access denied'},
@@ -689,7 +725,7 @@ def assign_driver(request, pk):
         vehicle.driver = None
     else:
         try:
-            driver = Driver.objects.get(pk=driver_id, owner=request.user)
+            driver = Driver.objects.get(pk=driver_id, owner__in=get_org_user_ids(request.user))
             vehicle.driver = driver
         except Driver.DoesNotExist:
             return Response(
@@ -723,7 +759,7 @@ def nearest_vehicles(request):
 
     vehicles = (
         Vehicle.objects
-        .filter(owner=request.user, is_available=True, vehicle_type=vehicle_type)
+        .filter(owner__in=get_org_user_ids(request.user), is_available=True, vehicle_type=vehicle_type)
         .annotate(distance=Distance('location', request_point))
         .order_by('distance')[:5]
     )
@@ -766,7 +802,7 @@ def dispatch_vehicle(request):
     # Stage 1: PostGIS straight-line pre-filter (fast, approximate)
     candidates = list(
         Vehicle.objects
-        .filter(owner=request.user, is_available=True, vehicle_type=vehicle_type)
+        .filter(owner__in=get_org_user_ids(request.user), is_available=True, vehicle_type=vehicle_type)
         .annotate(distance=Distance('location', request_point))
         .order_by('distance')[:5]
     )
@@ -860,9 +896,7 @@ class MaintenanceRecordListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_staff:
-            return MaintenanceRecord.objects.all()
-        return MaintenanceRecord.objects.filter(owner=user)
+        return MaintenanceRecord.objects.filter(owner__in=get_org_user_ids(user))
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -878,9 +912,7 @@ class MaintenanceRecordDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_staff:
-            return MaintenanceRecord.objects.all()
-        return MaintenanceRecord.objects.filter(owner=user)
+        return MaintenanceRecord.objects.filter(owner__in=get_org_user_ids(user))
 
     def perform_update(self, serializer):
         # Auto-set completed_at when completed is marked True
@@ -902,7 +934,7 @@ def upcoming_maintenance(request):
     thirty_days_later = today + timezone.timedelta(days=30)
 
     records = MaintenanceRecord.objects.filter(
-        owner=request.user,
+        owner__in=get_org_user_ids(request.user),
         due_date__range=[today, thirty_days_later]
     ).order_by('due_date')
 
@@ -1005,7 +1037,7 @@ def issue_report_list(request):
     Returns all issue reports for the current owner (org-scoped),
     sorted newest first.
     """
-    reports = IssueReport.objects.filter(driver__owner=request.user).select_related('driver')
+    reports = IssueReport.objects.filter(driver__owner__in=get_org_user_ids(request.user)).select_related('driver')
     serializer = IssueReportSerializer(reports, many=True, context={'request': request})
     return Response(serializer.data)
 
@@ -1020,7 +1052,7 @@ def issue_report_detail(request, pk):
     PATCH accepts {"status": "open"|"acknowledged"|"resolved"}.
     """
     try:
-        report = IssueReport.objects.get(pk=pk, driver__owner=request.user)
+        report = IssueReport.objects.get(pk=pk, driver__owner__in=get_org_user_ids(request.user))
     except IssueReport.DoesNotExist:
         return Response(
             {'error': 'Issue report not found'},
@@ -1052,7 +1084,7 @@ class MaintenanceTemplateListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return MaintenanceTemplate.objects.filter(owner=self.request.user)
+        return MaintenanceTemplate.objects.filter(owner__in=get_org_user_ids(self.request.user))
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -1067,7 +1099,7 @@ class MaintenanceTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return MaintenanceTemplate.objects.filter(owner=self.request.user)
+        return MaintenanceTemplate.objects.filter(owner__in=get_org_user_ids(self.request.user))
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -1082,7 +1114,7 @@ def apply_maintenance_template(request, pk):
     from datetime import timedelta
     
     try:
-        template = MaintenanceTemplate.objects.get(pk=pk, owner=request.user)
+        template = MaintenanceTemplate.objects.get(pk=pk, owner__in=get_org_user_ids(request.user))
     except MaintenanceTemplate.DoesNotExist:
         return Response(
             {'error': 'Template not found'},
@@ -1093,7 +1125,7 @@ def apply_maintenance_template(request, pk):
     vehicle_type = request.data.get('vehicle_type', None)
 
     # Determine target vehicles
-    vehicles_query = Vehicle.objects.filter(owner=request.user)
+    vehicles_query = Vehicle.objects.filter(owner__in=get_org_user_ids(request.user))
     
     if vehicle_ids:
         vehicles = vehicles_query.filter(pk__in=vehicle_ids)
@@ -1315,32 +1347,22 @@ def emergency_request_list(request):
     Returns all emergency requests for the current admin's organization.
     Supports filtering by status via ?status=pending|dispatched|resolved|cancelled
     """
-    from django.contrib.auth.models import User
-    from accounts.models import Profile
-    
-    # Get the current user's organization
-    try:
-        profile = Profile.objects.get(user=request.user)
-        org_name = profile.organization_name
-    except Profile.DoesNotExist:
-        return Response(
-            {'error': 'No profile found for this user'},
-            status=status.HTTP_404_NOT_FOUND,
-        )
-    
-    # Get all drivers in the same organization
-    drivers = Driver.objects.filter(owner__profile__organization_name=org_name)
-    driver_users = [d.user.id for d in drivers]
-    
-    # Get emergency requests from users in this organization
+    # Get all drivers belonging to the same org as the requesting admin
+    org_ids = get_org_user_ids(request.user)
+    drivers = Driver.objects.filter(owner__in=org_ids).select_related('user')
+    driver_user_ids = [d.user.id for d in drivers if d.user_id is not None]
+
+    # Get emergency requests from those driver users
     status_filter = request.query_params.get('status')
-    queryset = EmergencyRequest.objects.filter(user__in=driver_users).select_related('user', 'assigned_vehicle')
-    
+    queryset = EmergencyRequest.objects.filter(
+        user__in=driver_user_ids
+    ).select_related('user', 'assigned_vehicle')
+
     if status_filter:
         queryset = queryset.filter(status=status_filter)
-    
+
     queryset = queryset.order_by('-created_at')
-    
+
     serializer = EmergencyRequestSerializer(queryset, many=True, context={'request': request})
     return Response(serializer.data)
 
@@ -1532,10 +1554,14 @@ def fuel_entry_list_create(request):
         if driver:
             entries = FuelEntry.objects.filter(driver=driver).select_related('vehicle', 'driver')
         else:
-            # Admin: return all entries for vehicles owned by this admin
-            entries = FuelEntry.objects.filter(
-                vehicle__owner=request.user
-            ).select_related('vehicle', 'driver')
+            # Admin: show entries where this admin owns the vehicle OR manages the driver.
+            # This ensures entries are visible even if a vehicle was mis-assigned.
+            if request.user.is_staff:
+                entries = FuelEntry.objects.all().select_related('vehicle', 'driver')
+            else:
+                entries = FuelEntry.objects.filter(
+                    Q(vehicle__owner__in=get_org_user_ids(request.user)) | Q(driver__owner__in=get_org_user_ids(request.user))
+                ).distinct().select_related('vehicle', 'driver')
         serializer = FuelEntrySerializer(entries, many=True)
         return Response(serializer.data)
 
