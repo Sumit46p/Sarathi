@@ -15,7 +15,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { fetchAnalytics, type AnalyticsData } from '../api/vehicles';
-import { Truck, Activity, Users, MapPin, AlertTriangle, Clock, Fuel, CheckCircle2 } from 'lucide-react';
+import { Truck, Activity, Users, MapPin, AlertTriangle, Clock, Fuel, CheckCircle2, Download } from 'lucide-react';
 import { toast } from './toast';
 
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#6366f1', '#8b5cf6'];
@@ -85,6 +85,34 @@ export default function AnalyticsDashboard() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const downloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      const response = await fetch('/api/analytics/pdf/', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        },
+      });
+      if (!response.ok) throw new Error('Failed to download PDF');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sarthi_analytics_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success('PDF downloaded successfully');
+    } catch (err) {
+      console.error('Failed to download PDF', err);
+      toast.error('Failed to download PDF. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   useEffect(() => {
     fetchAnalytics()
@@ -137,9 +165,15 @@ export default function AnalyticsDashboard() {
           <h2 id="analytics-heading">Analytics overview</h2>
           <p>Operational insights and trends for your Nepal fleet.</p>
         </div>
-        <button className="button button-secondary" onClick={() => window.location.reload()} title="Refresh analytics">
-          Refresh
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="button button-secondary" onClick={downloadPdf} disabled={downloadingPdf} title="Download weekly overview PDF">
+            <Download size={16} />
+            {downloadingPdf ? 'Downloading...' : 'Download PDF'}
+          </button>
+          <button className="button button-secondary" onClick={() => window.location.reload()} title="Refresh analytics">
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}

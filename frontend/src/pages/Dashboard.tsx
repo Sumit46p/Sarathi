@@ -206,6 +206,9 @@ export default function Dashboard() {
     created_at: string;
   }>>([]);
   const [unreadEmergencyCount, setUnreadEmergencyCount] = useState(0);
+  const [unreadFuelCount, setUnreadFuelCount] = useState(0);
+  const [fuelEntries, setFuelEntries] = useState<Array<{ id: number; vehicle_name: string; driver_name: string; liters: string; total_cost: string; fueled_at: string }>>([]);
+  const prevFuelEntriesRef = useRef<number[] | null>(null);
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -261,7 +264,7 @@ export default function Dashboard() {
       if (prevIssuesRef.current !== null) {
         const newIssues = data.filter(i => !prevIssuesRef.current!.includes(i.id));
         if (newIssues.length > 0) {
-          toast.error('⚠️ New Maintenance Issue Reported');
+          toast.error('⚠️ New Maintenance Issue Reported', undefined, true);
           setUnreadIssuesCount(c => activeTab === 'issues' ? 0 : c + newIssues.length);
           
           setNotifications(prev => [
@@ -292,10 +295,11 @@ export default function Dashboard() {
       const { data } = await api.get('/emergency/requests/');
       if (prevEmergenciesRef.current !== null) {
         const newEmergencies = data.filter((e: any) => !prevEmergenciesRef.current!.includes(e.id));
-        if (newEmergencies.length > 0) {
-          toast.error('🚨 New Emergency SOS Received!', 6000);
-          
-          setNotifications(prev => [
+      if (newEmergencies.length > 0) {
+        toast.error('🚨 New Emergency SOS Received!', 6000, true);
+        setUnreadEmergencyCount(c => activeTab === 'emergency' ? 0 : c + newEmergencies.length);
+        
+        setNotifications(prev => [
             ...newEmergencies.map((e: any) => ({
               id: Date.now() + Math.random(),
               type: 'emergency' as const,
@@ -315,6 +319,34 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchFuelEntries = useCallback(async () => {
+    try {
+      const { data } = await api.get('/fuel/');
+      if (prevFuelEntriesRef.current !== null) {
+        const newEntries = data.filter((f: any) => !prevFuelEntriesRef.current!.includes(f.id));
+        if (newEntries.length > 0) {
+          toast.success(`⛽ ${newEntries.length} new fuel entry${newEntries.length > 1 ? 'ies' : ''} logged`, undefined, true);
+          setUnreadFuelCount(c => activeTab === 'fuel' ? 0 : c + newEntries.length);
+          setNotifications(prev => [
+            ...newEntries.map((f: any) => ({
+              id: Date.now() + Math.random(),
+              type: 'fuel' as const,
+              title: `Fuel: ${f.vehicle_name}`,
+              message: `${f.liters}L at रु ${f.total_cost} by ${f.driver_name}`,
+              is_read: false,
+              created_at: f.fueled_at || new Date().toISOString()
+            })),
+            ...prev
+          ]);
+        }
+      }
+      prevFuelEntriesRef.current = data.map((f: any) => f.id);
+      setFuelEntries(previous => JSON.stringify(previous) === JSON.stringify(data) ? previous : data);
+    } catch (error) {
+      console.error('Failed to fetch fuel entries', error);
+    }
+  }, []);
+
   const prevMaintenanceRef = useRef<number[] | null>(null);
 
   const fetchMaintenance = useCallback(async () => {
@@ -324,7 +356,7 @@ export default function Dashboard() {
         const newReqs = data.filter((m: any) => !prevMaintenanceRef.current!.includes(m.id));
         if (newReqs.length > 0) {
           setUnreadMaintenanceCount(c => activeTab === 'maintenance' ? 0 : c + newReqs.length);
-          toast.info('New Maintenance Request');
+          toast.info('New Maintenance Request', undefined, true);
           
           setNotifications(prev => [
             ...newReqs.map((m: any) => ({
@@ -354,7 +386,7 @@ export default function Dashboard() {
       } catch (error) {
         console.error('Failed to fetch user profile', error);
       }
-      await Promise.all([fetchVehicles(), fetchDrivers(), fetchActiveDispatch(), fetchMaintenance()]);
+      await Promise.all([fetchVehicles(), fetchDrivers(), fetchActiveDispatch(), fetchIssues(), fetchEmergencies(), fetchMaintenance(), fetchFuelEntries()]);
       if (mounted) setInitialLoading(false);
     };
 
@@ -366,13 +398,14 @@ export default function Dashboard() {
       fetchIssues();
       fetchEmergencies();
       fetchMaintenance();
+      fetchFuelEntries();
       fetchUnreadEmergencyCount();
     }, 5000);
     return () => {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, [fetchDrivers, fetchVehicles, fetchActiveDispatch, fetchIssues, fetchEmergencies, fetchMaintenance]);
+  }, [fetchDrivers, fetchVehicles, fetchActiveDispatch, fetchIssues, fetchEmergencies, fetchMaintenance, fetchFuelEntries]);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
@@ -610,8 +643,8 @@ export default function Dashboard() {
             <AlertTriangle size={17} /><span>Issues</span>
             {unreadIssuesCount > 0 && <span className="nav-badge">{unreadIssuesCount > 99 ? '99+' : unreadIssuesCount}</span>}
           </button>
-          <button id="nav-emergency" className={`nav-item ${activeTab === 'emergency' ? 'active' : ''}`} onClick={() => switchTab('emergency')}><AlertCircle size={17} /><span>Emergency</span>{emergencyCount > 0 && <span className="nav-badge" style={{ backgroundColor: '#dc2626' }}>{emergencyCount}</span>}</button>
-          <button id="nav-fuel" className={`nav-item ${activeTab === 'fuel' ? 'active' : ''}`} onClick={() => switchTab('fuel')}><Droplets size={17} /><span>Fuel Entry</span></button>
+          <button id="nav-emergency" className={`nav-item ${activeTab === 'emergency' ? 'active' : ''}`} onClick={() => { setActiveTab('emergency'); setUnreadEmergencyCount(0); }}><AlertCircle size={17} /><span>Emergency</span>{emergencyCount > 0 && <span className="nav-badge" style={{ backgroundColor: '#dc2626' }}>{emergencyCount > 99 ? '99+' : emergencyCount}</span>}</button>
+          <button id="nav-fuel" className={`nav-item ${activeTab === 'fuel' ? 'active' : ''}`} onClick={() => { setActiveTab('fuel'); setUnreadFuelCount(0); }}><Droplets size={17} /><span>Fuel Entry</span>{unreadFuelCount > 0 && <span className="nav-badge">{unreadFuelCount > 99 ? '99+' : unreadFuelCount}</span>}</button>
           <button id="nav-analytics" className={`nav-item ${activeTab === 'analytics' ? 'active' : ''}`} onClick={() => switchTab('analytics')}><BarChart2 size={17} /><span>Analytics</span></button>
           <p className="nav-label nav-label-secondary">System</p>
           <button id="nav-settings" className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => switchTab('settings')}><Settings size={17} /><span>Settings</span></button>

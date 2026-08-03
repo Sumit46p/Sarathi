@@ -44,4 +44,5 @@ urlpatterns = [
     path('fuel/<int:pk>/', views.fuel_entry_detail, name='fuel-entry-detail'),
     path('drivers/me/maintenance-request/<int:pk>/', views.driver_maintenance_request_delete, name='driver-maintenance-request-delete'),
     path('analytics/dashboard/', views.analytics_dashboard, name='analytics-dashboard'),
+    path('analytics/pdf/', views.analytics_pdf, name='analytics-pdf'),
 ]

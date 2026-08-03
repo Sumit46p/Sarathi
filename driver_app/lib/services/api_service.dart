@@ -76,7 +76,7 @@ class ApiService {
   // Find your IP: Windows -> `ipconfig` -> look for IPv4 Address.
   // Example: 'http://192.168.1.100:8000'
   // Run Django with: python manage.py runserver 0.0.0.0:8000
-  static const String _wirelessIp = 'http://192.168.2.100:8000';
+  static const String _wirelessIp = 'http://192.168.2.107:8000';
   static String _baseUrl = 'http://127.0.0.1:8000';
   static bool _baseUrlInitialized = false;
 

@@ -56,11 +56,13 @@ function playBeep() {
   }
 }
 
-function addToast(kind: ToastKind, message: string, duration = 3200): void {
+function addToast(kind: ToastKind, message: string, duration = 3200, playSound = false): void {
   const entry: ToastEntry = { id: nextId++, kind, message };
   toasts = [...toasts, entry];
   emit();
-  playBeep();
+  if (playSound) {
+    playBeep();
+  }
   if (duration > 0) {
     window.setTimeout(() => dismiss(entry.id), duration);
   }
@@ -72,9 +74,9 @@ export function dismiss(id: number): void {
 }
 
 export const toast = {
-  success: (message: string, duration?: number) => addToast('success', message, duration),
-  error: (message: string, duration?: number) => addToast('error', message, duration),
-  info: (message: string, duration?: number) => addToast('info', message, duration),
+  success: (message: string, duration?: number, playSound: boolean = false) => addToast('success', message, duration, playSound),
+  error: (message: string, duration?: number, playSound: boolean = false) => addToast('error', message, duration, playSound),
+  info: (message: string, duration?: number, playSound: boolean = false) => addToast('info', message, duration, playSound),
   clearAll: () => {
     toasts = [];
     emit();

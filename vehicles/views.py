@@ -8,9 +8,16 @@ from django.contrib.auth.models import User
 from django.db.models import Q, Count, Sum, Avg, F, ExpressionWrapper, DurationField
 from django.db.models.functions import TruncDate
 from django.utils import timezone
+from django.http import FileResponse
 from .osrm import get_route_distance
 import threading
 import math
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from io import BytesIO
 
 
 def get_org_user_ids(user):
@@ -150,8 +157,8 @@ class VehicleListCreateView(generics.ListCreateAPIView):
         return Vehicle.objects.filter(owner__in=get_org_user_ids(self.request.user))
 
     def perform_create(self, serializer):
-        # Only staff/admin accounts may register vehicles.
-        if not self.request.user.is_staff:
+        # Only admin accounts (non-drivers) may register vehicles.
+        if hasattr(self.request.user, 'driver_profile'):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Only admin accounts can register vehicles.')
         serializer.save(owner=self.request.user)
@@ -1879,3 +1886,197 @@ def analytics_dashboard(request):
             'total_fuel_cost': float(fuel_entries.aggregate(total=Sum('total_cost'))['total'] or 0),
         }
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def analytics_pdf(request):
+    """
+    GET /api/analytics/pdf/
+    Returns a PDF overview of the analytics dashboard for the current org.
+    """
+    user = request.user
+    org_ids = get_org_user_ids(user)
+
+    vehicles = Vehicle.objects.filter(owner__in=org_ids)
+    drivers = Driver.objects.filter(owner__in=org_ids)
+    dispatches = DispatchRequest.objects.filter(assigned_vehicle__owner__in=org_ids)
+    emergencies = EmergencyRequest.objects.filter(user__in=org_ids)
+    issues = IssueReport.objects.filter(driver__owner__in=org_ids)
+    fuel_entries = FuelEntry.objects.filter(driver__owner__in=org_ids)
+
+    total_vehicles = vehicles.count()
+    available_count = vehicles.filter(is_available=True, admin_blocked=False).count()
+    unavailable_count = vehicles.filter(is_available=False).count()
+    blocked_count = vehicles.filter(admin_blocked=True).count()
+    total_drivers = drivers.count()
+    active_drivers = drivers.filter(is_on_duty=True).count()
+    total_dispatches = dispatches.count()
+    completed_dispatches = dispatches.filter(status='completed').count()
+    pending_emergencies = emergencies.filter(status='pending').count()
+    open_issues = issues.filter(status='open').count()
+    total_fuel_cost = float(fuel_entries.aggregate(total=Sum('total_cost'))['total'] or 0)
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'TitleStyle',
+        parent=styles['Heading1'],
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor('#172033'),
+        spaceAfter=6,
+    )
+    subtitle_style = ParagraphStyle(
+        'SubtitleStyle',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor('#4c596d'),
+        spaceAfter=18,
+    )
+    heading_style = ParagraphStyle(
+        'HeadingStyle',
+        parent=styles['Heading2'],
+        fontSize=13,
+        leading=18,
+        textColor=colors.HexColor('#172033'),
+        spaceAfter=8,
+        spaceBefore=14,
+    )
+    body_style = ParagraphStyle(
+        'BodyStyle',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor('#4c596d'),
+    )
+
+    story = []
+    story.append(Paragraph('Sarthi Analytics Report', title_style))
+    story.append(Paragraph(f"Generated on {timezone.now().strftime('%B %d, %Y %I:%M %p')}", subtitle_style))
+    story.append(Spacer(1, 8))
+
+    # KPI Section
+    story.append(Paragraph('Key Performance Indicators', heading_style))
+    kpi_data = [
+        ['Metric', 'Value'],
+        ['Total Vehicles', str(total_vehicles)],
+        ['Available Vehicles', str(available_count)],
+        ['Unavailable Vehicles', str(unavailable_count)],
+        ['Blocked Vehicles', str(blocked_count)],
+        ['Total Drivers', str(total_drivers)],
+        ['Active Drivers', str(active_drivers)],
+        ['Total Dispatches', str(total_dispatches)],
+        ['Completed Dispatches', str(completed_dispatches)],
+        ['Pending Emergencies', str(pending_emergencies)],
+        ['Open Issues', str(open_issues)],
+        ['Total Fuel Cost', f"Rs. {total_fuel_cost:,.2f}"],
+    ]
+    kpi_table = Table(kpi_data, colWidths=[240, 200])
+    kpi_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f7fa')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#172033')),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#ccd3dd')),
+        ('FONTNAME', (0, 1), (0, -1), 'Helvetica'),
+        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfcfd')]),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 14))
+
+    # Fleet Status
+    story.append(Paragraph('Fleet Status', heading_style))
+    fleet_data = [
+        ['Status', 'Count'],
+        ['Available', str(available_count)],
+        ['Unavailable', str(unavailable_count)],
+        ['Blocked', str(blocked_count)],
+    ]
+    fleet_table = Table(fleet_data, colWidths=[240, 200])
+    fleet_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f7fa')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#172033')),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#ccd3dd')),
+        ('FONTNAME', (0, 1), (0, -1), 'Helvetica'),
+        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfcfd')]),
+    ]))
+    story.append(fleet_table)
+    story.append(Spacer(1, 14))
+
+    # Issue Breakdown
+    story.append(Paragraph('Issue Status Breakdown', heading_style))
+    issue_breakdown = issues.values('status').annotate(count=Count('id')).order_by('status')
+    issue_data = [['Status', 'Count']]
+    for issue in issue_breakdown:
+        issue_data.append([issue['status'].title(), str(issue['count'])])
+    issue_table = Table(issue_data, colWidths=[240, 200])
+    issue_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f7fa')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#172033')),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#ccd3dd')),
+        ('FONTNAME', (0, 1), (0, -1), 'Helvetica'),
+        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfcfd')]),
+    ]))
+    story.append(issue_table)
+    story.append(Spacer(1, 14))
+
+    # Top Drivers
+    story.append(Paragraph('Top Drivers (Completed Dispatches)', heading_style))
+    top_drivers = drivers.annotate(
+        completed_dispatches=Count(
+            'assigned_vehicles__dispatch_requests',
+            filter=Q(assigned_vehicles__dispatch_requests__status='completed')
+        )
+    ).filter(completed_dispatches__gt=0).order_by('-completed_dispatches')[:10]
+    driver_data = [['Driver', 'Completed Dispatches']]
+    for driver in top_drivers:
+        driver_data.append([driver.name, str(driver.completed_dispatches)])
+    driver_table = Table(driver_data, colWidths=[240, 200])
+    driver_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f7fa')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#172033')),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#ccd3dd')),
+        ('FONTNAME', (0, 1), (0, -1), 'Helvetica'),
+        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfcfd')]),
+    ]))
+    story.append(driver_table)
+
+    doc.build(story)
+    buffer.seek(0)
+    response = FileResponse(buffer, as_attachment=True, filename=f"sarthi_analytics_{timezone.now().strftime('%Y%m%d')}.pdf")
+    response['Content-Type'] = 'application/pdf'
+    return response
