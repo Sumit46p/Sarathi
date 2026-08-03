@@ -14,6 +14,7 @@ import 'trips_screen.dart';
 import 'report_issue_screen.dart';
 import 'fuel_entry_screen.dart';
 import 'trip_history_screen.dart';
+import 'maintenance_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -840,6 +841,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(height: 24),
         
+        // Emergency Section
+        _buildEmergencySection(),
+        const SizedBox(height: 24),
+
+        // Maintenance Section
+        _buildMaintenanceSection(),
+        const SizedBox(height: 24),
+        
+        
         // No Active Trips Section
         Container(
           width: double.infinity,
@@ -883,6 +893,112 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMaintenanceSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Maintenance',
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionButton(
+                'Request',
+                Icons.build_outlined,
+                AppTheme.primaryColor,
+                () {
+                  HapticFeedback.lightImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MaintenanceScreen()),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildActionButton(
+                'History',
+                Icons.history_outlined,
+                AppTheme.secondaryColor,
+                () {
+                  HapticFeedback.lightImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MaintenanceScreen()),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmergencySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Emergency',
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionButton(
+                'Dispatch',
+                Icons.emergency_outlined,
+                AppTheme.errorColor,
+                () async {
+                  HapticFeedback.lightImpact();
+                  final dispatch = await ApiService.getMyDispatch();
+                  if (dispatch != null) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const TripsScreen()),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('No active emergency dispatch'),
+                        backgroundColor: AppTheme.errorColor,
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildActionButton(
+                'Report',
+                Icons.report_problem_outlined,
+                AppTheme.errorColor,
+                () {
+                  HapticFeedback.lightImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ReportIssueScreen()),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ],
     );
