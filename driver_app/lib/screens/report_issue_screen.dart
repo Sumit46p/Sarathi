@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme.dart';
@@ -77,8 +78,8 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Issue reported successfully', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-          backgroundColor: AppTheme.secondaryColor,
+          content: Text('Issue reported successfully', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: AppTheme.successColor,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
@@ -89,7 +90,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to report issue. Please try again.', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+          content: Text('Failed to report issue. Please try again.', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           backgroundColor: AppTheme.errorColor,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -104,17 +105,16 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: Text('Report Issue', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Colors.white)),
-        backgroundColor: AppTheme.primaryColor,
+        title: Text('Report Issue', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+        backgroundColor: AppTheme.surface,
         elevation: 0,
-        automaticallyImplyLeading: false,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+          icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
       body: _loadingDriver
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
           : _errorMsg != null
               ? Center(
                   child: Column(
@@ -122,127 +122,195 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                     children: [
                       Icon(Icons.error_outline, size: 64, color: AppTheme.errorColor),
                       const SizedBox(height: 16),
-                      Text(_errorMsg!, style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor)),
+                      Text(_errorMsg!, style: GoogleFonts.inter(color: AppTheme.errorColor)),
                     ],
                   ),
                 )
               : SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Describe the issue you are facing. You can also attach a photo to help the admin understand the problem better.',
-                style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppTheme.outline),
-              ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _descriptionController,
-                maxLines: 6,
-                minLines: 3,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please describe the issue';
-                  }
-                  return null;
-                },
-                decoration: InputDecoration(
-                  labelText: 'Issue description',
-                  hintText: 'e.g. Vehicle making unusual noise, GPS not updating...',
-                  alignLabelWithHint: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                  filled: true,
-                  fillColor: AppTheme.surfaceLowest,
-                ),
-                style: GoogleFonts.plusJakartaSans(color: AppTheme.onSurface),
-              ),
-              const SizedBox(height: 20),
-              Text('Attach photo (optional)', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _pickImage(ImageSource.camera),
-                      icon: const Icon(Icons.camera_alt_rounded, size: 20),
-                      label: Text('Camera', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.primaryColor,
-                        side: const BorderSide(color: AppTheme.surfaceContainer),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _pickImage(ImageSource.gallery),
-                      icon: const Icon(Icons.photo_library_rounded, size: 20),
-                      label: Text('Gallery', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.primaryColor,
-                        side: const BorderSide(color: AppTheme.surfaceContainer),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              if (_selectedImage != null) ...[
-                const SizedBox(height: 16),
-                Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.file(
-                        _selectedImage!,
-                        width: double.infinity,
-                        height: 220,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => _selectedImage = null);
-                        },
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                          child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.all(20),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Description
+                        Text(
+                          'Issue Description',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.onSurface,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _descriptionController,
+                          maxLines: 5,
+                          minLines: 3,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please describe the issue';
+                            }
+                            return null;
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Describe the problem you are experiencing...',
+                            filled: true,
+                            fillColor: AppTheme.surface,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppTheme.outlineVariant),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppTheme.outlineVariant),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppTheme.primaryColor, width: 1.5),
+                            ),
+                          ),
+                          style: GoogleFonts.inter(color: AppTheme.onSurface),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Photo Section
+                        Text(
+                          'Attach Photo (Optional)',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Add a photo to help us understand the issue better.',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: AppTheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
+                        if (_selectedImage == null) ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildImageButton(
+                                  Icons.camera_alt_outlined,
+                                  'Camera',
+                                  () => _pickImage(ImageSource.camera),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildImageButton(
+                                  Icons.photo_library_outlined,
+                                  'Gallery',
+                                  () => _pickImage(ImageSource.gallery),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.file(
+                                  _selectedImage!,
+                                  width: double.infinity,
+                                  height: 200,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 12,
+                                right: 12,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    HapticFeedback.lightImpact();
+                                    setState(() => _selectedImage = null);
+                                  },
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.6),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 32),
+
+                        // Submit Button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: _submitting ? null : _submit,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryColor,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: AppTheme.primaryColor.withOpacity(0.4),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                            ),
+                            child: _submitting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : Text(
+                                    'Submit Report',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _submitting ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: AppTheme.surfaceContainer,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: _submitting
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Text('Submit Report', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, fontSize: 15)),
                 ),
+    );
+  }
+
+  Widget _buildImageButton(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.outlineVariant),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: AppTheme.primaryColor, size: 28),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.onSurface,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -5,9 +5,23 @@ from vehicles.models import Vehicle
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     organization_name = models.CharField(max_length=255, default='Default Org')
+    last_app_activity = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='Last time the driver was active on the mobile app (for offline detection)'
+    )
 
     def __str__(self):
         return f"{self.user.username} Profile ({self.organization_name})"
+    
+    @property
+    def is_online(self) -> bool:
+        """True if the driver app was active in the last 5 minutes."""
+        if self.last_app_activity is None:
+            return False
+        from django.utils import timezone
+        return (timezone.now() - self.last_app_activity).total_seconds() < 300
 
 
 def get_organization_name():

@@ -14,8 +14,7 @@ def _recompute_on_duty_change(sender, instance, **kwargs):
 @receiver(post_save, sender=Vehicle)
 def _recompute_on_vehicle_change(sender, instance, **kwargs):
     """When admin_blocked or driver assignment changes, refresh availability."""
-    if instance.driver is not None:
-        instance.recompute_availability()
+    instance.recompute_availability()
 
 
 @receiver(post_save, sender=DispatchRequest)

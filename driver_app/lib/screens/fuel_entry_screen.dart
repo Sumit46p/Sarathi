@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
@@ -20,9 +22,16 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
 
   final _formKey = GlobalKey<FormState>();
   final _litersController = TextEditingController();
-  final _costController = TextEditingController();
   final _odometerController = TextEditingController();
   final _notesController = TextEditingController();
+  final _costController = TextEditingController();
+
+  final ImagePicker _imagePicker = ImagePicker();
+  XFile? _receiptImage;
+
+  String _selectedFuelType = 'petrol';
+  double? _costPerLiter;
+  Map<String, double> _fuelPrices = {};
 
   @override
   void initState() {
@@ -33,9 +42,9 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
   @override
   void dispose() {
     _litersController.dispose();
-    _costController.dispose();
     _odometerController.dispose();
     _notesController.dispose();
+    _costController.dispose();
     super.dispose();
   }
 
@@ -45,58 +54,76 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
       _error = null;
     });
 
+    // Load prices (independent of entries)
+    try {
+      final prices = await ApiService.getFuelPrices();
+      if (mounted) {
+        setState(() {
+          if (prices.isNotEmpty) {
+            _fuelPrices = prices;
+            _costPerLiter = prices[_selectedFuelType];
+            _costController.text = _costPerLiter?.toStringAsFixed(2) ?? '0.00';
+          } else {
+            _fuelPrices = {'petrol': 0.0, 'diesel': 0.0};
+            _costPerLiter = null;
+            _costController.text = '0.00';
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _fuelPrices = {'petrol': 0.0, 'diesel': 0.0};
+          _costPerLiter = null;
+          _costController.text = '0.00';
+        });
+      }
+    }
+
+    // Load entries
     try {
       final entries = await ApiService.getFuelEntries();
       if (mounted) {
         setState(() {
           _fuelEntries = entries;
           _isLoading = false;
+          _error = null;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'Failed to load fuel entries';
+          _fuelEntries = [];
           _isLoading = false;
+          _error = 'Could not load fuel entries. Please try again.';
         });
       }
     }
   }
 
-  Future<void> _submitFuelEntry() async {
-    if (!_formKey.currentState!.validate()) return;
-    
-    setState(() => _isSubmitting = true);
+  void _handleFuelTypeChange(String fuelType) {
+    setState(() {
+      _selectedFuelType = fuelType;
+      _costPerLiter = _fuelPrices[fuelType] ?? 0.0;
+      _costController.text = _costPerLiter?.toStringAsFixed(2) ?? '0.00';
+    });
+  }
 
-    final liters = double.tryParse(_litersController.text) ?? 0;
-    final cost = double.tryParse(_costController.text) ?? 0;
-    final odometer = double.tryParse(_odometerController.text);
-    final notes = _notesController.text;
-
-    final success = await ApiService.createFuelEntry(
-      liters: liters,
-      costPerLiter: cost,
-      odometerKm: odometer,
-      notes: notes,
-    );
-
-    if (mounted) {
-      setState(() => _isSubmitting = false);
-      
-      if (success) {
-        Navigator.of(context).pop(); // Close the bottom sheet
+  Future<void> _pickReceipt() async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 70,
+        maxWidth: 1280,
+      );
+      if (picked != null && mounted) {
+        setState(() => _receiptImage = picked);
+      }
+    } on PlatformException catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Fuel entry logged successfully!'),
-            backgroundColor: AppTheme.primaryColor,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        _loadFuelEntries(); // Reload list
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Failed to save fuel entry.'),
+            content: Text('Could not open camera: ${e.message}'),
             backgroundColor: AppTheme.errorColor,
             behavior: SnackBarBehavior.floating,
           ),
@@ -105,11 +132,89 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
     }
   }
 
+  void _clearReceipt() {
+    setState(() => _receiptImage = null);
+  }
+
+  Future<void> _submitFuelEntry() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_receiptImage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please take a receipt photo.'),
+          backgroundColor: AppTheme.errorColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    setState(() => _isSubmitting = true);
+
+    final liters = double.tryParse(_litersController.text) ?? 0;
+    final odometer = double.tryParse(_odometerController.text);
+    final notes = _notesController.text;
+
+    if (_costPerLiter == null || _costPerLiter! <= 0) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invalid fuel price. Please try again.'),
+            backgroundColor: AppTheme.errorColor,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    final success = await ApiService.createFuelLog(
+      fuelType: _selectedFuelType,
+      liters: liters,
+      costPerLiter: _costPerLiter!,
+      odometerReading: odometer,
+      notes: notes,
+      receiptImagePath: _receiptImage!.path,
+    );
+
+    if (mounted) {
+      setState(() => _isSubmitting = false);
+
+      if (success) {
+        Navigator.of(context).pop(); // Close the bottom sheet
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Fuel entry logged successfully!'),
+            backgroundColor: AppTheme.successColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+        _loadFuelEntries(); // Reload list
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Failed to save fuel entry. Check your receipt photo and try again.'),
+            backgroundColor: AppTheme.errorColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    }
+  }
+
   void _showAddEntrySheet() {
     _litersController.clear();
-    _costController.clear();
     _odometerController.clear();
     _notesController.clear();
+    _receiptImage = null;
+    _selectedFuelType = 'petrol';
+    _costPerLiter = _fuelPrices['petrol'];
+    _costController.text = (_fuelPrices['petrol'] ?? 0.0).toStringAsFixed(2);
 
     showModalBottomSheet(
       context: context,
@@ -133,77 +238,137 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Handle bar
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppTheme.outlineVariant,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           'New Fuel Entry',
-                          style: GoogleFonts.plusJakartaSans(
+                          style: GoogleFonts.inter(
                             fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                             color: AppTheme.onSurface,
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close),
+                          icon: const Icon(Icons.close_rounded),
                           onPressed: () => Navigator.pop(context),
                         ),
                       ],
                     ),
                     const SizedBox(height: 24),
-                    
-                    // Liters and Cost Row
+
+                    // Fuel Type
+                    Text(
+                      'Fuel Type',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
-                          child: TextFormField(
-                            controller: _litersController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: InputDecoration(
-                              labelText: 'Liters',
-                              prefixIcon: const Icon(Icons.local_gas_station_rounded),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.isEmpty) return 'Required';
-                              if (double.tryParse(val) == null) return 'Invalid';
-                              return null;
-                            },
-                          ),
+                          child: _buildFuelTypeChip('petrol', 'Petrol', setSheetState),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 12),
                         Expanded(
-                          child: TextFormField(
-                            controller: _costController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: InputDecoration(
-                              labelText: 'Cost/Liter (NPR)',
-                              prefixText: 'रु ',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.isEmpty) return 'Required';
-                              if (double.tryParse(val) == null) return 'Invalid';
-                              return null;
-                            },
-                          ),
+                          child: _buildFuelTypeChip('diesel', 'Diesel', setSheetState),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 20),
+
+                    // Liters
+                    TextFormField(
+                      controller: _litersController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: 'Liters',
+                        prefixIcon: const Icon(Icons.water_drop_outlined),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.isEmpty) return 'Required';
+                        final v = double.tryParse(val);
+                        if (v == null || v <= 0) return 'Enter a valid quantity';
+                        return null;
+                      },
+                    ),
                     const SizedBox(height: 16),
-                    
+
+                    // Cost per Liter
+                    TextFormField(
+                      controller: _costController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      readOnly: true,
+                      decoration: InputDecoration(
+                        labelText: 'Cost per Liter (रु)',
+                        prefixText: 'रु ',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        helperText: 'Auto-filled from NOC prices',
+                        filled: true,
+                        fillColor: AppTheme.surfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Total Amount
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Total Amount',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: AppTheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            'रु ${((double.tryParse(_litersController.text) ?? 0) * (double.tryParse(_costController.text) ?? 0)).toStringAsFixed(2)}',
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
                     // Odometer
                     TextFormField(
                       controller: _odometerController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       decoration: InputDecoration(
                         labelText: 'Odometer Reading (km)',
-                        prefixIcon: const Icon(Icons.speed_rounded),
+                        prefixIcon: const Icon(Icons.speed_outlined),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Notes
                     TextFormField(
                       controller: _notesController,
@@ -214,8 +379,95 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
+                    const SizedBox(height: 20),
+
+                    // Receipt photo
+                    Text(
+                      'Receipt Photo *',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (_receiptImage == null)
+                      GestureDetector(
+                        onTap: _pickReceipt,
+                        child: Container(
+                          height: 140,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.errorColor.withOpacity(0.5),
+                              width: 1.5,
+                            ),
+                            color: AppTheme.errorLight.withOpacity(0.5),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.camera_alt_outlined,
+                                size: 40,
+                                color: AppTheme.errorColor,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Take a photo of the fuel receipt',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  color: AppTheme.onSurface,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Required',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AppTheme.errorColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(
+                              File(_receiptImage!.path),
+                              height: 160,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: GestureDetector(
+                              onTap: _clearReceipt,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: Colors.black54,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.close,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     const SizedBox(height: 24),
-                    
+
                     // Submit Button
                     ElevatedButton(
                       onPressed: _isSubmitting ? null : () {
@@ -229,6 +481,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
                       ),
                       child: _isSubmitting
                           ? const SizedBox(
@@ -238,9 +491,9 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                             )
                           : Text(
                               'Save Entry',
-                              style: GoogleFonts.plusJakartaSans(
+                              style: GoogleFonts.inter(
                                 fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                     ),
@@ -254,6 +507,34 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
     );
   }
 
+  Widget _buildFuelTypeChip(String value, String label, StateSetter setSheetState) {
+    final isSelected = _selectedFuelType == value;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        setSheetState(() {
+          _handleFuelTypeChange(value);
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primaryColor : AppTheme.surfaceVariant,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : AppTheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -261,14 +542,17 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
       appBar: AppBar(
         title: Text(
           'Fuel Entries',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Colors.white),
+          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
         ),
-        backgroundColor: AppTheme.primaryColor,
+        backgroundColor: AppTheme.surface,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
           : _error != null
               ? _buildErrorState()
               : _fuelEntries.isEmpty
@@ -278,7 +562,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
         onPressed: _showAddEntrySheet,
         backgroundColor: AppTheme.primaryColor,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: Text('Add Fuel', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+        label: Text('Add Fuel', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
       ),
     );
   }
@@ -292,7 +576,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
           const SizedBox(height: 16),
           Text(
             _error!,
-            style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor),
+            style: GoogleFonts.inter(color: AppTheme.errorColor),
           ),
           const SizedBox(height: 16),
           ElevatedButton(
@@ -309,16 +593,35 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.local_gas_station_rounded, size: 64, color: AppTheme.outline.withValues(alpha: 0.5)),
-          const SizedBox(height: 16),
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceVariant,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              Icons.local_gas_station_outlined,
+              size: 40,
+              color: AppTheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 24),
           Text(
-            'No fuel entries yet.',
-            style: GoogleFonts.plusJakartaSans(fontSize: 16, color: AppTheme.outline),
+            'No fuel entries yet',
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.onSurface,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             'Tap the button below to add your first entry.',
-            style: GoogleFonts.plusJakartaSans(fontSize: 14, color: AppTheme.outline),
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: AppTheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -328,76 +631,107 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
   Widget _buildEntriesList() {
     return RefreshIndicator(
       onRefresh: _loadFuelEntries,
+      color: AppTheme.primaryColor,
       child: ListView.builder(
         padding: const EdgeInsets.all(16).copyWith(bottom: 100),
         itemCount: _fuelEntries.length,
         itemBuilder: (context, index) {
           final entry = _fuelEntries[index];
-          final date = DateTime.tryParse(entry['fueled_at'] ?? '');
+          final date = DateTime.tryParse(entry['created_at'] ?? '');
           final formattedDate = date != null ? DateFormat('MMM d, y • h:mm a').format(date.toLocal()) : 'Unknown Date';
-          
-          return Card(
+          final receiptUrl = entry['receipt_image_url'] as String?;
+
+          return Container(
             margin: const EdgeInsets.only(bottom: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        formattedDate,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.onSurface,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          'रु ${entry['total_cost']}',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primaryColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildInfoRow(Icons.local_gas_station_outlined, '${entry['liters']} L'),
-                      ),
-                      Expanded(
-                        child: _buildInfoRow(Icons.attach_money_rounded, 'रु ${entry['cost_per_liter']}/L'),
-                      ),
-                    ],
-                  ),
-                  if (entry['odometer_km'] != null) ...[
-                    const SizedBox(height: 12),
-                    _buildInfoRow(Icons.speed_rounded, '${entry['odometer_km']} km'),
-                  ],
-                  if (entry['notes'] != null && entry['notes'].isNotEmpty) ...[
-                    const SizedBox(height: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.outlineVariant),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
                     Text(
-                      entry['notes'],
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        color: AppTheme.outline,
-                        fontStyle: FontStyle.italic,
+                      formattedDate,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'रु ${entry['amount']}',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.primaryColor,
+                        ),
                       ),
                     ),
                   ],
+                ),
+                const Divider(height: 24),
+                if (entry['odometer_reading'] != null) ...[
+                  _buildInfoRow(
+                    Icons.speed_outlined,
+                    '${entry['odometer_reading']} km',
+                  ),
+                  const SizedBox(height: 12),
                 ],
-              ),
+                _buildInfoRow(
+                  Icons.water_drop_outlined,
+                  '${entry['liters']} L • ${entry['fuel_type']}',
+                ),
+                if (receiptUrl != null && receiptUrl.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      receiptUrl,
+                      height: 120,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 120,
+                        color: AppTheme.surfaceVariant,
+                        child: const Center(
+                          child: Icon(Icons.broken_image_outlined),
+                        ),
+                      ),
+                      loadingBuilder: (_, child, progress) {
+                        if (progress == null) return child;
+                        return Container(
+                          height: 120,
+                          color: AppTheme.surfaceVariant,
+                          child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                if (entry['notes'] != null && entry['notes'].isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    entry['notes'],
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppTheme.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ],
             ),
           );
         },
@@ -408,11 +742,11 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
   Widget _buildInfoRow(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: AppTheme.outline),
+        Icon(icon, size: 18, color: AppTheme.onSurfaceVariant),
         const SizedBox(width: 8),
         Text(
           text,
-          style: GoogleFonts.plusJakartaSans(
+          style: GoogleFonts.inter(
             fontSize: 14,
             color: AppTheme.onSurface,
             fontWeight: FontWeight.w500,

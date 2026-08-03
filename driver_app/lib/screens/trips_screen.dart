@@ -6,7 +6,6 @@ import 'package:latlong2/latlong.dart';
 import 'dart:async';
 import '../theme.dart';
 import '../services/api_service.dart';
-import '../utils/animations.dart';
 
 class TripsScreen extends StatefulWidget {
   const TripsScreen({super.key});
@@ -102,7 +101,7 @@ class _TripsScreenState extends State<TripsScreen> {
     setState(() => _transitioning = false);
     if (result == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update trip'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('Failed to update trip'), backgroundColor: AppTheme.errorColor),
       );
     } else {
       setState(() => _dispatch = result);
@@ -113,54 +112,41 @@ class _TripsScreenState extends State<TripsScreen> {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: AnimatedListItem(
-          index: 0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 800),
-                curve: Curves.elasticOut,
-                builder: (context, value, child) {
-                  return Transform.scale(
-                    scale: value,
-                    child: Transform.rotate(
-                      angle: (1 - value) * 0.2,
-                      child: child,
-                    ),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.route_rounded, size: 48, color: AppTheme.primaryColor),
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(20),
               ),
-              const SizedBox(height: 24),
-              Text(
-                'No active trip',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.onSurface,
-                ),
+              child: Icon(
+                Icons.map_outlined,
+                size: 40,
+                color: AppTheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 8),
-              Text(
-                'You will be notified here when dispatched.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  color: AppTheme.outline,
-                  height: 1.4,
-                ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No Active Trip',
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.onSurface,
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You will be notified here when dispatched.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: AppTheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -187,7 +173,7 @@ class _TripsScreenState extends State<TripsScreen> {
           point: LatLng(requestLat, requestLng),
           width: 40,
           height: 40,
-          child: const Icon(Icons.location_on, color: Colors.red, size: 36),
+          child: const Icon(Icons.location_on, color: AppTheme.errorColor, size: 36),
         ),
       );
     }
@@ -216,37 +202,36 @@ class _TripsScreenState extends State<TripsScreen> {
 
   Widget _buildActionButton(String next) {
     final label = _statusLabels[next] ?? next;
+    final isCancel = next == 'cancelled';
+    
     return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: ElevatedButton(
-          onPressed: _transitioning
-              ? null
-              : () {
-                  HapticFeedback.mediumImpact();
-                  _transition(next);
-                },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primaryColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            elevation: 0,
-          ),
-          child: _transitioning
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-              : Text(
-                  label,
-                  style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
-                ),
+      child: ElevatedButton(
+        onPressed: _transitioning
+            ? null
+            : () {
+                HapticFeedback.mediumImpact();
+                _transition(next);
+              },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isCancel ? AppTheme.errorColor : AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 0,
         ),
+        child: _transitioning
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : Text(
+                label,
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              ),
       ),
     );
   }
@@ -255,33 +240,26 @@ class _TripsScreenState extends State<TripsScreen> {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: AnimatedListItem(
-          index: 0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cloud_off_rounded, size: 48, color: AppTheme.errorColor),
-              const SizedBox(height: 16),
-              Text(
-                _errorMsg!,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  _loadDispatch();
-                },
-                icon: const Icon(Icons.refresh_rounded),
-                label: Text('Retry', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_rounded, size: 48, color: AppTheme.errorColor),
+            const SizedBox(height: 16),
+            Text(
+              _errorMsg!,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(color: AppTheme.errorColor),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                _loadDispatch();
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text('Retry', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            ),
+          ],
         ),
       ),
     );
@@ -297,213 +275,222 @@ class _TripsScreenState extends State<TripsScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: Text('Trips', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Colors.white)),
-        backgroundColor: AppTheme.primaryColor,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
-          : _errorMsg != null && _dispatch == null
-              ? _buildError()
-              : _dispatch == null
-                  ? _buildEmpty()
-                  : Column(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Hero(
-                        tag: 'trip_map',
-                        child: _buildMap(),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 4,
-                      child: SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            AnimatedListItem(
-                              index: 0,
-                              delay: const Duration(milliseconds: 100),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Active Trip',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppTheme.onSurface,
-                                    ),
+      body: SafeArea(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
+            : _errorMsg != null && _dispatch == null
+                ? _buildError()
+                : _dispatch == null
+                    ? _buildEmpty()
+                    : Column(
+                        children: [
+                          // Header
+                          Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.secondaryColor.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: AppTheme.secondaryColor.withValues(alpha: 0.2),
+                                  child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor, size: 20),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Active Trip',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.onSurface,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                          // Map
+                          Expanded(
+                            flex: 2,
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 20),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: AppTheme.outlineVariant),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: _buildMap(),
+                            ),
+                          ),
+                          
+                          // Trip Details
+                          Expanded(
+                            flex: 3,
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Status Badge
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Trip Status',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: AppTheme.onSurfaceVariant,
+                                        ),
                                       ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.primaryColor.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 6,
+                                              height: 6,
+                                              decoration: const BoxDecoration(
+                                                color: AppTheme.primaryColor,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              _statusLabels[currentStatus] ?? currentStatus ?? '',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppTheme.primaryColor,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 20),
+                                  
+                                  // Vehicle Info
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surface,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: AppTheme.outlineVariant),
                                     ),
                                     child: Row(
-                                      mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Container(
-                                          width: 6,
-                                          height: 6,
-                                          decoration: const BoxDecoration(
-                                            color: AppTheme.secondaryColor,
-                                            shape: BoxShape.circle,
+                                          width: 48,
+                                          height: 48,
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primaryColor.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: const Icon(
+                                            Icons.local_shipping_outlined,
+                                            color: AppTheme.primaryColor,
+                                            size: 24,
                                           ),
                                         ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          _statusLabels[currentStatus] ?? currentStatus ?? '',
-                                          style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppTheme.secondaryColor,
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                vehicleName,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.onSurface,
+                                                ),
+                                              ),
+                                              if (distance != null || duration != null)
+                                                Text(
+                                                  '${distance ?? '--'} km • ${duration ?? '--'} min',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 13,
+                                                    color: AppTheme.onSurfaceVariant,
+                                                  ),
+                                                ),
+                                            ],
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
+                                  const SizedBox(height: 24),
+                                  
+                                  // Action Buttons
+                                  if (nextSteps.isNotEmpty) ...[
+                                    Text(
+                                      'Update Status',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: AppTheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: nextSteps.map(_buildActionButton).toList(),
+                                    ),
+                                  ] else ...[
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: currentStatus == 'completed'
+                                            ? AppTheme.successLight
+                                            : AppTheme.surfaceVariant,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            currentStatus == 'completed'
+                                                ? Icons.check_circle_rounded
+                                                : Icons.info_outline_rounded,
+                                            color: currentStatus == 'completed'
+                                                ? AppTheme.successColor
+                                                : AppTheme.onSurfaceVariant,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              currentStatus == 'completed'
+                                                  ? 'Trip completed. Great work!'
+                                                  : 'No further action required.',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                                color: currentStatus == 'completed'
+                                                    ? AppTheme.successColor
+                                                    : AppTheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            AnimatedListItem(
-                              index: 1,
-                              delay: const Duration(milliseconds: 100),
-                              child: Text(
-                                vehicleName,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 15,
-                                  color: AppTheme.outline,
-                                ),
-                              ),
-                            ),
-                            if (distance != null || duration != null) ...[
-                              const SizedBox(height: 6),
-                              AnimatedListItem(
-                                index: 2,
-                                delay: const Duration(milliseconds: 100),
-                                child: Row(
-                                  children: [
-                                    if (distance != null) ...[
-                                      const Icon(Icons.route_rounded, size: 14, color: AppTheme.outline),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '$distance km',
-                                        style: GoogleFonts.plusJakartaSans(
-                                          fontSize: 13,
-                                          color: AppTheme.outline,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                    if (distance != null && duration != null) ...[
-                                      const SizedBox(width: 12),
-                                      Text('•', style: TextStyle(color: AppTheme.outline)),
-                                      const SizedBox(width: 12),
-                                    ],
-                                    if (duration != null) ...[
-                                      const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.outline),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '~$duration min',
-                                        style: GoogleFonts.plusJakartaSans(
-                                          fontSize: 13,
-                                          color: AppTheme.outline,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 24),
-                            if (nextSteps.isNotEmpty) ...[
-                              AnimatedListItem(
-                                index: 3,
-                                delay: const Duration(milliseconds: 100),
-                                child: Text(
-                                  'Update status',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.onSurface,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              AnimatedListItem(
-                                index: 4,
-                                delay: const Duration(milliseconds: 100),
-                                child: Row(
-                                  children: nextSteps.map(_buildActionButton).toList(),
-                                ),
-                              ),
-                            ] else ...[
-                              AnimatedListItem(
-                                index: 3,
-                                delay: const Duration(milliseconds: 100),
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(18),
-                                  decoration: BoxDecoration(
-                                    color: currentStatus == 'completed'
-                                        ? AppTheme.secondaryColor.withValues(alpha: 0.08)
-                                        : AppTheme.surfaceLowest,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: currentStatus == 'completed'
-                                          ? AppTheme.secondaryColor.withValues(alpha: 0.2)
-                                          : AppTheme.outlineVariant,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        currentStatus == 'completed'
-                                            ? Icons.check_circle_rounded
-                                            : Icons.info_outline_rounded,
-                                        color: currentStatus == 'completed'
-                                            ? AppTheme.secondaryColor
-                                            : AppTheme.outline,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          currentStatus == 'completed'
-                                              ? 'Trip completed. Great work!'
-                                              : 'No further action required.',
-                                          style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: currentStatus == 'completed'
-                                                ? AppTheme.secondaryColor
-                                                : AppTheme.outline,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
+      ),
     );
   }
 }

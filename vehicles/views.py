@@ -5,19 +5,12 @@ from rest_framework.response import Response
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
 from django.contrib.auth.models import User
-from django.db.models import Q, Count, Sum, Avg, F, ExpressionWrapper, DurationField
-from django.db.models.functions import TruncDate
+from django.db.models import Q, ExpressionWrapper, DurationField, Count, Sum, Avg, F, Value, CharField
+from django.db.models.functions import TruncDate, Coalesce
 from django.utils import timezone
-from django.http import FileResponse
 from .osrm import get_route_distance
 import threading
 import math
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from io import BytesIO
 
 
 def get_org_user_ids(user):
@@ -26,8 +19,8 @@ def get_org_user_ids(user):
 
     All admin/staff accounts whose Profile.organization_name matches the
     requesting user's org name are considered part of the same organization.
-    This lets multiple admin accounts (e.g. 'uday' and 'toppabahun') share
-    the same pool of drivers, vehicles, and other resources.
+    This lets multiple admin accounts share the same pool of drivers,
+    vehicles, and other resources.
 
     Falls back to [user.id] when no profile is found so existing per-user
     data is always visible.
@@ -51,11 +44,12 @@ def get_org_user_ids(user):
         ids.append(user.id)
     return ids
 
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification, EmergencyRequest, FuelEntry
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification, EmergencyRequest, FuelEntry, FuelLog, FuelPrice
 from .serializers import (
     VehicleSerializer,
     LocationUpdateSerializer,
     NearestVehicleSerializer,
+    FuelPriceSerializer,
     DispatchRequestInputSerializer,
     MaintenanceRecordSerializer,
     DispatchRequestSerializer,
@@ -67,6 +61,8 @@ from .serializers import (
     EmergencyRequestSerializer,
     EmergencyRequestCreateSerializer,
     FuelEntrySerializer,
+    FuelLogSerializer,
+    FuelLogCreateSerializer,
 )
 
 def haversine_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -145,6 +141,40 @@ def check_and_update_maintenance_due(vehicle: Vehicle) -> None:
             record.save(update_fields=['due_date'])
 
 
+def _auto_create_next_record(record: MaintenanceRecord) -> MaintenanceRecord | None:
+    """
+    Automatically creates the next recurring maintenance record when a
+    maintenance record is marked completed.
+
+    Recurrence rules:
+    - recurrence_days: next due_date = completion date + N days
+    - recurrence_km:   next due_date = today (mileage trigger will drive it)
+
+    Returns the newly created MaintenanceRecord, or None if the record has
+    no recurrence rule (one-off maintenance).
+    """
+    from datetime import timedelta
+
+    if not record.recurrence_days and not record.recurrence_km:
+        return None
+
+    today = timezone.now().date()
+    next_due = today
+    if record.recurrence_days:
+        next_due = today + timedelta(days=record.recurrence_days)
+
+    next_record = MaintenanceRecord.objects.create(
+        vehicle=record.vehicle,
+        maintenance_type=record.maintenance_type,
+        description=record.description,
+        due_date=next_due,
+        recurrence_days=record.recurrence_days,
+        recurrence_km=record.recurrence_km,
+        owner=record.owner,
+    )
+    return next_record
+
+
 class VehicleListCreateView(generics.ListCreateAPIView):
     """
     GET  /api/vehicles/      — list all vehicles with current location
@@ -157,10 +187,6 @@ class VehicleListCreateView(generics.ListCreateAPIView):
         return Vehicle.objects.filter(owner__in=get_org_user_ids(self.request.user))
 
     def perform_create(self, serializer):
-        # Only admin accounts (non-drivers) may register vehicles.
-        if hasattr(self.request.user, 'driver_profile'):
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied('Only admin accounts can register vehicles.')
         serializer.save(owner=self.request.user)
 
 
@@ -594,6 +620,37 @@ def driver_dispatch_transition(request):
     return Response(data)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def vehicle_dispatch(request, pk):
+    """
+    GET /api/vehicles/<pk>/dispatch/
+    Returns the active dispatch for a specific vehicle with live route geometry.
+    """
+    try:
+        vehicle = Vehicle.objects.get(pk=pk, owner__in=get_org_user_ids(request.user))
+    except Vehicle.DoesNotExist:
+        return Response(
+            {'error': 'Vehicle not found or access denied'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    dispatch = (
+        DispatchRequest.objects
+        .filter(assigned_vehicle=vehicle, status__in=ACTIVE_DISPATCH_STATUSES)
+        .first()
+    )
+    if dispatch is None:
+        return Response(
+            {'error': 'No active dispatch for this vehicle'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    data = DispatchRequestSerializer(dispatch).data
+    data['geometry'] = safe_route_geometry(vehicle, dispatch)
+    return Response(data)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def dispatch_transition(request, pk):
@@ -742,6 +799,8 @@ def assign_driver(request, pk):
             )
 
     vehicle.save(update_fields=['driver'])
+    # Recompute availability based on new driver assignment
+    vehicle.recompute_availability()
     return Response(VehicleSerializer(vehicle).data)
 
 
@@ -808,9 +867,15 @@ def dispatch_vehicle(request):
     request_point = Point(lng, lat, srid=4326)
 
     # Stage 1: PostGIS straight-line pre-filter (fast, approximate)
+    # Only select vehicles that have a driver assigned
     candidates = list(
         Vehicle.objects
-        .filter(owner__in=get_org_user_ids(request.user), is_available=True, vehicle_type=vehicle_type)
+        .filter(
+            owner__in=get_org_user_ids(request.user),
+            is_available=True,
+            vehicle_type=vehicle_type,
+            driver__isnull=False
+        )
         .annotate(distance=Distance('location', request_point))
         .order_by('distance')[:5]
     )
@@ -926,7 +991,9 @@ class MaintenanceRecordDetailView(generics.RetrieveUpdateDestroyAPIView):
         # Auto-set completed_at when completed is marked True
         completed = serializer.validated_data.get('completed', None)
         if completed:
-            serializer.save(completed_at=timezone.now())
+            instance = serializer.save(completed_at=timezone.now())
+            # Auto-create next recurring record if recurrence rules are set
+            _auto_create_next_record(instance)
         else:
             serializer.save()
 
@@ -1355,6 +1422,9 @@ def emergency_request_list(request):
     Returns all emergency requests for the current admin's organization.
     Supports filtering by status via ?status=pending|dispatched|resolved|cancelled
     """
+    from django.contrib.auth.models import User
+    from accounts.models import Profile
+    
     # Get all drivers belonging to the same org as the requesting admin
     org_ids = get_org_user_ids(request.user)
     drivers = Driver.objects.filter(owner__in=org_ids).select_related('user')
@@ -1365,12 +1435,12 @@ def emergency_request_list(request):
     queryset = EmergencyRequest.objects.filter(
         user__in=driver_user_ids
     ).select_related('user', 'assigned_vehicle')
-
+    
     if status_filter:
         queryset = queryset.filter(status=status_filter)
-
+    
     queryset = queryset.order_by('-created_at')
-
+    
     serializer = EmergencyRequestSerializer(queryset, many=True, context={'request': request})
     return Response(serializer.data)
 
@@ -1660,12 +1730,564 @@ def driver_maintenance_request_delete(request, pk):
     except MaintenanceRecord.DoesNotExist:
         return Response({'error': 'Record not found'}, status=status.HTTP_404_NOT_FOUND)
 
-from datetime import timedelta
+    record.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
-from django.db.models import Count, Q, Sum, Avg, F, Value, CharField
-from django.db.models.functions import TruncDate, Coalesce
 
-# Add at top with other imports - already done above
+# ---------------------------------------------------------------------------
+# Driver Maintenance Views
+# ---------------------------------------------------------------------------
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def driver_maintenance_list(request):
+    """
+    GET /api/drivers/me/maintenance/
+    Returns all maintenance records for the driver's assigned vehicle(s).
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    vehicles = driver.assigned_vehicles.all()
+    records = (
+        MaintenanceRecord.objects
+        .filter(vehicle__in=vehicles)
+        .select_related('vehicle', 'completed_by')
+        .order_by('due_date')
+    )
+    serializer = MaintenanceRecordSerializer(records, many=True, context={'request': request})
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def driver_maintenance_complete(request, pk):
+    """
+    POST /api/drivers/me/maintenance/<id>/complete/
+    Body (multipart/form-data):
+      - proof_image (file, optional)
+      - completion_notes (text, optional)
+    Marks a maintenance record as completed by the driver.
+    Auto-creates the next recurring record if recurrence rules are set.
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    vehicles = driver.assigned_vehicles.all()
+    try:
+        record = MaintenanceRecord.objects.get(pk=pk, vehicle__in=vehicles)
+    except MaintenanceRecord.DoesNotExist:
+        return Response(
+            {'error': 'Maintenance record not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if record.completed:
+        return Response(
+            {'error': 'Record is already completed'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    record.completed = True
+    record.completed_at = timezone.now()
+    record.completed_by = driver
+
+    proof_image = request.data.get('proof_image') if 'proof_image' in request.data else None
+    if proof_image:
+        record.proof_image = proof_image
+
+    completion_notes = request.data.get('completion_notes', '').strip()
+    if completion_notes:
+        record.completion_notes = completion_notes
+
+    record.save()
+
+    # Auto-create next recurring record
+    _auto_create_next_record(record)
+
+    serializer = MaintenanceRecordSerializer(record, context={'request': request})
+    return Response(serializer.data)
+
+
+# ---------------------------------------------------------------------------
+# Fuel Log Views
+# ---------------------------------------------------------------------------
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def driver_fuel_log_create(request):
+    """
+    POST /api/drivers/me/fuel-log/
+    Body (multipart/form-data):
+      - amount (decimal, required)  — total fuel cost in NPR
+      - odometer_reading (decimal, optional)
+      - receipt_image (file, REQUIRED) — photo of the fuel receipt
+      - notes (text, optional)
+
+    Creates a FuelLog bound to the driver's assigned vehicle.
+    The admin-facing list endpoint (/api/fuel-logs/ filters by
+    vehicle__owner) will then show it in the dashboard's Fuel Logs tab.
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'No driver profile is linked to this user account'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    vehicle = driver.assigned_vehicles.first()
+    if not vehicle:
+        return Response(
+            {'error': 'No vehicle is assigned to you'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = FuelLogCreateSerializer(data=request.data)
+    if serializer.is_valid():
+        log = serializer.save(driver=driver, vehicle=vehicle)
+        return Response(
+            FuelLogSerializer(log, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def fuel_log_list_create(request):
+    """
+    GET  /api/fuel-logs/  — Admin: list all fuel logs for their org's vehicles.
+                            Driver: list their own fuel logs.
+    POST /api/fuel-logs/  — Driver: create a new fuel log entry.
+    """
+    driver = None
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        pass
+
+    if request.method == 'GET':
+        if driver:
+            logs = FuelLog.objects.filter(driver=driver).select_related('vehicle', 'driver')
+        else:
+            logs = FuelLog.objects.filter(
+                vehicle__owner=request.user
+            ).select_related('vehicle', 'driver')
+        serializer = FuelLogSerializer(logs, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    # POST — driver creates entry
+    if not driver:
+        return Response(
+            {'error': 'Only drivers can create fuel log entries'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    vehicle = driver.assigned_vehicles.first()
+    if not vehicle:
+        return Response(
+            {'error': 'No vehicle is assigned to you'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = FuelLogCreateSerializer(data=request.data)
+    if serializer.is_valid():
+        log = serializer.save(driver=driver, vehicle=vehicle)
+        return Response(
+            FuelLogSerializer(log, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def fuel_log_detail(request, pk):
+    """
+    GET    /api/fuel-logs/<id>/  — Retrieve a single fuel log.
+    DELETE /api/fuel-logs/<id>/  — Driver deletes their own entry; admin can delete any.
+    """
+    try:
+        log = FuelLog.objects.select_related('vehicle', 'driver').get(pk=pk)
+    except FuelLog.DoesNotExist:
+        return Response({'error': 'Fuel log not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        driver = Driver.objects.get(user=request.user)
+        if log.driver != driver:
+            return Response({'error': 'Not authorised'}, status=status.HTTP_403_FORBIDDEN)
+    except Driver.DoesNotExist:
+        if log.vehicle.owner != request.user:
+            return Response({'error': 'Not authorised'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'GET':
+        return Response(FuelLogSerializer(log, context={'request': request}).data)
+
+    log.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Dashboard Stats Endpoints ────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dispatch_stats(request):
+    """
+    GET /api/dispatch/stats/
+    Dispatch counts grouped by status for the last 30 days,
+    plus a daily breakdown for charting. Owner-scoped.
+    """
+    from django.db.models import Count
+    from django.db.models.functions import TruncDate
+    import datetime
+
+    owner = request.user
+    thirty_days_ago = timezone.now() - datetime.timedelta(days=30)
+
+    qs = DispatchRequest.objects.filter(
+        assigned_vehicle__owner=owner,
+        created_at__gte=thirty_days_ago,
+    )
+
+    status_counts = qs.values('status').annotate(count=Count('id'))
+    status_map = {row['status']: row['count'] for row in status_counts}
+
+    daily = (
+        qs.annotate(day=TruncDate('created_at'))
+        .values('day')
+        .annotate(count=Count('id'))
+        .order_by('day')
+    )
+    daily_data = [
+        {'date': row['day'].isoformat(), 'count': row['count']}
+        for row in daily
+    ]
+
+    return Response({
+        'total': qs.count(),
+        'by_status': {
+            'pending':   status_map.get('pending', 0),
+            'accepted':  status_map.get('accepted', 0),
+            'en_route':  status_map.get('en_route', 0),
+            'arrived':   status_map.get('arrived', 0),
+            'completed': status_map.get('completed', 0),
+            'cancelled': status_map.get('cancelled', 0),
+        },
+        'daily': daily_data,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def fuel_log_stats(request):
+    """
+    GET /api/fuel-logs/stats/
+    Fuel spend totals for the last 30 days,
+    plus a daily breakdown for charting. Owner-scoped.
+    """
+    from django.db.models import Sum, Count
+    from django.db.models.functions import TruncDate
+    import datetime
+
+    owner = request.user
+    thirty_days_ago = timezone.now() - datetime.timedelta(days=30)
+
+    qs = FuelLog.objects.filter(
+        vehicle__owner=owner,
+        created_at__gte=thirty_days_ago,
+    )
+
+    total_spend = qs.aggregate(total=Sum('amount'))['total'] or 0
+    total_entries = qs.count()
+
+    daily = (
+        qs.annotate(day=TruncDate('created_at'))
+        .values('day')
+        .annotate(total=Sum('amount'), count=Count('id'))
+        .order_by('day')
+    )
+    daily_data = [
+        {'date': row['day'].isoformat(), 'total': float(row['total'] or 0), 'count': row['count']}
+        for row in daily
+    ]
+
+    return Response({
+        'total_spend': float(total_spend),
+        'total_entries': total_entries,
+        'daily': daily_data,
+    })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def expense_summary(request):
+    """
+    GET /api/expenses/summary/
+    Comprehensive expense tracking: fuel, maintenance, operational costs.
+    Supports date range filtering via ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+    """
+    from django.db.models import Sum, Count, Avg, Q
+    from django.db.models.functions import TruncDate
+    import datetime
+    
+    owner = request.user
+    
+    # Date range filtering
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    
+    date_filters = Q(vehicle__owner=owner)
+    if start_date:
+        try:
+            start_date = datetime.datetime.fromisoformat(start_date).date()
+            date_filters &= Q(created_at__date__gte=start_date)
+        except:
+            pass
+    
+    if end_date:
+        try:
+            end_date = datetime.datetime.fromisoformat(end_date).date()
+            date_filters &= Q(created_at__date__lte=end_date)
+        except:
+            pass
+    
+    # Fuel expenses
+    fuel_logs = FuelLog.objects.filter(date_filters)
+    total_fuel = fuel_logs.aggregate(total=Sum('amount'))['total'] or 0
+    fuel_count = fuel_logs.count()
+    
+    fuel_entries = FuelEntry.objects.filter(date_filters)
+    fuel_liters = fuel_entries.aggregate(total=Sum('liters'))['total'] or 0
+    avg_fuel_cost_per_liter = (
+        fuel_entries.aggregate(avg=Avg('cost_per_liter'))['avg'] or 0
+    )
+    
+    # Maintenance expenses (from completed maintenance records with cost)
+    maintenance = MaintenanceRecord.objects.filter(
+        vehicle__owner=owner,
+        completed=True
+    )
+    if start_date:
+        maintenance = maintenance.filter(completed_at__date__gte=start_date)
+    if end_date:
+        maintenance = maintenance.filter(completed_at__date__lte=end_date)
+    
+    total_maintenance = 0  # Maintenance cost tracking would need a cost field
+    maintenance_count = maintenance.count()
+    
+    total_operational = float(total_fuel) + float(total_maintenance)
+    
+    # By vehicle breakdown
+    vehicle_fuel = (
+        fuel_logs.values('vehicle__name')
+        .annotate(total=Sum('amount'), count=Count('id'))
+        .order_by('-total')
+    )
+    by_vehicle = [
+        {'vehicle': row['vehicle__name'], 'fuel_cost': float(row['total']), 'count': row['count']}
+        for row in vehicle_fuel
+    ]
+    
+    # By driver breakdown
+    driver_fuel = (
+        fuel_logs.values('driver__name')
+        .annotate(total=Sum('amount'), count=Count('id'))
+        .order_by('-total')
+    )
+    by_driver = [
+        {'driver': row['driver__name'], 'fuel_cost': float(row['total']), 'count': row['count']}
+        for row in driver_fuel
+    ]
+    
+    return Response({
+        'total_fuel_cost': float(total_fuel),
+        'total_maintenance_cost': float(total_maintenance),
+        'total_operational_cost': total_operational,
+        'fuel_entries_count': fuel_count,
+        'maintenance_records_count': maintenance_count,
+        'total_fuel_liters': float(fuel_liters),
+        'average_fuel_cost_per_liter': float(avg_fuel_cost_per_liter),
+        'by_vehicle': by_vehicle,
+        'by_driver': by_driver,
+        'date_range': {
+            'start': start_date,
+            'end': end_date,
+        }
+    })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def expense_report(request):
+    """
+    GET /api/expenses/report/
+    Detailed expense report with daily breakdown and trends.
+    """
+    from django.db.models import Sum, Count
+    from django.db.models.functions import TruncDate
+    import datetime
+    
+    owner = request.user
+    period = request.query_params.get('period', '30')  # days
+    
+    try:
+        days = int(period)
+    except:
+        days = 30
+    
+    start_date = timezone.now() - datetime.timedelta(days=days)
+    
+    # Daily fuel expenses
+    fuel_daily = (
+        FuelLog.objects.filter(
+            vehicle__owner=owner,
+            created_at__gte=start_date
+        )
+        .annotate(day=TruncDate('created_at'))
+        .values('day')
+        .annotate(fuel_cost=Sum('amount'), fuel_count=Count('id'))
+        .order_by('day')
+    )
+    
+    daily_data = [
+        {
+            'date': row['day'].isoformat(),
+            'fuel_cost': float(row['fuel_cost'] or 0),
+            'fuel_count': row['fuel_count'],
+        }
+        for row in fuel_daily
+    ]
+    
+    # Monthly totals
+    fuel_monthly = (
+        FuelLog.objects.filter(
+            vehicle__owner=owner,
+            created_at__gte=start_date
+        )
+        .extra(select={'month': 'EXTRACT(MONTH FROM created_at)'})
+        .values('month')
+        .annotate(total=Sum('amount'))
+        .order_by('month')
+    )
+    
+    monthly_data = [
+        {'month': int(row['month']), 'total': float(row['total'] or 0)}
+        for row in fuel_monthly
+    ]
+    
+    return Response({
+        'period_days': days,
+        'daily_breakdown': daily_data,
+        'monthly_summary': monthly_data,
+    })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def vehicle_expense_detail(request, vehicle_id):
+    """
+    GET /api/vehicles/{vehicle_id}/expenses/
+    Expense breakdown for a specific vehicle.
+    """
+    from django.db.models import Sum, Count, Avg
+    
+    owner = request.user
+    try:
+        vehicle = Vehicle.objects.get(id=vehicle_id, owner=owner)
+    except Vehicle.DoesNotExist:
+        return Response({'error': 'Vehicle not found'}, status=404)
+    
+    # Fuel logs
+    fuel_logs = FuelLog.objects.filter(vehicle=vehicle)
+    total_fuel = fuel_logs.aggregate(total=Sum('amount'))['total'] or 0
+    fuel_count = fuel_logs.count()
+    avg_per_transaction = (
+        fuel_logs.aggregate(avg=Avg('amount'))['avg'] or 0
+    )
+    
+    # Fuel entries
+    fuel_entries = FuelEntry.objects.filter(vehicle=vehicle)
+    total_liters = fuel_entries.aggregate(total=Sum('liters'))['total'] or 0
+    
+    # Maintenance
+    maintenance = MaintenanceRecord.objects.filter(vehicle=vehicle, completed=True)
+    maintenance_count = maintenance.count()
+    
+    # Recent transactions
+    recent_fuel = FuelLog.objects.filter(vehicle=vehicle).order_by('-created_at')[:5]
+    fuel_data = FuelLogSerializer(recent_fuel, many=True).data
+    
+    return Response({
+        'vehicle_id': vehicle.id,
+        'vehicle_name': vehicle.name,
+        'total_fuel_cost': float(total_fuel),
+        'total_fuel_liters': float(total_liters),
+        'fuel_transactions': fuel_count,
+        'average_per_transaction': float(avg_per_transaction),
+        'maintenance_completed': maintenance_count,
+        'recent_transactions': fuel_data,
+    })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def driver_expense_detail(request, driver_id):
+    """
+    GET /api/drivers/{driver_id}/expenses/
+    Expense breakdown for a specific driver.
+    """
+    from django.db.models import Sum, Count, Avg
+    
+    owner = request.user
+    try:
+        driver = Driver.objects.get(id=driver_id, user__profile__organization=owner)
+    except Driver.DoesNotExist:
+        return Response({'error': 'Driver not found'}, status=404)
+    
+    # Fuel logs
+    fuel_logs = FuelLog.objects.filter(driver=driver)
+    total_fuel = fuel_logs.aggregate(total=Sum('amount'))['total'] or 0
+    fuel_count = fuel_logs.count()
+    avg_per_transaction = (
+        fuel_logs.aggregate(avg=Avg('amount'))['avg'] or 0
+    )
+    
+    # Fuel entries
+    fuel_entries = FuelEntry.objects.filter(driver=driver)
+    total_liters = fuel_entries.aggregate(total=Sum('liters'))['total'] or 0
+    
+    # Recent transactions
+    recent_fuel = FuelLog.objects.filter(driver=driver).order_by('-created_at')[:5]
+    fuel_data = FuelLogSerializer(recent_fuel, many=True).data
+    
+    return Response({
+        'driver_id': driver.id,
+        'driver_name': driver.name,
+        'total_fuel_cost': float(total_fuel),
+        'total_fuel_liters': float(total_liters),
+        'fuel_transactions': fuel_count,
+        'average_per_transaction': float(avg_per_transaction),
+        'recent_transactions': fuel_data,
+    })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def fuel_prices(request):
+    """
+    GET /api/fuel-prices/
+    Returns current fuel prices from NOC for auto-calculation in forms.
+    """
+    prices = FuelPrice.objects.all()
+    serializer = FuelPriceSerializer(prices, many=True)
+    return Response(serializer.data)
+
 
 # ---------------------------------------------------------------------------
 # Analytics Dashboard API
@@ -1679,6 +2301,10 @@ def analytics_dashboard(request):
     Returns aggregated data for admin dashboard charts and KPIs.
     Org-scoped: returns data for the current user's organization.
     """
+    from datetime import timedelta
+    from django.db.models import Count, Q, Sum, Avg, F, Value, CharField
+    from django.db.models.functions import TruncDate, Coalesce
+    
     user = request.user
     org_ids = get_org_user_ids(user)
     
@@ -1886,197 +2512,3 @@ def analytics_dashboard(request):
             'total_fuel_cost': float(fuel_entries.aggregate(total=Sum('total_cost'))['total'] or 0),
         }
     })
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def analytics_pdf(request):
-    """
-    GET /api/analytics/pdf/
-    Returns a PDF overview of the analytics dashboard for the current org.
-    """
-    user = request.user
-    org_ids = get_org_user_ids(user)
-
-    vehicles = Vehicle.objects.filter(owner__in=org_ids)
-    drivers = Driver.objects.filter(owner__in=org_ids)
-    dispatches = DispatchRequest.objects.filter(assigned_vehicle__owner__in=org_ids)
-    emergencies = EmergencyRequest.objects.filter(user__in=org_ids)
-    issues = IssueReport.objects.filter(driver__owner__in=org_ids)
-    fuel_entries = FuelEntry.objects.filter(driver__owner__in=org_ids)
-
-    total_vehicles = vehicles.count()
-    available_count = vehicles.filter(is_available=True, admin_blocked=False).count()
-    unavailable_count = vehicles.filter(is_available=False).count()
-    blocked_count = vehicles.filter(admin_blocked=True).count()
-    total_drivers = drivers.count()
-    active_drivers = drivers.filter(is_on_duty=True).count()
-    total_dispatches = dispatches.count()
-    completed_dispatches = dispatches.filter(status='completed').count()
-    pending_emergencies = emergencies.filter(status='pending').count()
-    open_issues = issues.filter(status='open').count()
-    total_fuel_cost = float(fuel_entries.aggregate(total=Sum('total_cost'))['total'] or 0)
-
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'TitleStyle',
-        parent=styles['Heading1'],
-        fontSize=20,
-        leading=24,
-        textColor=colors.HexColor('#172033'),
-        spaceAfter=6,
-    )
-    subtitle_style = ParagraphStyle(
-        'SubtitleStyle',
-        parent=styles['Normal'],
-        fontSize=10,
-        leading=14,
-        textColor=colors.HexColor('#4c596d'),
-        spaceAfter=18,
-    )
-    heading_style = ParagraphStyle(
-        'HeadingStyle',
-        parent=styles['Heading2'],
-        fontSize=13,
-        leading=18,
-        textColor=colors.HexColor('#172033'),
-        spaceAfter=8,
-        spaceBefore=14,
-    )
-    body_style = ParagraphStyle(
-        'BodyStyle',
-        parent=styles['Normal'],
-        fontSize=10,
-        leading=14,
-        textColor=colors.HexColor('#4c596d'),
-    )
-
-    story = []
-    story.append(Paragraph('Sarthi Analytics Report', title_style))
-    story.append(Paragraph(f"Generated on {timezone.now().strftime('%B %d, %Y %I:%M %p')}", subtitle_style))
-    story.append(Spacer(1, 8))
-
-    # KPI Section
-    story.append(Paragraph('Key Performance Indicators', heading_style))
-    kpi_data = [
-        ['Metric', 'Value'],
-        ['Total Vehicles', str(total_vehicles)],
-        ['Available Vehicles', str(available_count)],
-        ['Unavailable Vehicles', str(unavailable_count)],
-        ['Blocked Vehicles', str(blocked_count)],
-        ['Total Drivers', str(total_drivers)],
-        ['Active Drivers', str(active_drivers)],
-        ['Total Dispatches', str(total_dispatches)],
-        ['Completed Dispatches', str(completed_dispatches)],
-        ['Pending Emergencies', str(pending_emergencies)],
-        ['Open Issues', str(open_issues)],
-        ['Total Fuel Cost', f"Rs. {total_fuel_cost:,.2f}"],
-    ]
-    kpi_table = Table(kpi_data, colWidths=[240, 200])
-    kpi_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f7fa')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#172033')),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#ccd3dd')),
-        ('FONTNAME', (0, 1), (0, -1), 'Helvetica'),
-        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
-        ('TOPPADDING', (0, 1), (-1, -1), 8),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfcfd')]),
-    ]))
-    story.append(kpi_table)
-    story.append(Spacer(1, 14))
-
-    # Fleet Status
-    story.append(Paragraph('Fleet Status', heading_style))
-    fleet_data = [
-        ['Status', 'Count'],
-        ['Available', str(available_count)],
-        ['Unavailable', str(unavailable_count)],
-        ['Blocked', str(blocked_count)],
-    ]
-    fleet_table = Table(fleet_data, colWidths=[240, 200])
-    fleet_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f7fa')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#172033')),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#ccd3dd')),
-        ('FONTNAME', (0, 1), (0, -1), 'Helvetica'),
-        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
-        ('TOPPADDING', (0, 1), (-1, -1), 8),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfcfd')]),
-    ]))
-    story.append(fleet_table)
-    story.append(Spacer(1, 14))
-
-    # Issue Breakdown
-    story.append(Paragraph('Issue Status Breakdown', heading_style))
-    issue_breakdown = issues.values('status').annotate(count=Count('id')).order_by('status')
-    issue_data = [['Status', 'Count']]
-    for issue in issue_breakdown:
-        issue_data.append([issue['status'].title(), str(issue['count'])])
-    issue_table = Table(issue_data, colWidths=[240, 200])
-    issue_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f7fa')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#172033')),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#ccd3dd')),
-        ('FONTNAME', (0, 1), (0, -1), 'Helvetica'),
-        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
-        ('TOPPADDING', (0, 1), (-1, -1), 8),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfcfd')]),
-    ]))
-    story.append(issue_table)
-    story.append(Spacer(1, 14))
-
-    # Top Drivers
-    story.append(Paragraph('Top Drivers (Completed Dispatches)', heading_style))
-    top_drivers = drivers.annotate(
-        completed_dispatches=Count(
-            'assigned_vehicles__dispatch_requests',
-            filter=Q(assigned_vehicles__dispatch_requests__status='completed')
-        )
-    ).filter(completed_dispatches__gt=0).order_by('-completed_dispatches')[:10]
-    driver_data = [['Driver', 'Completed Dispatches']]
-    for driver in top_drivers:
-        driver_data.append([driver.name, str(driver.completed_dispatches)])
-    driver_table = Table(driver_data, colWidths=[240, 200])
-    driver_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f7fa')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#172033')),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#ccd3dd')),
-        ('FONTNAME', (0, 1), (0, -1), 'Helvetica'),
-        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
-        ('TOPPADDING', (0, 1), (-1, -1), 8),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfcfd')]),
-    ]))
-    story.append(driver_table)
-
-    doc.build(story)
-    buffer.seek(0)
-    response = FileResponse(buffer, as_attachment=True, filename=f"sarthi_analytics_{timezone.now().strftime('%Y%m%d')}.pdf")
-    response['Content-Type'] = 'application/pdf'
-    return response

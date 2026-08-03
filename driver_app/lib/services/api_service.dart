@@ -76,21 +76,61 @@ class ApiService {
   // Find your IP: Windows -> `ipconfig` -> look for IPv4 Address.
   // Example: 'http://192.168.1.100:8000'
   // Run Django with: python manage.py runserver 0.0.0.0:8000
-  static const String _wirelessIp = 'http://192.168.2.107:8000';
-  static String _baseUrl = 'http://127.0.0.1:8000';
+  static const String _wirelessIp = 'http://192.168.2.100:8000';
+  static const String _localhost = 'http://127.0.0.1:8000';
+  static String _baseUrl = _localhost;
   static bool _baseUrlInitialized = false;
+
+  /// Persists the last known-good backend so normal restarts don't re-probe.
+  static const String _baseUrlStorageKey = 'last_known_base_url';
 
   static Future<void> _ensureBaseUrl() async {
     if (_baseUrlInitialized) return;
+
+    // 1) Try the persisted last-known-good URL first (fast path).
+    final persisted = await _storage.read(key: _baseUrlStorageKey);
+    if (persisted != null && persisted.isNotEmpty && persisted != _localhost) {
+      if (await _probe(persisted)) {
+        _baseUrl = persisted;
+        _baseUrlInitialized = true;
+        return;
+      }
+    }
+
+    // 2) Otherwise probe localhost (adb reverse) and the wireless IP.
+    final candidates = <String>[_localhost, _wirelessIp];
+    for (final candidate in candidates) {
+      if (candidate == persisted) continue; // already failed above
+      if (await _probe(candidate)) {
+        _baseUrl = candidate;
+        await _storage.write(key: _baseUrlStorageKey, value: candidate);
+        _baseUrlInitialized = true;
+        return;
+      }
+    }
+
+    // 3) Nothing reachable — remember the fallback and let the request fail
+    //    with a network error. `_authenticatedRequest` resets this flag on
+    //    network errors so the next call re-discovers the backend.
+    _baseUrlInitialized = true;
+  }
+
+  static Future<bool> _probe(String url) async {
     try {
       final response = await http
-          .get(Uri.parse('http://127.0.0.1:8000/api/drivers/'))
-          .timeout(const Duration(milliseconds: 600));
-      _baseUrl = 'http://127.0.0.1:8000';
+          .get(Uri.parse('$url/api/'))
+          .timeout(const Duration(seconds: 2));
+      // Any HTTP response (even 401) means the backend is reachable.
+      return response.statusCode < 500;
     } catch (_) {
-      _baseUrl = _wirelessIp;
+      return false;
     }
-    _baseUrlInitialized = true;
+  }
+
+  /// Forces the next request to re-discover the backend.
+  /// Call this after connectivity changes or when requests keep failing.
+  static void resetBaseUrl() {
+    _baseUrlInitialized = false;
   }
 
   static const _storage = FlutterSecureStorage();
@@ -125,6 +165,29 @@ class ApiService {
 
   static Future<String?> getAccessToken() async {
     return await _storage.read(key: 'access_token');
+  }
+
+  /// Returns `true` when a stored access token exists AND is still valid on
+  /// the backend. Useful for the startup auth gate so a stale token never
+  /// boots the user into a broken dashboard.
+  static Future<bool> validateSession() async {
+    final token = await _storage.read(key: 'access_token');
+    if (token == null || token.isEmpty) return false;
+    try {
+      await getDriverMe();
+      return true;
+    } on ApiException catch (e) {
+      if (e.kind == ApiErrorKind.network) {
+        // Couldn't reach the server — keep the cached token but deny entry
+        // so the user lands on the login screen instead of a dead dashboard.
+        return false;
+      }
+      await clearTokens();
+      return false;
+    } catch (_) {
+      await clearTokens();
+      return false;
+    }
   }
 
   // ── Centralized 401 refresh (single-flight) ────────────────────────────
@@ -204,16 +267,21 @@ class ApiService {
     try {
       response = await fn(headers).timeout(const Duration(seconds: 15));
     } on SocketException {
+      // Backend may have changed (adb reverse toggled, IP changed).
+      // Force re-discovery on the next call.
+      resetBaseUrl();
       throw const ApiException(
         message: 'No internet connection. Please check your network and try again.',
         kind: ApiErrorKind.network,
       );
     } on TimeoutException {
+      resetBaseUrl();
       throw const ApiException(
         message: 'Request timed out. The server may be slow or unreachable.',
         kind: ApiErrorKind.network,
       );
     } on http.ClientException {
+      resetBaseUrl();
       throw const ApiException(
         message: 'Network error. Please check your connection.',
         kind: ApiErrorKind.network,
@@ -630,7 +698,7 @@ class ApiService {
     try {
       final response = await _authenticatedRequest(
         (headers) => http.get(
-          Uri.parse('$_baseUrl/api/fuel/'),
+          Uri.parse('$_baseUrl/api/fuel-logs/'),
           headers: headers,
         ),
       );
@@ -644,35 +712,96 @@ class ApiService {
     }
   }
 
-  static Future<bool> createFuelEntry({
-    required double liters,
-    required double costPerLiter,
-    double? odometerKm,
-    String? notes,
-  }) async {
-    try {
-      final Map<String, dynamic> body = {
-        'liters': liters,
-        'cost_per_liter': costPerLiter,
-      };
-      if (odometerKm != null) body['odometer_km'] = odometerKm;
-      if (notes != null && notes.isNotEmpty) body['notes'] = notes;
+   /// Creates a fuel log entry with a required receipt photo.
+   /// POST /api/drivers/me/fuel-log/ (multipart/form-data)
+   static Future<bool> createFuelLog({
+     required String fuelType,
+     required double liters,
+     required double costPerLiter,
+     double? odometerReading,
+     String? notes,
+     required String receiptImagePath,
+   }) async {
+     try {
+       final token = await _storage.read(key: 'access_token');
+       final request = http.MultipartRequest(
+         'POST',
+         Uri.parse('$_baseUrl/api/drivers/me/fuel-log/'),
+       );
 
-      final response = await _authenticatedRequest(
-        (headers) => http.post(
-          Uri.parse('$_baseUrl/api/fuel/'),
-          headers: headers,
-          body: jsonEncode(body),
-        ),
-      );
-      
-      _log('createFuelEntry status: ${response.statusCode}');
-      return response.statusCode == 201 || response.statusCode == 200;
-    } on ApiException catch (e) {
-      _log('createFuelEntry exception: $e');
-      return false;
-    }
-  }
+       if (token != null) {
+         request.headers['Authorization'] = 'Bearer $token';
+       }
+       request.fields['fuel_type'] = fuelType;
+       request.fields['liters'] = liters.toStringAsFixed(2);
+       request.fields['cost_per_liter'] = costPerLiter.toStringAsFixed(2);
+       request.fields['amount'] = (liters * costPerLiter).toStringAsFixed(2);
+       if (odometerReading != null) {
+         request.fields['odometer_reading'] = odometerReading.toStringAsFixed(1);
+       }
+       if (notes != null && notes.isNotEmpty) {
+         request.fields['notes'] = notes;
+       }
+       request.files.add(
+         await http.MultipartFile.fromPath('receipt_image', receiptImagePath),
+       );
+
+       final streamed =
+           await request.send().timeout(const Duration(seconds: 30));
+       final response = await http.Response.fromStream(streamed);
+
+       _log('createFuelLog status: ${response.statusCode}');
+       return response.statusCode == 201 || response.statusCode == 200;
+     } catch (e) {
+       _log('createFuelLog exception: $e');
+       return false;
+     }
+   }
+
+   /// Fetch current fuel prices from NOC (only petrol & diesel)
+   /// Uses local cache to reduce API calls - caches for 24 hours
+   static Future<Map<String, double>> getFuelPrices() async {
+     try {
+       final response = await _authenticatedRequest(
+        (headers) {
+          final url = '$_baseUrl/api/fuel-prices/';
+          print('[FuelPrice] Fetching from: $url');
+          return http.get(
+            Uri.parse(url),
+            headers: headers,
+          );
+        },
+       );
+       if (response.statusCode == 200) {
+         final data = jsonDecode(response.body) as List<dynamic>;
+         final prices = <String, double>{};
+         // Only keep petrol and diesel
+         for (final item in data) {
+           final fuelType = item['fuel_type'] as String?;
+           final priceRaw = item['price_per_liter'];
+           if (fuelType != null && priceRaw != null) {
+             if (fuelType == 'petrol' || fuelType == 'diesel') {
+               // Handle both string and num types
+               double? price;
+               if (priceRaw is num) {
+                 price = priceRaw.toDouble();
+               } else if (priceRaw is String) {
+                 price = double.tryParse(priceRaw);
+               }
+               if (price != null) {
+                 prices[fuelType] = price;
+               }
+             }
+           }
+         }
+         return prices;
+       }
+       return {};
+     } on ApiException catch (e) {
+       _log('getFuelPrices failed: $e');
+       return {};
+     }
+   }
 
   /// Returns the driver's active dispatch, or [null] if there is none (404).
   /// Throws [ApiException] on network/server/auth errors.

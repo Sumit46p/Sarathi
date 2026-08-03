@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/auth';
-import { AlertCircle, CheckCircle2, Plus, Search, Trash2, Truck, Wrench, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Plus, Search, Trash2, Truck, Wrench, X, DollarSign } from 'lucide-react';
 import { toast } from './toast';
+import { ExpenseTab } from './ExpenseTab';
 
 interface MaintenanceRecord {
   id: number;
@@ -14,6 +15,7 @@ interface MaintenanceRecord {
   completed_at: string | null;
   owner: number;
   is_overdue: boolean;
+  cost?: string | null;
 }
 
 const MAINTENANCE_TYPES = [
@@ -30,6 +32,7 @@ const formatType = (value: string) => {
 };
 
 export default function MaintenanceTab() {
+  const [activeSubTab, setActiveSubTab] = useState<'maintenance' | 'expenses'>('maintenance');
   const [records, setRecords] = useState<MaintenanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -40,6 +43,7 @@ export default function MaintenanceTab() {
     maintenance_type: 'oil_change',
     due_date: new Date().toISOString().split('T')[0],
     description: '',
+    cost: '',
   });
   const [addLoading, setAddLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -81,6 +85,7 @@ export default function MaintenanceTab() {
         maintenance_type: 'oil_change',
         due_date: new Date().toISOString().split('T')[0],
         description: '',
+        cost: '',
       });
       await fetchMaintenance();
       toast.success('Maintenance record added');
@@ -122,7 +127,7 @@ export default function MaintenanceTab() {
 
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
-      const matchesQuery = !query.trim() || 
+      const matchesQuery = !query.trim() ||
         r.vehicle_name.toLowerCase().includes(query.toLowerCase()) ||
         formatType(r.maintenance_type).toLowerCase().includes(query.toLowerCase());
       const matchesVehicle = vehicleFilter === 'all' || r.vehicle === Number(vehicleFilter);
@@ -151,183 +156,206 @@ export default function MaintenanceTab() {
           <h2 id="maintenance-heading">Vehicle maintenance</h2>
           <p>Track service history and upcoming appointments.</p>
         </div>
-        <button className="button button-primary" onClick={() => { setFormError(null); setShowAddModal(true); }}>
-          <Plus size={16} />Add record
-        </button>
-      </div>
-
-      {/* Summary metrics */}
-      <div className="metrics-grid" style={{ marginBottom: 20 }}>
-        <article className="metric-card">
-          <div className="metric-heading"><span>Total records</span><Wrench size={17} /></div>
-          <strong>{records.length}</strong>
-          <p>All maintenance entries</p>
-        </article>
-        <article className="metric-card">
-          <div className="metric-heading"><span>Pending</span><AlertCircle size={17} /></div>
-          <strong>{pendingCount}</strong>
-          <p>Not yet completed</p>
-        </article>
-        <article className="metric-card">
-          <div className="metric-heading"><span>Overdue</span><AlertCircle size={17} /></div>
-          <strong style={{ color: overdueCount > 0 ? 'var(--danger)' : undefined }}>{overdueCount}</strong>
-          <p style={{ color: overdueCount > 0 ? 'var(--danger)' : undefined }}>Past due date</p>
-        </article>
-        <article className="metric-card">
-          <div className="metric-heading"><span>Completed</span><CheckCircle2 size={17} /></div>
-          <strong>{records.filter(r => r.completed).length}</strong>
-          <p>All caught up</p>
-        </article>
-      </div>
-
-      {dataError && (
-        <div className="global-alert" role="alert" style={{ marginBottom: 16, borderRadius: 7 }}>
-          <AlertCircle size={16} /><span>{dataError}</span>
-          <button onClick={() => setDataError(null)} aria-label="Dismiss"><X size={15} /></button>
-        </div>
-      )}
-
-      {/* Toolbar */}
-      <div className="section-toolbar">
-        <div>
-          <h2>All records</h2>
-          <span>{records.length} entries</span>
-        </div>
-        <div className="toolbar-controls">
-          <select
-            className="input-field"
-            style={{ width: 160, minHeight: 36, fontSize: '.78rem' }}
-            value={vehicleFilter}
-            onChange={e => setVehicleFilter(e.target.value)}
-            aria-label="Filter by vehicle"
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            className="button button-secondary"
+            onClick={() => setActiveSubTab(activeSubTab === 'maintenance' ? 'expenses' : 'maintenance')}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            {vehicleOptions.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <div className="search-field">
-            <Search size={15} />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search records"
-              aria-label="Search maintenance records"
-            />
-          </div>
+            <DollarSign size={16} />
+            {activeSubTab === 'maintenance' ? 'View Expenses' : 'View Maintenance'}
+          </button>
+          <button className="button button-primary" onClick={() => { setFormError(null); setShowAddModal(true); }}>
+            <Plus size={16} />Add record
+          </button>
         </div>
       </div>
 
-      {filteredRecords.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon"><Wrench size={20} /></div>
-          <h3>No maintenance records</h3>
-          <p>Add your first maintenance record to start tracking vehicle service schedules.</p>
-        </div>
+      {activeSubTab === 'expenses' ? (
+        <ExpenseTab />
       ) : (
-        <div className="data-table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Vehicle</th>
-                <th>Service</th>
-                <th>Due date</th>
-                <th>Status</th>
-                <th><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRecords.map((rec) => (
-                  <tr key={rec.id} className={rec.is_overdue ? 'overdue-row' : ''}>
-                    <td>
-                      <div className="primary-cell">
-                        <div className="entity-icon"><Truck size={17} /></div>
-                        <div><strong>{rec.vehicle_name || 'Unassigned'}</strong></div>
-                      </div>
-                    </td>
-                    <td><span>{formatType(rec.maintenance_type)}</span>{rec.description ? <span className="muted" style={{ display: 'block', fontSize: '.65rem', marginTop: 2 }}>{rec.description}</span> : null}</td>
-                    <td><span className={rec.is_overdue ? 'overdue-date' : ''}>{rec.due_date}</span></td>
-                    <td>
-                      {rec.completed ? (
-                        <span className="status-badge available"><span />Completed</span>
-                      ) : rec.is_overdue ? (
-                        <span className="status-badge unavailable"><span />Overdue</span>
-                      ) : (
-                        <span className="status-badge neutral"><span />Pending</span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                        {!rec.completed && (
-                          <button
-                            className="button button-primary"
-                            style={{ minHeight: 30, padding: '4px 10px', fontSize: '.7rem' }}
-                            onClick={() => handleMarkComplete(rec.id)}
-                            disabled={completingId === rec.id}
-                          >
-                            {completingId === rec.id ? '...' : <CheckCircle2 size={13} />}
-                            Mark done
-                          </button>
-                        )}
-                        <button
-                          className="icon-button danger"
-                          onClick={() => handleDeleteRecord(rec.id)}
-                          title="Delete record"
-                          aria-label={`Delete ${rec.vehicle_name} record`}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        <>
 
-      {/* Add modal */}
-      {showAddModal && (
-        <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowAddModal(false); }}>
-          <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="record-modal-title">
-            <div className="modal-header">
-              <div>
-                <span>Maintenance records</span>
-                <h2 id="record-modal-title">Add service record</h2>
-              </div>
-              <button className="icon-button" onClick={() => setShowAddModal(false)} aria-label="Close form"><X size={17} /></button>
+          {/* Summary metrics */}
+          <div className="metrics-grid" style={{ marginBottom: 20 }}>
+            <article className="metric-card">
+              <div className="metric-heading"><span>Total records</span><Wrench size={17} /></div>
+              <strong>{records.length}</strong>
+              <p>All maintenance entries</p>
+            </article>
+            <article className="metric-card">
+              <div className="metric-heading"><span>Pending</span><AlertCircle size={17} /></div>
+              <strong>{pendingCount}</strong>
+              <p>Not yet completed</p>
+            </article>
+            <article className="metric-card">
+              <div className="metric-heading"><span>Overdue</span><AlertCircle size={17} /></div>
+              <strong style={{ color: overdueCount > 0 ? 'var(--danger)' : undefined }}>{overdueCount}</strong>
+              <p style={{ color: overdueCount > 0 ? 'var(--danger)' : undefined }}>Past due date</p>
+            </article>
+            <article className="metric-card">
+              <div className="metric-heading"><span>Completed</span><CheckCircle2 size={17} /></div>
+              <strong>{records.filter(r => r.completed).length}</strong>
+              <p>All caught up</p>
+            </article>
+          </div>
+
+          {dataError && (
+            <div className="global-alert" role="alert" style={{ marginBottom: 16, borderRadius: 7 }}>
+              <AlertCircle size={16} /><span>{dataError}</span>
+              <button onClick={() => setDataError(null)} aria-label="Dismiss"><X size={15} /></button>
             </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label htmlFor="vehicle-select">Vehicle</label>
-                <select id="vehicle-select" className="input-field" value={newRecord.vehicle} onChange={event => setNewRecord({ ...newRecord, vehicle: event.target.value })} required>
-                  <option value="">Select a vehicle</option>
-                  {vehicles.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="service-type">Service type</label>
-                <select id="service-type" className="input-field" value={newRecord.maintenance_type} onChange={event => setNewRecord({ ...newRecord, maintenance_type: event.target.value })}>
-                  {MAINTENANCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="due-date">Due date</label>
-                <input id="due-date" type="date" className="input-field" value={newRecord.due_date} onChange={event => setNewRecord({ ...newRecord, due_date: event.target.value })} required />
-              </div>
-              <div className="form-group">
-                <label htmlFor="description">Description <span className="muted">(optional)</span></label>
-                <textarea id="description" className="input-field" value={newRecord.description} onChange={event => setNewRecord({ ...newRecord, description: event.target.value })} rows={3} placeholder="Brief details about the service needed..." />
-              </div>
-              {formError && <div className="inline-alert error"><AlertCircle size={16} />{formError}</div>}
+          )}
+
+          {/* Toolbar */}
+          <div className="section-toolbar">
+            <div>
+              <h2>All records</h2>
+              <span>{records.length} entries</span>
             </div>
-            <div className="modal-footer">
-              <button className="button button-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
-              <button className="button button-primary" onClick={handleAddRecord} disabled={!newRecord.vehicle || addLoading}>
-                {addLoading ? 'Adding...' : 'Add record'}
-              </button>
+            <div className="toolbar-controls">
+              <select
+                className="input-field"
+                style={{ width: 160, minHeight: 36, fontSize: '.78rem' }}
+                value={vehicleFilter}
+                onChange={e => setVehicleFilter(e.target.value)}
+                aria-label="Filter by vehicle"
+              >
+                {vehicleOptions.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <div className="search-field">
+                <Search size={15} />
+                <input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Search records"
+                  aria-label="Search maintenance records"
+                />
+              </div>
             </div>
           </div>
-        </div>
+
+          {filteredRecords.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon"><Wrench size={20} /></div>
+              <h3>No maintenance records</h3>
+              <p>Add your first maintenance record to start tracking vehicle service schedules.</p>
+            </div>
+          ) : (
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Vehicle</th>
+                    <th>Service</th>
+                    <th>Due date</th>
+                    <th style={{ textAlign: 'right' }}>Cost</th>
+                    <th>Status</th>
+                    <th><span className="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecords.map((rec) => (
+                    <tr key={rec.id} className={rec.is_overdue ? 'overdue-row' : ''}>
+                      <td>
+                        <div className="primary-cell">
+                          <div className="entity-icon"><Truck size={17} /></div>
+                          <div><strong>{rec.vehicle_name || 'Unassigned'}</strong></div>
+                        </div>
+                      </td>
+                      <td><span>{formatType(rec.maintenance_type)}</span>{rec.description ? <span className="muted" style={{ display: 'block', fontSize: '.65rem', marginTop: 2 }}>{rec.description}</span> : null}</td>
+                      <td><span className={rec.is_overdue ? 'overdue-date' : ''}>{rec.due_date}</span></td>
+                      <td style={{ textAlign: 'right' }}><span>{rec.cost ? `रु ${Number(rec.cost).toLocaleString()}` : '—'}</span></td>
+                      <td>
+                        {rec.completed ? (
+                          <span className="status-badge available"><span />Completed</span>
+                        ) : rec.is_overdue ? (
+                          <span className="status-badge unavailable"><span />Overdue</span>
+                        ) : (
+                          <span className="status-badge neutral"><span />Pending</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          {!rec.completed && (
+                            <button
+                              className="button button-primary"
+                              style={{ minHeight: 30, padding: '4px 10px', fontSize: '.7rem' }}
+                              onClick={() => handleMarkComplete(rec.id)}
+                              disabled={completingId === rec.id}
+                            >
+                              {completingId === rec.id ? '...' : <CheckCircle2 size={13} />}
+                              Mark done
+                            </button>
+                          )}
+                          <button
+                            className="icon-button danger"
+                            onClick={() => handleDeleteRecord(rec.id)}
+                            title="Delete record"
+                            aria-label={`Delete ${rec.vehicle_name} record`}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Add modal */}
+          {showAddModal && (
+            <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowAddModal(false); }}>
+              <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="record-modal-title">
+                <div className="modal-header">
+                  <div>
+                    <span>Maintenance records</span>
+                    <h2 id="record-modal-title">Add service record</h2>
+                  </div>
+                  <button className="icon-button" onClick={() => setShowAddModal(false)} aria-label="Close form"><X size={17} /></button>
+                </div>
+                <div className="modal-body">
+                  <div className="form-group">
+                    <label htmlFor="vehicle-select">Vehicle</label>
+                    <select id="vehicle-select" className="input-field" value={newRecord.vehicle} onChange={event => setNewRecord({ ...newRecord, vehicle: event.target.value })} required>
+                      <option value="">Select a vehicle</option>
+                      {vehicles.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="service-type">Service type</label>
+                    <select id="service-type" className="input-field" value={newRecord.maintenance_type} onChange={event => setNewRecord({ ...newRecord, maintenance_type: event.target.value })}>
+                      {MAINTENANCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="due-date">Due date</label>
+                    <input id="due-date" type="date" className="input-field" value={newRecord.due_date} onChange={event => setNewRecord({ ...newRecord, due_date: event.target.value })} required />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="description">Description <span className="muted">(optional)</span></label>
+                    <textarea id="description" className="input-field" value={newRecord.description} onChange={event => setNewRecord({ ...newRecord, description: event.target.value })} rows={3} placeholder="Brief details about the service needed..." />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="cost">Cost <span className="muted">(optional)</span></label>
+                    <input id="cost" type="number" step="0.01" min="0" className="input-field" value={newRecord.cost} onChange={event => setNewRecord({ ...newRecord, cost: event.target.value })} placeholder="Enter cost in NPR" />
+                  </div>
+                  {formError && <div className="inline-alert error"><AlertCircle size={16} />{formError}</div>}
+                </div>
+                <div className="modal-footer">
+                  <button className="button button-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
+                  <button className="button button-primary" onClick={handleAddRecord} disabled={!newRecord.vehicle || addLoading}>
+                    {addLoading ? 'Adding...' : 'Add record'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </section>
   );

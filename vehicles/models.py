@@ -113,17 +113,30 @@ class Vehicle(models.Model):
         return active.status if active else None
 
     def recompute_availability(self) -> None:
-        """Derive `is_available` from driver duty + admin block + active dispatch.
+        """Derive `is_available` from driver duty + admin block + active dispatch + driver online status.
 
-        A vehicle is only available if:
-        - the driver is on duty, AND
+        A vehicle is available if:
         - the vehicle is not admin-blocked, AND
-        - the vehicle has no active dispatch in progress.
+        - the vehicle has no active dispatch in progress, AND
+        - a driver is assigned AND the driver is on duty AND the driver app is actively online (last activity within 5 minutes)
+        
         Uses a queryset update to avoid re-firing the post_save signal
         (which would recurse).
         """
-        on_duty = bool(self.driver and self.driver.is_on_duty)
-        is_available = on_duty and not self.admin_blocked and not self.has_active_dispatch
+        # If no driver assigned, vehicle is NOT available (cannot be dispatched)
+        if not self.driver:
+            is_available = False
+        else:
+            # Driver is assigned - check if they're on duty and online
+            driver_online = False
+            if self.driver.is_on_duty:
+                # Check if driver has an active profile with recent app activity
+                if hasattr(self.driver, 'user') and self.driver.user:
+                    profile = getattr(self.driver.user, 'profile', None)
+                    driver_online = profile.is_online if profile else False
+            
+            is_available = driver_online and not self.admin_blocked and not self.has_active_dispatch
+        
         # Update database and refresh in-memory object
         updated_count = Vehicle.objects.filter(pk=self.pk).update(is_available=is_available)
         # Force refresh from database to ensure we have latest state
@@ -328,6 +341,27 @@ class MaintenanceRecord(models.Model):
         related_name='maintenance_records',
     )
     image = models.ImageField(upload_to='maintenance_images/', null=True, blank=True)
+    proof_image = models.ImageField(
+        upload_to='maintenance_proofs/',
+        null=True, blank=True,
+        help_text='Photo evidence of completed maintenance',
+    )
+    completed_by = models.ForeignKey(
+        'Driver',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='completed_maintenance_records',
+        help_text='Driver who completed this maintenance',
+    )
+    completion_notes = models.TextField(
+        blank=True,
+        help_text='Notes from the person who completed the maintenance',
+    )
+    cost = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        null=True, blank=True,
+        help_text='Cost of the maintenance in NPR',
+    )
 
     def __str__(self):
         return f"{self.get_maintenance_type_display()} for {self.vehicle.name} due {self.due_date}"
@@ -520,3 +554,100 @@ class FuelEntry(models.Model):
             models.Index(fields=['driver', 'fueled_at']),
             models.Index(fields=['vehicle', 'fueled_at']),
         ]
+
+
+class FuelLog(models.Model):
+    """Tracks fuel expenses for a vehicle with receipt proof."""
+    FUEL_TYPE_CHOICES = [
+        ('petrol', 'Petrol'),
+        ('diesel', 'Diesel'),
+    ]
+    
+    vehicle = models.ForeignKey(
+        'Vehicle',
+        on_delete=models.CASCADE,
+        related_name='fuel_logs',
+        help_text='The vehicle that was refuelled.',
+    )
+    driver = models.ForeignKey(
+        'Driver',
+        on_delete=models.CASCADE,
+        related_name='fuel_logs',
+        help_text='The driver who logged the fuel expense.',
+    )
+    fuel_type = models.CharField(
+        max_length=10,
+        choices=FUEL_TYPE_CHOICES,
+        default='petrol',
+        help_text='Type of fuel (Petrol or Diesel)',
+    )
+    liters = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        null=True, blank=True,
+        help_text='Volume of fuel in liters.',
+    )
+    amount = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        help_text='Total fuel cost in NPR.',
+    )
+    cost_per_liter = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        null=True, blank=True,
+        help_text='Price per liter in NPR at time of entry.',
+    )
+    odometer_reading = models.DecimalField(
+        max_digits=10, decimal_places=1,
+        null=True, blank=True,
+        help_text='Odometer reading at the time of fuelling (km).',
+    )
+    receipt_image = models.ImageField(
+        upload_to='fuel_receipts/',
+        null=True, blank=True,
+        help_text='Photo of the fuel receipt.',
+    )
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    def __str__(self):
+        return f"FuelLog {self.amount} NPR – {self.vehicle.name} by {self.driver.name}"
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['driver', 'created_at']),
+            models.Index(fields=['vehicle', 'created_at']),
+        ]
+
+class FuelPrice(models.Model):
+    """Stores current fuel prices scraped from NOC (Nepal Oil Corporation)."""
+    FUEL_TYPE_CHOICES = [
+        ('petrol', 'Petrol'),
+        ('diesel', 'Diesel'),
+    ]
+    
+    fuel_type = models.CharField(
+        max_length=10,
+        choices=FUEL_TYPE_CHOICES,
+        unique=True,
+        help_text='Type of fuel.',
+    )
+    price_per_liter = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        help_text='Current price per liter in NPR.',
+    )
+    last_updated = models.DateTimeField(
+        auto_now=True,
+        help_text='Last time this price was updated.',
+    )
+    source = models.CharField(
+        max_length=100,
+        default='NOC',
+        help_text='Data source (e.g., NOC, manual).',
+    )
+
+    def __str__(self):
+        return f"{self.get_fuel_type_display()}: रु {self.price_per_liter}/L"
+
+    class Meta:
+        verbose_name_plural = "Fuel Prices"
+        ordering = ['fuel_type']

@@ -96,6 +96,17 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 
   Future<void> _navigateToNextScreen() async {
+    // If there is no stored token at all, skip the network call entirely
+    // and go straight to login. (_AuthGate already validated any token.)
+    final token = await ApiService.getAccessToken();
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        SmoothPageRoute(page: const LoginScreen()),
+      );
+      return;
+    }
+
     try {
       // Try to fetch driver profile with existing tokens
       final meData = await ApiService.getDriverMe();

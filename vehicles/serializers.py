@@ -1,122 +1,26 @@
 from rest_framework import serializers
-from django.contrib.gis.geos import Point
-from django.contrib.auth.models import User
-from django.core.exceptions import ValidationError as DjangoValidationError
-from django.contrib.auth.password_validation import validate_password
-import json
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, EmergencyRequest, FuelEntry
-
-
-class LocationField(serializers.Field):
-    """
-    Serializes a PointField to/from plain {"lat": ..., "lng": ...} JSON.
-    Internally Django stores Point(lng, lat) — note the order — but the
-    API exposes the more intuitive {"lat": ..., "lng": ...} format.
-    """
-
-    def to_representation(self, value):
-        if value is None:
-            return None
-        return {'lat': value.y, 'lng': value.x}
-
-    def to_internal_value(self, data):
-        if data is None:
-            return None
-        # Handle JSON string input (e.g., from multipart form data)
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-                raise serializers.ValidationError(
-                    'Location must be {"lat": <number>, "lng": <number>}'
-                )
-        try:
-            lat = float(data['lat'])
-            lng = float(data['lng'])
-        except (KeyError, TypeError, ValueError):
-            raise serializers.ValidationError(
-                'Location must be {"lat": <number>, "lng": <number>}'
-            )
-        if not (-90 <= lat <= 90):
-            raise serializers.ValidationError('lat must be between -90 and 90')
-        if not (-180 <= lng <= 180):
-            raise serializers.ValidationError('lng must be between -180 and 180')
-        return Point(lng, lat, srid=4326)
-
-
-class IssueReportSerializer(serializers.ModelSerializer):
-    image = serializers.ImageField(required=False, allow_null=True)
-    image_url = serializers.SerializerMethodField()
-    driver_name = serializers.CharField(source='driver.name', read_only=True)
-    vehicle_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = IssueReport
-        fields = ['id', 'driver', 'driver_name', 'vehicle_name', 'description', 'image', 'image_url', 'status', 'created_at']
-        read_only_fields = ['id', 'driver', 'driver_name', 'vehicle_name', 'status', 'created_at']
-
-    def get_image_url(self, obj):
-        if obj.image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
-
-    def get_vehicle_name(self, obj):
-        vehicle = obj.driver.assigned_vehicles.first()
-        return vehicle.name if vehicle else 'Unassigned'
-
+from .models import (
+    Vehicle, Driver, DispatchRequest, MaintenanceRecord, MaintenanceTemplate,
+    IssueReport, Notification, EmergencyRequest, FuelEntry, FuelLog, FuelPrice
+)
 
 class DriverSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(write_only=True, required=True)
-    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
-
     class Meta:
         model = Driver
-        fields = ['id', 'name', 'phone_number', 'license_number', 'is_active', 'is_on_duty', 'user', 'username', 'password']
-        read_only_fields = ['id', 'user', 'is_active', 'is_on_duty']
-
-    def validate_username(self, value):
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError('A user with this username already exists')
-        return value
-
-    def validate_password(self, value):
-        try:
-            validate_password(value)
-        except DjangoValidationError as e:
-            raise serializers.ValidationError(list(e.messages))
-        return value
-
-    def create(self, validated_data):
-        username = validated_data.pop('username')
-        password = validated_data.pop('password')
-        driver = Driver(**validated_data)
-        user = User.objects.create_user(username=username, password=password)
-        driver.user = user
-        driver.save()
-        
-        # Fix organization_name if signal created profile with default
-        # Get organization name from the context (if available)
-        from accounts.models import Profile
-        org_name = self.context.get('organization_name', 'Default Org')
-        profile, created = Profile.objects.get_or_create(
-            user=user,
-            defaults={'organization_name': org_name}
-        )
-        if not created and profile.organization_name == 'Default Org' and org_name != 'Default Org':
-            profile.organization_name = org_name
-            profile.save()
-        
-        return driver
-
+        fields = ['id', 'name', 'phone_number', 'license_number', 'is_active', 'is_on_duty', 'user']
+        read_only_fields = ['id', 'user']
 
 class VehicleSerializer(serializers.ModelSerializer):
-    location = LocationField()
-    driver_name = serializers.CharField(source='driver.name', read_only=True, default=None)
-    has_active_dispatch = serializers.BooleanField(read_only=True)
-    active_dispatch_status = serializers.CharField(read_only=True)
+    driver_name = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
+    
+    def get_driver_name(self, obj):
+        return obj.driver.name if obj.driver else None
+    
+    def get_location(self, obj):
+        if obj.location:
+            return {'lat': obj.location.y, 'lng': obj.location.x}
+        return None
 
     class Meta:
         model = Vehicle
@@ -133,167 +37,163 @@ class VehicleSerializer(serializers.ModelSerializer):
             'last_location_at', 'total_distance_km',
         ]
 
-
 class LocationUpdateSerializer(serializers.Serializer):
     """Accepts just {"lat": ..., "lng": ...} for the update-location endpoint."""
     lat = serializers.FloatField(min_value=-90, max_value=90)
     lng = serializers.FloatField(min_value=-180, max_value=180)
 
-
-class NearestVehicleSerializer(serializers.Serializer):
-    """Read-only serializer for nearest-vehicle search results."""
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    distance_km = serializers.FloatField()
-    lat = serializers.FloatField()
-    lng = serializers.FloatField()
-
-
-class DispatchRequestInputSerializer(serializers.Serializer):
-    """Validates incoming dispatch requests."""
-    lat = serializers.FloatField(min_value=-90, max_value=90)
-    lng = serializers.FloatField(min_value=-180, max_value=180)
-    vehicle_type = serializers.ChoiceField(choices=Vehicle.VEHICLE_TYPE_CHOICES)
-
-
 class AssignDriverSerializer(serializers.Serializer):
-    """Validates driver assignment payload."""
-    driver_id = serializers.IntegerField(allow_null=True, required=False)
-
+    """Accepts {"driver_id": 5} or {"driver_id": null}."""
+    driver_id = serializers.IntegerField(required=False, allow_null=True)
 
 class DispatchRequestSerializer(serializers.ModelSerializer):
-    assigned_vehicle_name = serializers.CharField(
-        source='assigned_vehicle.name', read_only=True, default=None
-    )
-    response_time_seconds = serializers.FloatField(read_only=True)
-    trip_duration_seconds = serializers.FloatField(read_only=True)
-
     class Meta:
         model = DispatchRequest
         fields = [
-            'id',
-            'request_lat', 'request_lng',
-            'vehicle_type',
-            'assigned_vehicle', 'assigned_vehicle_name',
-            'status',
-            'created_at', 'assigned_at', 'accepted_at',
-            'en_route_at', 'arrived_at', 'completed_at',
-            'response_time_seconds', 'trip_duration_seconds',
-            'distance_km', 'duration_min', 'used_osrm',   # ← added
+            'id', 'request_lat', 'request_lng', 'vehicle_type',
+            'assigned_vehicle', 'status', 'distance_km', 'duration_min',
+            'used_osrm', 'created_at', 'assigned_at', 'accepted_at',
+            'en_route_at', 'arrived_at', 'completed_at'
         ]
-        read_only_fields = fields
-
-
-class AssignedVehicleSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    vehicle_type = serializers.CharField()
-    number_plate = serializers.CharField()
-    is_available = serializers.BooleanField()
-    location = serializers.DictField()
-
-
-class DriverMeSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    phone_number = serializers.CharField()
-    license_number = serializers.CharField()
-    is_active = serializers.BooleanField()
-    requires_password_change = serializers.BooleanField()
-    is_on_duty = serializers.BooleanField()
-    assigned_vehicle = AssignedVehicleSerializer(allow_null=True)
-
 
 class MaintenanceRecordSerializer(serializers.ModelSerializer):
-    """Serializer for vehicle maintenance records.
-    
-    Supports both calendar-based (recurrence_days) and mileage-based (recurrence_km) recurrence.
-    """
-    vehicle_name = serializers.CharField(source='vehicle.name', read_only=True)
-    is_overdue = serializers.SerializerMethodField()
-
     class Meta:
         model = MaintenanceRecord
         fields = [
-            'id', 'vehicle', 'vehicle_name', 'maintenance_type',
-            'description', 'due_date', 'completed', 'completed_at',
-            'recurrence_days', 'recurrence_km',
-            'owner', 'is_overdue', 'image',
+            'id', 'vehicle', 'maintenance_type', 'description',
+            'due_date', 'completed', 'completed_at', 'recurrence_days',
+            'recurrence_km', 'image', 'proof_image', 'completed_by',
+            'completion_notes', 'cost'
         ]
-        read_only_fields = ['id', 'vehicle_name', 'owner', 'completed_at', 'is_overdue']
-
-    def get_is_overdue(self, obj):
-        from django.utils import timezone
-        return not obj.completed and obj.due_date < timezone.now().date()
 
 class MaintenanceTemplateSerializer(serializers.ModelSerializer):
-    """Serializer for reusable maintenance templates."""
-
     class Meta:
         model = MaintenanceTemplate
-        fields = [
-            'id', 'name', 'maintenance_type', 'description',
-            'recurrence_days', 'recurrence_km', 'owner', 'created_at',
-        ]
-        read_only_fields = ['id', 'owner', 'created_at']
+        fields = ['id', 'name', 'maintenance_type', 'description', 'recurrence_days', 'recurrence_km']
 
+class IssueReportSerializer(serializers.ModelSerializer):
+    driver_name = serializers.SerializerMethodField()
+
+    def get_driver_name(self, obj):
+        return obj.driver.name
+
+    class Meta:
+        model = IssueReport
+        fields = ['id', 'driver', 'driver_name', 'description', 'image', 'status', 'created_at']
+        read_only_fields = ['id', 'driver', 'created_at']
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'title', 'message', 'notification_type', 'is_read', 'created_at']
 
 class EmergencyRequestSerializer(serializers.ModelSerializer):
-    """Serializer for emergency SOS requests."""
-    location = LocationField(required=False, allow_null=True)
-    image_url = serializers.SerializerMethodField()
-    driver_vehicle_id = serializers.SerializerMethodField()
-
     class Meta:
         model = EmergencyRequest
         fields = [
             'id', 'user', 'emergency_type', 'description', 'location',
-            'image', 'image_url', 'driver_vehicle_id', 'status', 'assigned_vehicle',
-            'created_at', 'updated_at', 'resolved_at',
+            'image', 'status', 'assigned_vehicle', 'created_at', 'updated_at',
+            'resolved_at'
         ]
-        read_only_fields = ['id', 'user', 'status', 'assigned_vehicle', 'created_at', 'updated_at', 'resolved_at']
-
-    def get_driver_vehicle_id(self, obj):
-        if hasattr(obj.user, 'driver') and obj.user.driver.assigned_vehicle_id:
-            return obj.user.driver.assigned_vehicle_id
-        return None
-
-    def get_image_url(self, obj):
-        if obj.image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
-
-
-class EmergencyRequestCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating emergency requests from the driver app."""
-    location = LocationField(required=False, allow_null=True)
-
-    class Meta:
-        model = EmergencyRequest
-        fields = ['emergency_type', 'description', 'location', 'image']
-        extra_kwargs = {
-            'description': {'required': False, 'allow_blank': True},
-        }
-
-
-class EmergencyRequestDispatchSerializer(serializers.Serializer):
-    """Serializer for dispatching a vehicle to an emergency request."""
-    vehicle_id = serializers.IntegerField(required=True, help_text='ID of the vehicle to dispatch')
-
 
 class FuelEntrySerializer(serializers.ModelSerializer):
-    """Serializer for fuel fill-up entries."""
-    vehicle_name = serializers.CharField(source='vehicle.name', read_only=True)
-    driver_name = serializers.CharField(source='driver.name', read_only=True)
+    driver_name = serializers.SerializerMethodField()
+    vehicle_name = serializers.SerializerMethodField()
+
+    def get_driver_name(self, obj):
+        return obj.driver.name
+
+    def get_vehicle_name(self, obj):
+        return obj.vehicle.name
 
     class Meta:
         model = FuelEntry
         fields = [
             'id', 'vehicle', 'vehicle_name', 'driver', 'driver_name',
             'liters', 'cost_per_liter', 'total_cost', 'odometer_km',
-            'notes', 'fueled_at', 'created_at',
+            'notes', 'fueled_at', 'created_at'
         ]
-        read_only_fields = ['id', 'vehicle_name', 'driver_name', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+class FuelLogSerializer(serializers.ModelSerializer):
+    driver_name = serializers.SerializerMethodField()
+    vehicle_name = serializers.SerializerMethodField()
+    receipt_image_url = serializers.SerializerMethodField()
+
+    def get_driver_name(self, obj):
+        return obj.driver.name
+
+    def get_vehicle_name(self, obj):
+        return obj.vehicle.name
+
+    def get_receipt_image_url(self, obj):
+        if obj.receipt_image and obj.receipt_image.name:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.receipt_image.url)
+            return obj.receipt_image.url
+        return None
+
+    class Meta:
+        model = FuelLog
+        fields = [
+            'id', 'vehicle', 'vehicle_name', 'driver', 'driver_name',
+            'fuel_type', 'liters', 'amount', 'cost_per_liter',
+            'odometer_reading', 'receipt_image_url', 'notes', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+class FuelPriceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FuelPrice
+        fields = ['id', 'fuel_type', 'price_per_liter', 'last_updated', 'source']
+        read_only_fields = ['id', 'fuel_type', 'price_per_liter', 'last_updated', 'source']
+
+class NearestVehicleSerializer(serializers.Serializer):
+    """Response for nearest vehicle query."""
+    vehicle_id = serializers.IntegerField()
+    vehicle_name = serializers.CharField()
+    distance_km = serializers.DecimalField(max_digits=8, decimal_places=2)
+    duration_min = serializers.IntegerField()
+    lat = serializers.FloatField()
+    lng = serializers.FloatField()
+
+class DispatchRequestInputSerializer(serializers.Serializer):
+    """Input for creating dispatch requests."""
+    lat = serializers.FloatField(min_value=-90, max_value=90)
+    lng = serializers.FloatField(min_value=-180, max_value=180)
+    vehicle_type = serializers.CharField(max_length=20)
+
+class DriverAssignedVehicleSerializer(serializers.ModelSerializer):
+    """Simplified vehicle serializer for driver's assigned vehicle (no PostGIS fields)."""
+    class Meta:
+        model = Vehicle
+        fields = ['id', 'name', 'vehicle_type', 'number_plate', 'is_available']
+
+class DriverMeSerializer(serializers.ModelSerializer):
+    assigned_vehicle = DriverAssignedVehicleSerializer(read_only=True)
+    
+    class Meta:
+        model = Driver
+        fields = ['id', 'name', 'phone_number', 'license_number', 'is_on_duty', 'assigned_vehicle']
+
+class EmergencyRequestCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmergencyRequest
+        fields = ['emergency_type', 'description', 'location', 'image']
+
+class FuelLogCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FuelLog
+        fields = ['vehicle', 'fuel_type', 'liters', 'amount', 'cost_per_liter', 'odometer_reading', 'receipt_image', 'notes']
+
+class ExpenseStatsSerializer(serializers.Serializer):
+    """Aggregated expense statistics."""
+    total_fuel_cost = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total_maintenance_cost = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total_operational_cost = serializers.DecimalField(max_digits=12, decimal_places=2)
+    fuel_entries_count = serializers.IntegerField()
+    maintenance_records_count = serializers.IntegerField()
+    average_fuel_cost_per_liter = serializers.DecimalField(max_digits=8, decimal_places=2)
+    by_vehicle = serializers.ListField(child=serializers.DictField())
+    by_driver = serializers.ListField(child=serializers.DictField())

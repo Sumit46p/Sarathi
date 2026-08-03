@@ -3,21 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'dart:async';
 import '../theme.dart';
-import '../widgets/action_button.dart';
 import '../services/api_service.dart';
 import '../utils/animations.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'trips_screen.dart';
-import 'notifications_screen.dart';
 import 'report_issue_screen.dart';
-import 'emergency_screen.dart';
-import 'maintenance_screen.dart';
 import 'fuel_entry_screen.dart';
+import 'trip_history_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -31,13 +27,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic>? _driverData;
   bool _loading = true;
   String? _errorMsg;
-  bool _isAvailable = true;
+  bool _isOnDuty = false;
   Timer? _locationTimer;
   String? _lastLocationStatus;
   int _consecutiveLocationFailures = 0;
   StreamSubscription<void>? _forceLogoutSub;
   Timer? _notificationTimer;
   int _unreadNotifications = 0;
+  int _notificationFailures = 0;
   final AudioPlayer _notificationPlayer = AudioPlayer();
   final Set<String> _beepedNotificationIds = <String>{};
 
@@ -56,9 +53,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       try {
         final notifications = await ApiService.getNotifications();
         if (!mounted) return;
+        _notificationFailures = 0;
         final unread = notifications.where((n) => n['read'] == false).length;
         
-        // Beep only for newly arrived notifications that haven't been beeped yet
         final newNotificationIds = notifications
             .where((n) {
               final id = n['id']?.toString();
@@ -81,7 +78,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _unreadNotifications = unread;
         });
       } catch (e) {
-        // Silently ignore notification polling errors
+        _notificationFailures++;
+        if (_notificationFailures >= 3) {
+          ApiService.resetBaseUrl();
+          _notificationFailures = 0;
+        }
       }
     });
   }
@@ -104,7 +105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _driverData = data;
         _loading = false;
-        _isAvailable = isOnDuty;
+        _isOnDuty = isOnDuty;
         if (data == null) {
           _errorMsg = 'Failed to load profile. Please log in again.';
         }
@@ -123,7 +124,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.kind == ApiErrorKind.unauthorized) {
-        // Token is invalid/expired - clear it and redirect to login
         await _performLogout();
       } else {
         setState(() {
@@ -156,12 +156,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         builder: (context, setDialogState) {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Text('Change Password', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+            title: Text('Change Password', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('You must change your password before continuing.', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline)),
+                Text('You must change your password before continuing.', style: GoogleFonts.inter(color: AppTheme.onSurfaceVariant)),
                 const SizedBox(height: 16),
                 TextField(
                   controller: passwordController,
@@ -198,7 +198,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
                 child: isLoading
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text('Update Password', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: AppTheme.primaryColor)),
+                    : Text('Update Password', style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppTheme.primaryColor)),
               ),
             ],
           );
@@ -207,29 +207,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Future<void> _toggleAvailability(bool value) async {
-    setState(() => _isAvailable = value);
+  Future<void> _toggleDutyStatus(bool value) async {
+    if (value) {
+      final hasLocationPermission = await _validateLocationBeforeDuty();
+      if (!hasLocationPermission) {
+        if (mounted) setState(() => _isOnDuty = false);
+        return;
+      }
+    }
+
+    setState(() => _isOnDuty = value);
 
     try {
       final result = await ApiService.setDutyStatus(isOnDuty: value);
 
       if (result == null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to update status'), backgroundColor: Colors.red),
+          const SnackBar(content: Text('Failed to update status'), backgroundColor: AppTheme.errorColor),
         );
-        setState(() => _isAvailable = !value);
+        setState(() => _isOnDuty = !value);
         return;
       }
 
       if (mounted) {
         setState(() {
-          _isAvailable = result?['is_on_duty'] == true;
+          _isOnDuty = result?['is_on_duty'] == true;
           _driverData = result ?? _driverData;
         });
       }
 
-      if (_isAvailable) {
-        await _ensureLocationPermission();
+      if (_isOnDuty) {
         _startLocationTracking();
       } else {
         _stopLocationTracking();
@@ -237,11 +244,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update status: ${e.message}'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Failed to update status: ${e.message}'), backgroundColor: AppTheme.errorColor),
         );
-        setState(() => _isAvailable = !value);
+        setState(() => _isOnDuty = !value);
       }
     }
+  }
+
+  Future<bool> _validateLocationBeforeDuty() async {
+    if (!mounted) return false;
+    
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location services must be enabled to go on duty'),
+            backgroundColor: AppTheme.errorColor,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      return false;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        _showLocationPermissionDeniedDialog();
+      }
+      return false;
+    }
+    
+    if (permission != LocationPermission.whileInUse && 
+        permission != LocationPermission.always) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location permission is required to go on duty'),
+            backgroundColor: AppTheme.errorColor,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return false;
+    }
+
+    return true;
   }
 
   Future<void> _ensureLocationPermission() async {
@@ -252,7 +305,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Please enable location services to go on duty'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.errorColor,
           ),
         );
       }
@@ -274,23 +327,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Location Permission Required',
-            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
         content: Text(
           'On Duty mode requires location access to send your position updates. '
           'Please enable location permission in your device settings.',
-          style: GoogleFonts.plusJakartaSans(color: AppTheme.outline),
+          style: GoogleFonts.inter(color: AppTheme.onSurfaceVariant),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text('Cancel',
-                style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w600, color: AppTheme.outline)),
+                style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w500, color: AppTheme.onSurfaceVariant)),
           ),
           ElevatedButton.icon(
             icon: const Icon(Icons.settings_rounded, size: 18),
             label: Text('Open Settings',
-                style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primaryColor,
               foregroundColor: Colors.white,
@@ -308,7 +361,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _sendLocationUpdate() async {
-    if (!_isAvailable) return;
+    if (!_isOnDuty) return;
 
     final vehicle = _driverData?['assigned_vehicle'] as Map<String, dynamic>?;
     final vehicleId = vehicle?['id'];
@@ -368,7 +421,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     } catch (e) {
       _consecutiveLocationFailures++;
-      // Only surface the error after ~30s of continuous failures (6 × 5s intervals).
       if (mounted && _consecutiveLocationFailures >= 6) {
         setState(() => _lastLocationStatus = 'Location error — retrying in background');
       }
@@ -408,14 +460,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _onItemTapped(int index) {
     HapticFeedback.selectionClick();
-    if (index == 2) {
-      setState(() {
-        _selectedIndex = index;
-        _unreadNotifications = 0;
-      });
-    } else {
-      setState(() => _selectedIndex = index);
-    }
+    setState(() => _selectedIndex = index);
   }
 
   @override
@@ -423,125 +468,71 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final List<Widget> screens = [
       _buildHomeBody(),
       const TripsScreen(),
-      const NotificationsScreen(),
       const ProfileScreen(),
     ];
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-      body: _loading ? _buildLoading() : screens[_selectedIndex],
-      bottomNavigationBar: _buildBottomBar(),
+      body: _loading && _selectedIndex == 0 ? _buildLoading() : screens[_selectedIndex],
+      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
   Widget _buildLoading() {
-    return const Scaffold(
-      backgroundColor: AppTheme.background,
-      body: Center(child: CircularProgressIndicator(color: AppTheme.primaryColor)),
-    );
+    return const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor));
   }
 
-  Widget _buildBottomBar() {
-    const items = [
-      _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
-      _NavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Trips'),
-      _NavItem(icon: Icons.notifications_none_rounded, activeIcon: Icons.notifications_active_rounded, label: 'Alerts'),
-      _NavItem(icon: Icons.sentiment_satisfied_alt_outlined, activeIcon: Icons.sentiment_satisfied_alt_rounded, label: 'Me'),
-    ];
-
+  Widget _buildBottomNav() {
     return Container(
-      height: 78,
       decoration: BoxDecoration(
-        color: AppTheme.surfaceLowest,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        color: AppTheme.surface,
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, -4)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -4),
+          ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          for (int i = 0; i < items.length; i++) _buildNavItem(items[i], i),
-        ],
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(Icons.home_outlined, Icons.home_rounded, 'Home', 0),
+              _buildNavItem(Icons.map_outlined, Icons.map_rounded, 'Trips', 1),
+              _buildNavItem(Icons.person_outline, Icons.person_rounded, 'Profile', 2),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildNavItem(_NavItem item, int index) {
+  Widget _buildNavItem(IconData icon, IconData activeIcon, String label, int index) {
     final isActive = _selectedIndex == index;
-    final showBadge = index == 2 && _unreadNotifications > 0;
     return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        _onItemTapped(index);
-      },
+      onTap: () => _onItemTapped(index),
       behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 64,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOutCubic,
-                  width: isActive ? 40 : 0,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                if (!isActive) const SizedBox(height: 8),
-                AnimatedScale(
-                  scale: isActive ? 1.15 : 1.0,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOutCubic,
-                  child: Icon(
-                    isActive ? item.activeIcon : item.icon,
-                    color: isActive ? AppTheme.primaryColor : AppTheme.outline,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOutCubic,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 10,
-                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                    color: isActive ? AppTheme.primaryColor : AppTheme.outline,
-                    letterSpacing: 0.3,
-                  ),
-                  child: Text(item.label),
-                ),
-              ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isActive ? activeIcon : icon,
+            color: isActive ? AppTheme.primaryColor : AppTheme.onSurfaceVariant,
+            size: 24,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+              color: isActive ? AppTheme.primaryColor : AppTheme.onSurfaceVariant,
             ),
-            if (showBadge)
-              Positioned(
-                right: 4,
-                top: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    '$_unreadNotifications',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -551,465 +542,389 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: AnimatedListItem(
-            index: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  duration: const Duration(milliseconds: 600),
-                  curve: Curves.elasticOut,
-                  builder: (context, value, child) {
-                    return Transform.scale(
-                      scale: value,
-                      child: child,
-                    );
-                  },
-                  child: const Icon(Icons.error_outline_rounded, size: 48, color: AppTheme.errorColor),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _errorMsg!,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    HapticFeedback.lightImpact();
-                    _loadProfile();
-                  },
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: Text('Retry', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded, size: 48, color: AppTheme.errorColor),
+              const SizedBox(height: 16),
+              Text(
+                _errorMsg!,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(color: AppTheme.errorColor),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  ApiService.resetBaseUrl();
+                  _loadProfile();
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text('Retry', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  _performLogout();
+                },
+                icon: const Icon(Icons.logout_rounded),
+                label: Text('Log Out', style: GoogleFonts.inter(fontWeight: FontWeight.w500, color: AppTheme.onSurfaceVariant)),
+              ),
+            ],
           ),
         ),
       );
     }
 
-    final name = (_driverData?['name'] ?? 'Driver').toString();
-    final firstName = name.split(' ').first;
     final vehicle = _driverData?['assigned_vehicle'] as Map<String, dynamic>?;
-    final vehicleName = vehicle?['name'] ?? 'Not assigned';
-    final vehicleType = vehicle?['vehicle_type'] ?? '—';
-    final plate = vehicle?['number_plate'] ?? '—';
+    final vehicleName = vehicle?['name']?.toString() ?? 'Not assigned';
+    final vehicleType = vehicle?['vehicle_type']?.toString() ?? '—';
+    final plate = vehicle?['number_plate']?.toString() ?? '—';
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        children: [
-          _buildTopHeader(firstName),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AnimatedListItem(
-                  index: 0,
-                  delay: const Duration(milliseconds: 80),
-                  child: _buildVehicleCard(vehicleName, vehicleType, plate),
-                ),
-                const SizedBox(height: 24),
-                AnimatedListItem(
-                  index: 1,
-                  delay: const Duration(milliseconds: 80),
-                  child: _buildDutyToggle(),
-                ),
-                if (_isAvailable && _lastLocationStatus != null) ...[
-                  const SizedBox(height: 12),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      _lastLocationStatus!,
-                      style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppTheme.outline),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                AnimatedListItem(
-                  index: 2,
-                  delay: const Duration(milliseconds: 80),
-                  child: _buildQuickActionsSection(),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopHeader(String firstName) {
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(36)),
-      child: Container(
-        width: double.infinity,
-        color: AppTheme.primaryColor,
-        padding: const EdgeInsets.fromLTRB(20, 56, 20, 48),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.3), shape: BoxShape.circle),
-              child: const Icon(Icons.emoji_people_rounded, size: 28, color: Colors.white),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_getGreeting(firstName), style: GoogleFonts.plusJakartaSans(fontSize: 19, fontWeight: FontWeight.w600, color: Colors.white)),
-                  const SizedBox(height: 3),
-                  if (_driverData?['organization_name'] != null || _driverData?['organization'] != null)
-                    Text(
-                      (_driverData?['organization_name'] ?? _driverData?['organization']).toString(),
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14, 
-                        fontWeight: FontWeight.w500, 
-                        color: Colors.white.withValues(alpha: 0.9)
-                      ),
-                    ),
-                  if (_driverData?['organization_name'] != null || _driverData?['organization'] != null)
-                    const SizedBox(height: 3),
-                  Text(_getSubGreeting(), style: GoogleFonts.plusJakartaSans(fontSize: 12, color: Colors.white.withValues(alpha: 0.75))),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _getGreeting(String name) {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good Morning, $name! ☀️';
-    if (hour < 17) return 'Good Afternoon, $name! 👋';
-    return 'Good Evening, $name! 🌙';
-  }
-
-  String _getSubGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return "Let's make today a great one on the road.";
-    if (hour < 17) return 'Hope your day is going smoothly!';
-    return 'Almost done for today — drive safe!';
-  }
-
-  Widget _buildVehicleCard(String name, String type, String plate) {
-    return Transform.translate(
-      offset: const Offset(0, -20),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceLowest,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))],
-        ),
-        padding: const EdgeInsets.all(18),
+    return SafeArea(
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                  child: const Icon(Icons.directions_car_rounded, size: 16, color: AppTheme.primaryColor),
-                ),
-                const SizedBox(width: 10),
-                Text('Your Vehicle', style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
-              ],
-            ),
-            const SizedBox(height: 12),
+            // Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.onSurface)),
-                      const SizedBox(height: 4),
-                      Text('$type • $plate', style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppTheme.outline)),
-                    ],
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.dashboard_outlined, color: AppTheme.primaryColor, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Dashboard',
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.onSurface,
+                      ),
+                    ),
+                  ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
-                    color: _isAvailable ? AppTheme.secondaryColor.withValues(alpha: 0.1) : AppTheme.outline.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
+                    color: AppTheme.primaryColor,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(
-                    _isAvailable ? 'Available' : 'Busy',
-                    style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w600, color: _isAvailable ? AppTheme.secondaryColor : AppTheme.outline),
-                  ),
+                  child: const Icon(Icons.person, color: Colors.white, size: 20),
                 ),
               ],
             ),
+            const SizedBox(height: 24),
+
+            // Current Status Toggle
+            _buildStatusToggle(),
+            const SizedBox(height: 16),
+
+            // Assigned Vehicle Card
+            _buildVehicleCard(vehicleName, vehicleType, plate),
+            const SizedBox(height: 24),
+
+            // Quick Actions
+            _buildQuickActions(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDutyToggle() {
+  Widget _buildStatusToggle() {
     return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceLowest,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.outlineVariant),
       ),
-      padding: const EdgeInsets.all(18),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: (_isAvailable ? AppTheme.secondaryColor : AppTheme.outline)
-                      .withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.power_settings_new_rounded,
-                  color: _isAvailable ? AppTheme.secondaryColor : AppTheme.outline,
-                  size: 20,
+              Text(
+                'CURRENT STATUS',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.onSurfaceVariant,
+                  letterSpacing: 0.5,
                 ),
               ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'On Duty',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.onSurface,
-                    ),
-                  ),
-                  AnimatedOpacity(
-                    opacity: 1.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: Text(
-                      _isAvailable ? 'Available for trips' : 'Currently offline',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        color: AppTheme.outline,
-                      ),
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 4),
+              Text(
+                _isOnDuty ? 'On Duty' : 'Off Duty',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.onSurface,
+                ),
               ),
             ],
           ),
           Switch(
-            value: _isAvailable,
+            value: _isOnDuty,
             onChanged: (value) {
               HapticFeedback.mediumImpact();
-              _toggleAvailability(value);
+              _toggleDutyStatus(value);
             },
             activeColor: Colors.white,
-            activeTrackColor: AppTheme.secondaryColor,
+            activeTrackColor: AppTheme.successColor,
+            inactiveThumbColor: Colors.white,
+            inactiveTrackColor: AppTheme.outline,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildQuickActionsSection() {
-    final actions = [
-      _ActionData('SOS\nHelp', Icons.emergency_share_rounded, AppTheme.errorColor, _handleSOS),
-      _ActionData('Fuel\nEntry', Icons.local_gas_station_rounded, AppTheme.primaryColor, () {
-        HapticFeedback.lightImpact();
-        Navigator.of(context).push(
-          SmoothPageRoute(page: const FuelEntryScreen()),
-        );
-      }),
-      _ActionData('Maintenance\nRequest', Icons.build_circle_rounded, AppTheme.tertiaryColor, () {
-        HapticFeedback.lightImpact();
-        Navigator.of(context).push(
-          SmoothPageRoute(page: const MaintenanceScreen()),
-        );
-      }),
-      _ActionData('Report\nIssue', Icons.report_rounded, const Color(0xFF7C3AED), () {
-        HapticFeedback.lightImpact();
-        Navigator.of(context).push(
-          SmoothPageRoute(page: const ReportIssueScreen()),
-        );
-      }),
-      _ActionData('Inspect\nVehicle', Icons.fact_check_rounded, const Color(0xFF10B981), () => _handleCameraAction('Inspect Vehicle', 'inspect')),
-    ];
+  Widget _buildVehicleCard(String name, String type, String plate) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'ASSIGNED VEHICLE',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.onSurfaceVariant,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _isOnDuty ? AppTheme.successLight : AppTheme.surfaceVariant,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _isOnDuty ? 'On Duty' : 'Off Duty',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _isOnDuty ? AppTheme.successColor : AppTheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.local_shipping_outlined,
+                  color: AppTheme.primaryColor,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      plate,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: AppTheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
+  Widget _buildQuickActions() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(
+          'Quick Actions',
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 16),
         Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
+            Expanded(
+              child: _buildActionButton(
+                'Report',
+                Icons.report_problem_outlined,
+                AppTheme.errorColor,
+                () {
+                  HapticFeedback.lightImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ReportIssueScreen()),
+                  );
+                },
               ),
-              child: const Icon(Icons.flash_on_rounded, size: 16, color: AppTheme.primaryColor),
             ),
-            const SizedBox(width: 10),
-            Text(
-              'Quick Actions',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.onSurface,
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildActionButton(
+                'Fuel',
+                Icons.local_gas_station_outlined,
+                AppTheme.primaryColor,
+                () {
+                  HapticFeedback.lightImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FuelEntryScreen()),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildActionButton(
+                'History',
+                Icons.history_outlined,
+                AppTheme.secondaryColor,
+                () {
+                  HapticFeedback.lightImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+                  );
+                },
               ),
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        GridView.builder(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 0.7,
+        const SizedBox(height: 24),
+        
+        // No Active Trips Section
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceVariant.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(16),
           ),
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: actions.length,
-          itemBuilder: (context, index) {
-            final action = actions[index];
-            return AnimatedListItem(
-              index: index,
-              delay: const Duration(milliseconds: 60),
-              child: ActionButton(
-                label: action.label,
-                icon: action.icon,
-                color: action.color,
-                onTap: action.onTap,
+          child: Column(
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  Icons.map_outlined,
+                  color: AppTheme.onSurfaceVariant,
+                  size: 32,
+                ),
               ),
-            );
-          },
+              const SizedBox(height: 16),
+              Text(
+                'No Active Trips',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Switch to On Duty to start receiving emergency dispatch requests.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppTheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  /// SOS — opens the emergency request screen.
-  void _handleSOS() {
-    HapticFeedback.heavyImpact();
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const EmergencyScreen()),
-    );
-  }
-
-  /// Opens camera then shows a note dialog for Fuel Entry / Report / Inspect.
-  Future<void> _handleCameraAction(String title, String type) async {
-    final status = await Permission.camera.request();
-    if (status.isDenied || status.isPermanentlyDenied) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Camera permission is required for this action.'), backgroundColor: Colors.red),
-      );
-      if (status.isPermanentlyDenied) {
-         openAppSettings();
-      }
-      return;
-    }
-
-    final picker = ImagePicker();
-    XFile? image;
-    try {
-      image = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Camera error: $e'), backgroundColor: Colors.red),
-        );
-      }
-      return;
-    }
-
-    if (image == null || !mounted) return; // User cancelled
-
-    final notesController = TextEditingController();
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(title, style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.outlineVariant),
+        ),
+        child: Column(
           children: [
-            Text('Photo captured ✓', style: GoogleFonts.plusJakartaSans(color: Colors.green, fontWeight: FontWeight.w600)),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: color,
+                size: 24,
+              ),
+            ),
             const SizedBox(height: 12),
-            TextField(
-              controller: notesController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                labelText: 'Add notes (optional)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.onSurface,
               ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppTheme.outline)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('$title logged successfully'),
-                    backgroundColor: AppTheme.primaryColor,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: Text('Save Log', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
-          ),
-        ],
       ),
     );
   }
-}
-
-class _NavItem {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-  const _NavItem({required this.icon, required this.activeIcon, required this.label});
-}
-
-class _ActionData {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  const _ActionData(this.label, this.icon, this.color, this.onTap);
 }

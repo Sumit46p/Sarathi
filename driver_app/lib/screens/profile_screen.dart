@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
-import '../utils/animations.dart';
 import 'login_screen.dart';
 import 'trip_history_screen.dart';
 
@@ -56,7 +55,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      body: _buildBody(),
+      body: SafeArea(
+        child: _buildBody(),
+      ),
     );
   }
 
@@ -77,14 +78,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Text(
                 _errorMsg ?? 'Profile not found.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.plusJakartaSans(color: AppTheme.errorColor),
+                style: GoogleFonts.inter(color: AppTheme.errorColor),
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: _loadProfile,
                 icon: const Icon(Icons.refresh_rounded),
-                label: Text('Retry', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryColor, foregroundColor: Colors.white),
+                label: Text('Retry', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
               ),
             ],
           ),
@@ -99,269 +99,210 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isOnDuty = _driverData!['is_on_duty'] == true;
     final vehicle = _driverData!['assigned_vehicle'] as Map<String, dynamic>?;
 
-    final infoFields = <_InfoField>[
-      _InfoField('Full Name', name, Icons.badge_rounded),
-      _InfoField('Phone Number', phone.isEmpty ? '—' : phone, Icons.phone_rounded),
-      _InfoField('License Number', license.isEmpty ? '—' : license, Icons.card_membership_rounded),
-      _InfoField('Status', isActive ? 'Active' : 'Inactive', isActive ? Icons.check_circle_rounded : Icons.cancel_rounded),
-      _InfoField('Duty Status', isOnDuty ? 'On Duty' : 'Off Duty', isOnDuty ? Icons.work_rounded : Icons.work_off_rounded),
-      if (vehicle != null) ...[
-        _InfoField('Vehicle', vehicle['name'] ?? '—', Icons.directions_car_rounded),
-        _InfoField('Vehicle Type', (vehicle['vehicle_type'] ?? '—').toString(), Icons.local_shipping_rounded),
-        _InfoField('Number Plate', (vehicle['number_plate'] ?? '—').toString(), Icons.pin_rounded),
-        _InfoField('Availability', vehicle['is_available'] == true ? 'Available' : 'Unavailable', Icons.wb_sunny_rounded),
-      ],
-    ];
-
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(20),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(),
-          _buildHeroSection(name),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
-            child: Column(
-              children: [
-                _buildInfoSection(infoFields),
-                const SizedBox(height: 20),
-                _historyTile(),
-                const SizedBox(height: 12),
-                _logoutTile(),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: AppTheme.primaryColor,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 56, 20, 56),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
+          // Header
           Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), shape: BoxShape.circle),
-                child: const Icon(Icons.person_rounded, color: Colors.white, size: 22),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.person_outline, color: AppTheme.primaryColor, size: 20),
               ),
-              const SizedBox(width: 10),
-              Text('Sarathi', style: GoogleFonts.plusJakartaSans(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
+              const SizedBox(width: 12),
+              Text(
+                'Profile',
+                style: GoogleFonts.inter(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.onSurface,
+                ),
+              ),
             ],
+          ),
+          const SizedBox(height: 24),
+
+          // Profile Card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.outlineVariant),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    Icons.person,
+                    color: AppTheme.primaryColor,
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  name,
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isActive ? AppTheme.successLight : AppTheme.surfaceVariant,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    isActive ? 'Active Driver' : 'Inactive',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isActive ? AppTheme.successColor : AppTheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Information Section
+          Text(
+            'Information',
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.outlineVariant),
+            ),
+            child: Column(
+              children: [
+                _buildInfoRow(Icons.phone_outlined, 'Phone', phone.isEmpty ? '—' : phone),
+                const Divider(height: 24),
+                _buildInfoRow(Icons.badge_outlined, 'License', license.isEmpty ? '—' : license),
+                const Divider(height: 24),
+                _buildInfoRow(
+                  Icons.work_outline,
+                  'Duty Status',
+                  isOnDuty ? 'On Duty' : 'Off Duty',
+                  valueColor: isOnDuty ? AppTheme.successColor : AppTheme.onSurfaceVariant,
+                ),
+                if (vehicle != null) ...[
+                  const Divider(height: 24),
+                  _buildInfoRow(
+                    Icons.local_shipping_outlined,
+                    'Vehicle',
+                    vehicle['name'] ?? '—',
+                  ),
+                  const Divider(height: 24),
+                  _buildInfoRow(
+                    Icons.pin_outlined,
+                    'Plate',
+                    (vehicle['number_plate'] ?? '—').toString(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Actions Section
+          Text(
+            'Actions',
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          
+          // Trip History
+          _buildActionTile(
+            Icons.history_outlined,
+            'Trip History',
+            'View completed and rejected trips',
+            () {
+              HapticFeedback.lightImpact();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          
+          // Logout
+          _buildActionTile(
+            Icons.logout_outlined,
+            'Logout',
+            'Sign out of your account',
+            () {
+              HapticFeedback.mediumImpact();
+              _showLogoutDialog();
+            },
+            isDestructive: true,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHeroSection(String name) {
-    return Transform.translate(
-      offset: const Offset(0, -40),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: [
-            AnimatedListItem(
-              index: 0,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.8, end: 1.0),
-                duration: const Duration(milliseconds: 600),
-                curve: Curves.elasticOut,
-                builder: (context, value, child) {
-                  return Transform.scale(
-                    scale: value,
-                    child: child,
-                  );
-                },
-                child: Container(
-                  width: 110,
-                  height: 110,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 4),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                        blurRadius: 25,
-                        offset: const Offset(0, 8),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 15,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: ClipOval(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            AppTheme.surfaceContainer,
-                            AppTheme.surfaceContainerHigh,
-                          ],
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.person_rounded,
-                        size: 52,
-                        color: AppTheme.primaryColor,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            AnimatedListItem(
-              index: 1,
-              delay: const Duration(milliseconds: 100),
-              child: Text(
-                name,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.onSurface,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            AnimatedListItem(
-              index: 2,
-              delay: const Duration(milliseconds: 100),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.badge_rounded, size: 14, color: AppTheme.primaryColor),
-                    const SizedBox(width: 6),
-                    Text(
-                      'ID: ${_driverData?['id'] ?? '—'}',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.primaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoSection(List<_InfoField> fields) {
-    return AnimatedListItem(
-      index: 3,
-      delay: const Duration(milliseconds: 80),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceLowest,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.assignment_ind_rounded,
-                    size: 18,
-                    color: AppTheme.primaryColor,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Your Information',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.onSurface,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            for (int i = 0; i < fields.length; i++) ...[
-              _infoRow(fields[i]),
-              if (i != fields.length - 1)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Divider(
-                    color: AppTheme.surfaceVariant.withValues(alpha: 0.3),
-                    height: 1,
-                  ),
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _infoRow(_InfoField field) {
-    final hasValue = field.value != null && field.value.toString().trim().isNotEmpty;
+  Widget _buildInfoRow(IconData icon, String label, String value, {Color? valueColor}) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(color: AppTheme.outline.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(9)),
-          child: Icon(field.icon, size: 16, color: AppTheme.outline),
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceVariant,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: AppTheme.onSurfaceVariant, size: 20),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(field.label, style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppTheme.outline)),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppTheme.onSurfaceVariant,
+                ),
+              ),
               const SizedBox(height: 2),
               Text(
-                hasValue ? field.value.toString() : '—',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: hasValue ? AppTheme.onSurface : AppTheme.outline,
+                value,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: valueColor ?? AppTheme.onSurface,
                 ),
               ),
             ],
@@ -371,150 +312,95 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _historyTile() {
-    return AnimatedListItem(
-      index: 4,
-      delay: const Duration(milliseconds: 80),
-      child: BounceScaleButton(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
-          );
-        },
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceLowest,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: AppTheme.outlineVariant,
-            ),
+  Widget _buildActionTile(IconData icon, String title, String subtitle, VoidCallback onTap, {bool isDestructive = false}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDestructive ? AppTheme.errorLight : AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDestructive ? AppTheme.errorColor.withOpacity(0.2) : AppTheme.outlineVariant,
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppTheme.secondaryColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.history_rounded,
-                  color: AppTheme.secondaryColor,
-                  size: 22,
-                ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isDestructive ? AppTheme.errorColor.withOpacity(0.1) : AppTheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(10),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Trip History',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'View completed and rejected trips',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        color: AppTheme.outline,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: AppTheme.outline.withValues(alpha: 0.5),
+              child: Icon(
+                icon,
+                color: isDestructive ? AppTheme.errorColor : AppTheme.onSurfaceVariant,
                 size: 20,
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: isDestructive ? AppTheme.errorColor : AppTheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: isDestructive ? AppTheme.errorColor.withOpacity(0.7) : AppTheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: isDestructive ? AppTheme.errorColor.withOpacity(0.5) : AppTheme.onSurfaceVariant,
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _logoutTile() {
-    return AnimatedListItem(
-      index: 4,
-      delay: const Duration(milliseconds: 80),
-      child: BounceScaleButton(
-        onTap: () {
-          HapticFeedback.mediumImpact();
-          _signOut();
-        },
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: AppTheme.errorColor.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: AppTheme.errorColor.withValues(alpha: 0.2),
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppTheme.errorColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.logout_rounded,
-                  color: AppTheme.errorColor,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Logout',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.errorColor,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Securely exit your account',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        color: AppTheme.errorColor.withValues(alpha: 0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.logout_rounded,
-                color: AppTheme.errorColor.withValues(alpha: 0.5),
-                size: 20,
-              ),
-            ],
-          ),
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Logout', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+        content: Text(
+          'Are you sure you want to sign out?',
+          style: GoogleFonts.inter(color: AppTheme.onSurfaceVariant),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.onSurfaceVariant)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _signOut();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.errorColor,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Logout', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          ),
+        ],
       ),
     );
   }
-}
-
-class _InfoField {
-  final String label;
-  final dynamic value;
-  final IconData icon;
-  const _InfoField(this.label, this.value, this.icon);
 }

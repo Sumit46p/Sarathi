@@ -58,6 +58,13 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] **Driver Report Issue feature**: backend `IssueReport` model + `POST /api/drivers/me/report-issue/` (multipart, optional photo); Flutter `ReportIssueScreen` with description, camera/gallery upload, submit confirmation
 - [x] **Flutter UI enhancements**: custom animations (`SmoothPageRoute`, `AnimatedListItem`), splash screen animation, haptic feedback, staggered list animations, improved bottom nav, polished cards/buttons
 - [x] **Admin-facing issue report view**: backend `IssueReport` now uses `status` workflow (`open` → `acknowledged` → `resolved`); admin endpoints `GET /api/issues/` (owner-scoped list) and `PATCH /api/issues/<id>/` (status update); frontend `IssuesTab` with photo thumbnails, status badges, Acknowledge/Resolve actions, and open-count badge on sidebar nav; fleet table shows warning indicator on vehicles with open driver issues
+- [x] **Maintenance completion tracking**: `MaintenanceRecord` model now includes `proof_image`, `completed_by` (Driver FK), and `completion_notes` fields for driver-submitted completion evidence
+- [x] **FuelLog model**: New model for tracking fuel expenses with vehicle, driver, amount, odometer reading, receipt image, and automatic timestamp
+- [x] **FuelEntry model**: Alternative fuel tracking with detailed metrics (liters, cost_per_liter, total_cost, odometer_km, notes)
+- [x] **Driver maintenance endpoints**: `GET /api/drivers/me/maintenance/` (list assigned vehicle maintenance) and `POST /api/drivers/me/maintenance/<id>/complete/` (mark complete with proof image and notes)
+- [x] **Driver fuel log endpoints**: `POST /api/drivers/me/fuel-logs/` (submit fuel log with receipt) and `GET /api/fuel-logs/` (admin view all fuel logs)
+- [x] **Automatic maintenance recurrence**: `_auto_create_next_record()` helper automatically creates next recurring maintenance record when one is completed (supports both time-based and km-based recurrence)
+- [x] **MaintenanceRecordDetailView enhancement**: `perform_update` now calls recurrence helper when status changes to 'completed'
 
 ### Robustness & Polish Pass (latest cycle)
 - [x] **Backend**: Case-insensitive organization name matching across login, password reset, and identity verification flows
@@ -73,8 +80,44 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] **React Dashboard**: Issue photos displayed as thumbnails in Issues tab with full-size preview modal
 - [x] All error handling maintains API contracts — no breaking changes to endpoints or responses
 
+### Fuel Management & Expense Tracking (current cycle)
+- [x] **NOC fuel price integration**: Automatic scraping of petrol/diesel prices from Nepal Oil Corporation (updated daily)
+- [x] **Fuel price API**: `GET /api/fuel-prices/` returns current fuel prices with 24-hour caching
+- [x] **Dynamic fuel cost updating**: Flutter app automatically updates cost field when switching between petrol/diesel
+- [x] **Fuel price caching service**: Local cache with 24-hour expiration for offline support
+- [x] **FuelTab redesign**: Rebuilt with dashboard design system (metrics-grid, data-table, status-badge, empty-state, modal) — consistent with MaintenanceTab and other tabs
+- [x] **Fuel summary metrics**: Total entries, total cost, this-month cost, distinct vehicles fuelled
+- [x] **Vehicle filter + search**: Filter fuel records by vehicle, search by vehicle/driver name
+- [x] **Receipt preview modal**: Click receipt thumbnail to view full-size image in modal with "Open original" link
+- [x] **Fuel log API**: `GET /api/fuel-logs/` (admin list), `POST /api/drivers/me/fuel-logs/` (driver submit with receipt)
+- [x] **ExpenseTab**: New dashboard tab showing expense statistics (fuel + maintenance costs, per-vehicle breakdown)
+- [x] **Expense stats API**: `GET /api/expense-stats/` returns aggregated expense data with daily/monthly breakdown
+- [x] **Vehicle expense detail API**: `GET /api/vehicles/<id>/expenses/` returns per-vehicle expense breakdown
+- [x] **Flutter fuel entry fixes**: Proper type handling for price parsing (String/num), improved error states, dynamic form updates
+- [x] **Flutter app fixes**: Updated `main.dart`, `dashboard_screen.dart`, `fuel_entry_screen.dart`, `splash_screen.dart`, `api_service.dart` for fuel log integration
+- [x] **FuelLog model enhancements**: Added `cost_per_liter` field for accurate price tracking
+- [x] **MaintenanceRecord cost tracking**: Added `cost` field to track maintenance expenses
+- [x] **Automatic maintenance recurrence**: `_auto_create_next_record()` helper automatically creates next recurring maintenance record when one is completed
+- [x] **Signal-based notifications**: Django signals create notifications when maintenance is due
+
+### Flutter Driver App UI Redesign (current cycle)
+- [x] **Complete UI overhaul**: Redesigned all screens to match modern design reference with teal/green primary color (#0D7377)
+- [x] **Theme system**: Updated `theme.dart` with new color palette, Inter font family, consistent border radius (16px), and Material 3 components
+- [x] **Dashboard redesign**: Clean header with status toggle, vehicle assignment card, 3 quick action buttons (Report, Fuel, History), simplified layout
+- [x] **Trips screen redesign**: Map view with bordered container, trip details with status badge, vehicle info card, action buttons for status transitions
+- [x] **Profile screen redesign**: Large avatar card with status badge, information section (phone, license, duty status, vehicle), actions section (Trip History, Logout)
+- [x] **Report Issue redesign**: Clean form layout with description textarea, camera/gallery buttons, photo preview with remove option
+- [x] **Fuel Entry redesign**: List view with entry cards, bottom sheet for adding entries, fuel type chips, auto-filled NOC prices, receipt photo requirement
+- [x] **Bottom navigation**: Simplified from 4 tabs to 3 tabs (Home, Trips, Profile) matching the design reference
+- [x] **Visual consistency**: All screens use consistent card styling, spacing, typography, and color scheme
+
+### Organization Scoping & Merge Integration (current cycle)
+- [x] **Merge conflict resolution**: Integrated org-scoping improvements from remote branch with local FuelLog implementations
+- [x] **Backend org-scoping**: All vehicle/driver/maintenance queries now use `get_org_user_ids()` helper for multi-admin org pools
+- [x] **FuelLog & FuelEntry preservation**: Kept driver fuel tracking with org-scoped admin views
+- [x] **Dashboard UI fix**: Restored "Add Vehicle" button to dashboard header (was missing after UI restructure)
+
 ### Not Yet Started / Partial
-- [ ] Expense tracking (fuel, maintenance, operational costs)
 - [ ] Operational analytics/reporting dashboard (Chart.js/Recharts)
 - [ ] Real-time WebSocket notifications (Django Channels) — currently using polling
 - [ ] Redis caching layer

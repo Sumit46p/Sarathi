@@ -33,6 +33,7 @@ dependencies:
 
   cupertino_icons: ^1.0.8
   google_fonts: ^8.1.0
+  intl: ^0.20.2
   image_picker: ^1.2.3
   geolocator: ^14.0.3
   flutter_map: ^8.3.1

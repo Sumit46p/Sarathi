@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'theme.dart';
 import 'screens/splash_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -41,7 +40,6 @@ class _AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<_AuthGate> {
-  final _storage = const FlutterSecureStorage();
   bool _loading = true;
   bool _hasToken = false;
   StreamSubscription<void>? _forceLogoutSub;
@@ -70,10 +68,17 @@ class _AuthGateState extends State<_AuthGate> {
   }
 
   Future<void> _checkAuth() async {
-    final token = await _storage.read(key: 'access_token');
+    // Validate the stored token against the backend so a stale/expired
+    // session never boots the user into a broken dashboard.
+    var valid = false;
+    try {
+      valid = await ApiService.validateSession();
+    } catch (_) {
+      valid = false;
+    }
     if (mounted) {
       setState(() {
-        _hasToken = token != null && token.isNotEmpty;
+        _hasToken = valid;
         _loading = false;
       });
     }
