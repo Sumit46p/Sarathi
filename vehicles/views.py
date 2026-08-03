@@ -5,7 +5,8 @@ from rest_framework.response import Response
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
 from django.contrib.auth.models import User
-from django.db.models import Q
+from django.db.models import Q, Count, Sum, Avg, F, ExpressionWrapper, DurationField
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 from .osrm import get_route_distance
 import threading
@@ -1652,5 +1653,229 @@ def driver_maintenance_request_delete(request, pk):
     except MaintenanceRecord.DoesNotExist:
         return Response({'error': 'Record not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    record.delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
+from datetime import timedelta
+
+from django.db.models import Count, Q, Sum, Avg, F, Value, CharField
+from django.db.models.functions import TruncDate, Coalesce
+
+# Add at top with other imports - already done above
+
+# ---------------------------------------------------------------------------
+# Analytics Dashboard API
+# ---------------------------------------------------------------------------
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def analytics_dashboard(request):
+    """
+    GET /api/analytics/dashboard/
+    Returns aggregated data for admin dashboard charts and KPIs.
+    Org-scoped: returns data for the current user's organization.
+    """
+    user = request.user
+    org_ids = get_org_user_ids(user)
+    
+    # Base querysets scoped to organization
+    vehicles = Vehicle.objects.filter(owner__in=org_ids)
+    drivers = Driver.objects.filter(owner__in=org_ids)
+    dispatches = DispatchRequest.objects.filter(assigned_vehicle__owner__in=org_ids)
+    emergencies = EmergencyRequest.objects.filter(user__in=org_ids)
+    issues = IssueReport.objects.filter(driver__owner__in=org_ids)
+    fuel_entries = FuelEntry.objects.filter(driver__owner__in=org_ids)
+    
+    # ── 1. Fleet Status Pie Data ──────────────────────────────────────────
+    total_vehicles = vehicles.count()
+    available_count = vehicles.filter(is_available=True, admin_blocked=False).count()
+    unavailable_count = vehicles.filter(is_available=False).count()
+    blocked_count = vehicles.filter(admin_blocked=True).count()
+    
+    fleet_status = [
+        { 'name': 'Available', 'value': available_count, 'color': '#10b981' },
+        { 'name': 'Unavailable', 'value': unavailable_count, 'color': '#f59e0b' },
+        { 'name': 'Blocked', 'value': blocked_count, 'color': '#ef4444' },
+    ]
+    
+    # ── 2. Dispatch Volume by Day (last 7 days) ──────────────────────────
+    today = timezone.now().date()
+    seven_days_ago = today - timedelta(days=6)
+    
+    daily_dispatches = (
+        dispatches
+        .filter(created_at__date__gte=seven_days_ago)
+        .annotate(date=TruncDate('created_at'))
+        .values('date')
+        .annotate(count=Count('id'))
+        .order_by('date')
+    )
+    
+    # Fill in missing days with 0
+    dispatch_by_day = {}
+    for i in range(7):
+        d = seven_days_ago + timedelta(days=i)
+        dispatch_by_day[d.strftime('%a %d')] = 0
+    
+    for d in daily_dispatches:
+        key = d['date'].strftime('%a %d')
+        dispatch_by_day[key] = d['count']
+    
+    dispatch_volume = [
+        { 'day': k, 'count': v } for k, v in dispatch_by_day.items()
+    ]
+    
+    # ── 3. Emergency Trends (last 7 days) ────────────────────────────────
+    daily_emergencies = (
+        emergencies
+        .filter(created_at__date__gte=seven_days_ago)
+        .annotate(date=TruncDate('created_at'))
+        .values('date')
+        .annotate(count=Count('id'))
+        .order_by('date')
+    )
+    
+    emergency_by_day = {}
+    for i in range(7):
+        d = seven_days_ago + timedelta(days=i)
+        emergency_by_day[d.strftime('%a %d')] = 0
+    
+    for e in daily_emergencies:
+        key = e['date'].strftime('%a %d')
+        emergency_by_day[key] = e['count']
+    
+    emergency_trends = [
+        { 'day': k, 'count': v } for k, v in emergency_by_day.items()
+    ]
+    
+    # ── 4. Vehicle Type Distribution ─────────────────────────────────────
+    vehicle_types = (
+        vehicles
+        .values('vehicle_type')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    
+    type_colors = {
+        'ambulance': '#dc2626',
+        'logistics': '#2563eb',
+        'municipal': '#059669',
+    }
+    
+    vehicle_type_dist = [
+        {
+            'name': v['vehicle_type'].title(),
+            'value': v['count'],
+            'color': type_colors.get(v['vehicle_type'], '#6b7280'),
+        }
+        for v in vehicle_types
+    ]
+    
+    # ── 5. Top Drivers by Completed Dispatches ───────────────────────────
+    top_drivers = (
+        drivers
+        .annotate(
+            completed_dispatches=Count(
+                'assigned_vehicles__dispatch_requests',
+                filter=Q(assigned_vehicles__dispatch_requests__status='completed')
+            )
+        )
+        .filter(completed_dispatches__gt=0)
+        .order_by('-completed_dispatches')[:5]
+    )
+    
+    top_drivers_data = [
+        {
+            'name': d.name,
+            'completed': d.completed_dispatches,
+        }
+        for d in top_drivers
+    ]
+    
+    # ── 6. Issue Status Breakdown ────────────────────────────────────────
+    issue_breakdown = (
+        issues
+        .values('status')
+        .annotate(count=Count('id'))
+        .order_by('status')
+    )
+    
+    issue_colors = {
+        'open': '#ef4444',
+        'acknowledged': '#f59e0b',
+        'resolved': '#10b981',
+    }
+    
+    issue_data = [
+        {
+            'name': i['status'].title(),
+            'value': i['count'],
+            'color': issue_colors.get(i['status'], '#6b7280'),
+        }
+        for i in issue_breakdown
+    ]
+    
+    # ── 7. Fuel Cost Trends (last 7 days) ────────────────────────────────
+    daily_fuel_cost = (
+        fuel_entries
+        .filter(fueled_at__date__gte=seven_days_ago)
+        .annotate(date=TruncDate('fueled_at'))
+        .values('date')
+        .annotate(
+            total_cost=Sum('total_cost'),
+            total_liters=Sum('liters'),
+        )
+        .order_by('date')
+    )
+    
+    fuel_by_day = {}
+    for i in range(7):
+        d = seven_days_ago + timedelta(days=i)
+        fuel_by_day[d.strftime('%a %d')] = { 'cost': 0, 'liters': 0 }
+    
+    for f in daily_fuel_cost:
+        key = f['date'].strftime('%a %d')
+        fuel_by_day[key] = {
+            'cost': float(f['total_cost'] or 0),
+            'liters': float(f['total_liters'] or 0),
+        }
+    
+    fuel_trends = [
+        { 'day': k, 'cost': v['cost'], 'liters': v['liters'] }
+        for k, v in fuel_by_day.items()
+    ]
+    
+    # ── 8. KPI Summary Cards ─────────────────────────────────────────────
+    avg_response_time = None
+    response_times = dispatches.filter(
+        assigned_at__isnull=False,
+        arrived_at__isnull=False
+    ).annotate(
+        rt=ExpressionWrapper(
+            F('arrived_at') - F('assigned_at'),
+            output_field=DurationField()
+        )
+    ).values_list('rt', flat=True)
+    
+    if response_times:
+        avg_seconds = sum(rt.total_seconds() for rt in response_times) / len(response_times)
+        avg_response_time = round(avg_seconds / 60, 1)  # in minutes
+    
+    return Response({
+        'fleet_status': fleet_status,
+        'dispatch_volume': dispatch_volume,
+        'emergency_trends': emergency_trends,
+        'vehicle_type_dist': vehicle_type_dist,
+        'top_drivers': top_drivers_data,
+        'issue_breakdown': issue_data,
+        'fuel_trends': fuel_trends,
+        'kpi': {
+            'total_vehicles': total_vehicles,
+            'available': available_count,
+            'total_drivers': drivers.count(),
+            'active_drivers': drivers.filter(is_on_duty=True).count(),
+            'total_dispatches': dispatches.count(),
+            'completed_dispatches': dispatches.filter(status='completed').count(),
+            'pending_emergencies': emergencies.filter(status='pending').count(),
+            'open_issues': issues.filter(status='open').count(),
+            'avg_response_time_min': avg_response_time,
+            'total_fuel_cost': float(fuel_entries.aggregate(total=Sum('total_cost'))['total'] or 0),
+        }
+    })
