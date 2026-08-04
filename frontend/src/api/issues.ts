@@ -12,7 +12,7 @@ export interface IssueReport {
   created_at: string;
 }
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = '';
 
 export function getIssueImageUrl(imagePath: string | null): string | null {
   if (!imagePath) return null;

@@ -28,7 +28,15 @@ const Login = () => {
       navigate('/dashboard', { replace: true });
     } catch (err) {
       if (err instanceof AxiosError && err.response) {
-        setError('Invalid ID, Organization Name, or password');
+        const status = err.response.status;
+        if (status === 429) {
+          setError('Too many login attempts. Please wait a moment and try again.');
+        } else {
+          // Show the backend's message (e.g. "Invalid organization name. Expected: ...")
+          const detail =
+            (err.response.data as { detail?: string } | undefined)?.detail;
+          setError(detail || 'Invalid ID, Organization Name, or password');
+        }
       } else {
         setError('Could not reach the server. Check your internet connection and try again.');
       }

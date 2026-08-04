@@ -1,5 +1,6 @@
 from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -13,11 +14,15 @@ from .serializers import (
 
 class LoginView(TokenObtainPairView):
     serializer_class = EmailOrUsernameTokenObtainPairSerializer
+    throttle_classes = (ScopedRateThrottle,)
+    throttle_scope = 'login'
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (AllowAny,)
     serializer_class = RegisterSerializer
+    throttle_classes = (ScopedRateThrottle,)
+    throttle_scope = 'register'
 
 class UserDetailView(APIView):
     permission_classes = (IsAuthenticated,)
@@ -28,6 +33,8 @@ class UserDetailView(APIView):
 
 class VerifyAdminUserView(APIView):
     permission_classes = (AllowAny,)
+    throttle_classes = (ScopedRateThrottle,)
+    throttle_scope = 'verify_identity'
 
     def post(self, request):
         username = request.data.get('username')
@@ -48,6 +55,8 @@ class VerifyAdminUserView(APIView):
 
 class ResetAdminPasswordView(APIView):
     permission_classes = (AllowAny,)
+    throttle_classes = (ScopedRateThrottle,)
+    throttle_scope = 'reset_password'
 
     def post(self, request):
         username = request.data.get('username')

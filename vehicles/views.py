@@ -287,27 +287,40 @@ def safe_route_geometry(vehicle, dispatch, deadline=3.0):
     router can never block the API response. Returns None on any failure or
     timeout (the client falls back to a straight line).
     """
-    if vehicle.location is None:
-        return None
+    return safe_route_info(vehicle, dispatch, deadline)['geometry']
 
-    result = {}
+
+def safe_route_info(vehicle, dispatch, deadline=3.0):
+    """Best-effort live route info (geometry, road distance, ETA) from the
+    vehicle's current location to the dispatch request.
+
+    Like :func:`safe_route_geometry`, OSRM runs in a separate thread with a
+    hard deadline so an unreachable router can never block the API response.
+    Returns None for each field on any failure or timeout.
+    """
+    if vehicle.location is None:
+        return {'geometry': None, 'distance_km': None, 'duration_min': None}
+
+    result = {'geometry': None, 'distance_km': None, 'duration_min': None}
 
     def _compute():
         try:
-            _, _, geom = get_route_distance(
+            distance_km, duration_min, geometry = get_route_distance(
                 vehicle.location.y, vehicle.location.x,
                 dispatch.request_lat, dispatch.request_lng,
             )
-            result['geometry'] = geom
+            result['distance_km'] = distance_km
+            result['duration_min'] = duration_min
+            result['geometry'] = geometry
         except Exception:
-            result['geometry'] = None
+            pass
 
     worker = threading.Thread(target=_compute, daemon=True)
     worker.start()
     worker.join(timeout=deadline)
     if worker.is_alive():
-        return None
-    return result['geometry']
+        return {'geometry': None, 'distance_km': None, 'duration_min': None}
+    return result
 
 
 @api_view(['GET'])
@@ -331,7 +344,20 @@ def active_dispatch(request):
         )
 
     data = DispatchRequestSerializer(dispatch).data
-    data['geometry'] = safe_route_geometry(dispatch.assigned_vehicle, dispatch)
+    route = safe_route_info(dispatch.assigned_vehicle, dispatch)
+    data['geometry'] = route['geometry']
+    data['remaining_distance_km'] = route['distance_km']
+    data['eta_min'] = route['duration_min']
+
+    # Live progress = how much of the dispatch-time road distance has been
+    # covered, based on the remaining road distance from the vehicle's
+    # current location to the request.
+    total_km = dispatch.distance_km
+    if total_km and route['distance_km'] is not None and total_km > 0:
+        progress = (1 - (route['distance_km'] / total_km)) * 100
+        data['progress_percent'] = round(max(0.0, min(100.0, progress)), 1)
+    else:
+        data['progress_percent'] = None
     return Response(data)
 
 
@@ -528,6 +554,9 @@ def driver_duty(request):
 
 
 ACTIVE_DISPATCH_STATUSES = ['assigned', 'accepted', 'en_route', 'arrived']
+
+# Statuses that mean a driver accepted the trip (used for acceptance-rate KPI).
+ACCEPTED_DISPATCH_STATUSES = ['accepted', 'en_route', 'arrived', 'completed']
 
 
 @api_view(['GET'])
@@ -1990,6 +2019,187 @@ def dispatch_stats(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def export_dispatches_csv(request):
+    """
+    GET /api/dispatch/export/
+    CSV download of dispatch history, org-scoped.
+
+    Optional filters:
+      ?status=completed
+      &start_date=YYYY-MM-DD
+      &end_date=YYYY-MM-DD
+    """
+    import csv
+    import datetime
+    from django.http import HttpResponse
+
+    qs = (
+        DispatchRequest.objects
+        .filter(assigned_vehicle__owner__in=get_org_user_ids(request.user))
+        .select_related('assigned_vehicle')
+    )
+
+    status_filter = request.query_params.get('status')
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+
+    start_date = request.query_params.get('start_date')
+    if start_date:
+        try:
+            qs = qs.filter(created_at__date__gte=datetime.date.fromisoformat(start_date))
+        except ValueError:
+            pass
+
+    end_date = request.query_params.get('end_date')
+    if end_date:
+        try:
+            qs = qs.filter(created_at__date__lte=datetime.date.fromisoformat(end_date))
+        except ValueError:
+            pass
+
+    qs = qs.order_by('-created_at')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="dispatch_history.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        'id', 'created_at', 'request_lat', 'request_lng', 'vehicle_type',
+        'assigned_vehicle', 'status', 'distance_km', 'duration_min',
+        'assigned_at', 'accepted_at', 'en_route_at', 'arrived_at', 'completed_at',
+    ])
+    for d in qs.iterator():
+        writer.writerow([
+            d.id, d.created_at, d.request_lat, d.request_lng, d.vehicle_type,
+            d.assigned_vehicle.name if d.assigned_vehicle else '',
+            d.status, d.distance_km, d.duration_min,
+            d.assigned_at, d.accepted_at, d.en_route_at, d.arrived_at, d.completed_at,
+        ])
+
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_expenses_pdf(request):
+    """
+    GET /api/expenses/report/pdf/
+    PDF download of an expense summary (fuel + maintenance), org-scoped.
+
+    Optional filters:
+      ?start_date=YYYY-MM-DD
+      &end_date=YYYY-MM-DD
+    """
+    from django.http import HttpResponse
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    import datetime
+
+    org_ids = get_org_user_ids(request.user)
+    owner = request.user
+
+    fuel_logs = FuelLog.objects.filter(driver__owner__in=org_ids)
+    maintenance = MaintenanceRecord.objects.filter(
+        owner__in=org_ids,
+        completed=True,
+        cost__isnull=False,
+    )
+
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    if start_date:
+        try:
+            sd = datetime.date.fromisoformat(start_date)
+            fuel_logs = fuel_logs.filter(created_at__date__gte=sd)
+            maintenance = maintenance.filter(completed_at__date__gte=sd)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            ed = datetime.date.fromisoformat(end_date)
+            fuel_logs = fuel_logs.filter(created_at__date__lte=ed)
+            maintenance = maintenance.filter(completed_at__date__lte=ed)
+        except ValueError:
+            pass
+
+    total_fuel = float(fuel_logs.aggregate(total=Sum('amount'))['total'] or 0)
+    total_maint = float(maintenance.aggregate(total=Sum('cost'))['total'] or 0)
+    total_ops = total_fuel + total_maint
+
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="expense_report.pdf"'
+
+    doc = SimpleDocTemplate(
+        response, pagesize=A4,
+        rightMargin=15 * mm, leftMargin=15 * mm,
+        topMargin=15 * mm, bottomMargin=15 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        name='SarathiTitle', parent=styles['Title'],
+        fontSize=18, textColor=colors.HexColor('#0D7377'), spaceAfter=4,
+    )
+    org_name = getattr(getattr(owner, 'profile', None), 'organization_name', '')
+
+    story = []
+    story.append(Paragraph('Sarathi Expense Report', title_style))
+    story.append(Paragraph(f'Organization: {org_name}', styles['Normal']))
+    story.append(Paragraph(f'Generated: {timezone.now().strftime("%Y-%m-%d %H:%M")} UTC', styles['Normal']))
+    story.append(Spacer(1, 6 * mm))
+
+    story.append(Paragraph('Summary', styles['Heading2']))
+    summary = Table([
+        ['Fuel cost (NPR)', f'{total_fuel:,.2f}'],
+        ['Maintenance cost (NPR)', f'{total_maint:,.2f}'],
+        ['Total operational cost (NPR)', f'{total_ops:,.2f}'],
+    ], colWidths=[120 * mm, 50 * mm])
+    summary.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#0D7377')),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.white),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+    ]))
+    story.append(summary)
+    story.append(Spacer(1, 8 * mm))
+
+    fuel_by_vehicle = {
+        row['vehicle__name']: float(row['fuel_total'] or 0)
+        for row in fuel_logs.values('vehicle__name').annotate(fuel_total=Sum('amount'))
+    }
+    maint_by_vehicle = {
+        row['vehicle__name']: float(row['maint_total'] or 0)
+        for row in maintenance.values('vehicle__name').annotate(maint_total=Sum('cost'))
+    }
+
+    vehicle_names = sorted(set(fuel_by_vehicle) | set(maint_by_vehicle))
+    if vehicle_names:
+        story.append(Paragraph('Per-vehicle breakdown', styles['Heading2']))
+        vehicle_rows = [['Vehicle', 'Fuel (NPR)', 'Maintenance (NPR)', 'Total (NPR)']]
+        for name in vehicle_names:
+            f = fuel_by_vehicle.get(name, 0)
+            m = maint_by_vehicle.get(name, 0)
+            vehicle_rows.append([name, f'{f:,.2f}', f'{m:,.2f}', f'{f + m:,.2f}'])
+        vt = Table(vehicle_rows, colWidths=[70 * mm, 35 * mm, 35 * mm, 35 * mm])
+        vt.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0D7377')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+        ]))
+        story.append(vt)
+
+    doc.build(story)
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def fuel_log_stats(request):
     """
     GET /api/fuel-logs/stats/
@@ -2082,7 +2292,7 @@ def expense_summary(request):
     if end_date:
         maintenance = maintenance.filter(completed_at__date__lte=end_date)
     
-    total_maintenance = 0  # Maintenance cost tracking would need a cost field
+    total_maintenance = float(maintenance.aggregate(total=Sum('cost'))['total'] or 0)
     maintenance_count = maintenance.count()
     
     total_operational = float(total_fuel) + float(total_maintenance)
@@ -2093,10 +2303,28 @@ def expense_summary(request):
         .annotate(total=Sum('amount'), count=Count('id'))
         .order_by('-total')
     )
+    maint_by_vehicle = {
+        row['vehicle__name']: float(row['total'] or 0)
+        for row in maintenance.values('vehicle__name').annotate(total=Sum('cost'))
+    }
     by_vehicle = [
-        {'vehicle': row['vehicle__name'], 'fuel_cost': float(row['total']), 'count': row['count']}
+        {
+            'vehicle': row['vehicle__name'],
+            'fuel_cost': float(row['total']),
+            'maintenance_cost': maint_by_vehicle.get(row['vehicle__name'], 0),
+            'count': row['count'],
+        }
         for row in vehicle_fuel
     ]
+    # Include vehicles that only have maintenance costs (no fuel logged)
+    for name, maint_cost in maint_by_vehicle.items():
+        if not any(b['vehicle'] == name for b in by_vehicle):
+            by_vehicle.append({
+                'vehicle': name,
+                'fuel_cost': 0,
+                'maintenance_cost': maint_cost,
+                'count': 0,
+            })
     
     # By driver breakdown
     driver_fuel = (
@@ -2490,7 +2718,59 @@ def analytics_dashboard(request):
     if response_times:
         avg_seconds = sum(rt.total_seconds() for rt in response_times) / len(response_times)
         avg_response_time = round(avg_seconds / 60, 1)  # in minutes
-    
+
+    # ── 9. Fuel Efficiency (km/L per vehicle) ────────────────────────────
+    fuel_logs = FuelLog.objects.filter(driver__owner__in=org_ids)
+    vehicle_distances = {v.id: v.total_distance_km for v in vehicles.all()}
+    vehicle_eff_rows = (
+        fuel_logs.values('vehicle__id')
+        .annotate(total_liters=Sum('liters'))
+        .order_by('vehicle__id')
+    )
+    vehicle_efficiency = []
+    for row in vehicle_eff_rows:
+        total_liters = float(row['total_liters'] or 0)
+        distance_km = vehicle_distances.get(row['vehicle__id'], 0)
+        if total_liters <= 0 or distance_km <= 0:
+            continue
+        vehicle_efficiency.append({
+            'vehicle_id': row['vehicle__id'],
+            'distance_km': round(distance_km, 1),
+            'liters': round(total_liters, 2),
+            'km_per_liter': round(distance_km / total_liters, 2),
+        })
+    vehicle_efficiency.sort(key=lambda x: x['km_per_liter'], reverse=True)
+
+    # ── 10. Driver Performance (acceptance rate + completion) ────────────
+    driver_perf_rows = (
+        drivers
+        .annotate(
+            total_trips=Count('assigned_vehicles__dispatch_requests', distinct=True),
+            accepted_trips=Count(
+                'assigned_vehicles__dispatch_requests',
+                filter=Q(assigned_vehicles__dispatch_requests__status__in=ACCEPTED_DISPATCH_STATUSES),
+                distinct=True,
+            ),
+            completed_trips=Count(
+                'assigned_vehicles__dispatch_requests',
+                filter=Q(assigned_vehicles__dispatch_requests__status='completed'),
+                distinct=True,
+            ),
+        )
+        .filter(total_trips__gt=0)
+        .order_by('-completed_trips')[:5]
+    )
+    driver_performance = [
+        {
+            'name': d.name,
+            'total_trips': d.total_trips,
+            'accepted_trips': d.accepted_trips,
+            'acceptance_rate': round((d.accepted_trips / d.total_trips) * 100, 1) if d.total_trips else 0,
+            'completed_trips': d.completed_trips,
+        }
+        for d in driver_perf_rows
+    ]
+
     return Response({
         'fleet_status': fleet_status,
         'dispatch_volume': dispatch_volume,
@@ -2499,6 +2779,8 @@ def analytics_dashboard(request):
         'top_drivers': top_drivers_data,
         'issue_breakdown': issue_data,
         'fuel_trends': fuel_trends,
+        'vehicle_efficiency': vehicle_efficiency,
+        'driver_performance': driver_performance,
         'kpi': {
             'total_vehicles': total_vehicles,
             'available': available_count,

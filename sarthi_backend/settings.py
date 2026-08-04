@@ -196,7 +196,17 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
 
-    )
+    ),
+    # Per-endpoint rate limits. Keyed by IP for anonymous requests
+    # (login/register/reset) and by user id for authenticated requests.
+    # Limits brute-force attempts without a cache dependency in dev
+    # (DRF falls back to LocMemCache).
+    'DEFAULT_THROTTLE_RATES': {
+        'login': '30/min',
+        'register': '10/hour',
+        'reset_password': '5/hour',
+        'verify_identity': '20/hour',
+    }
 }
 
 from datetime import timedelta

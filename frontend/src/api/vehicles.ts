@@ -19,6 +19,8 @@ export interface AnalyticsData {
   top_drivers: Array<{ name: string; completed: number }>;
   issue_breakdown: Array<{ name: string; value: number; color: string }>;
   fuel_trends: Array<{ day: string; cost: number; liters: number }>;
+  vehicle_efficiency: Array<{ vehicle_id: number; distance_km: number; liters: number; km_per_liter: number }>;
+  driver_performance: Array<{ name: string; total_trips: number; accepted_trips: number; acceptance_rate: number; completed_trips: number }>;
   kpi: {
     total_vehicles: number;
     available: number;
