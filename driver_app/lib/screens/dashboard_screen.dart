@@ -15,6 +15,7 @@ import 'report_issue_screen.dart';
 import 'fuel_entry_screen.dart';
 import 'trip_history_screen.dart';
 import 'maintenance_screen.dart';
+import 'emergency_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -987,13 +988,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: _buildActionButton(
-                'Report',
+                'SOS',
                 Icons.report_problem_outlined,
                 AppTheme.errorColor,
                 () {
                   HapticFeedback.lightImpact();
                   Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ReportIssueScreen()),
+                    MaterialPageRoute(builder: (_) => EmergencyScreen()),
                   );
                 },
               ),
