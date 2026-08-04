@@ -117,6 +117,16 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] **FuelLog & FuelEntry preservation**: Kept driver fuel tracking with org-scoped admin views
 - [x] **Dashboard UI fix**: Restored "Add Vehicle" button to dashboard header (was missing after UI restructure)
 
+### Exports, Security & Analytics (current cycle)
+- [x] **Auth rate limiting**: DRF throttles on login (10/min), register (5/hour), password reset (5/hour), and identity verification (10/hour) per IP
+- [x] **Maintenance cost fix**: `expense_summary` now sums the `MaintenanceRecord.cost` field (was hardcoded to 0) and includes it in the per-vehicle breakdown
+- [x] **Dispatch CSV export**: `GET /api/dispatch/export/` downloads org-scoped dispatch history with optional `status`/`start_date`/`end_date` filters
+- [x] **Expense PDF report**: `GET /api/expenses/report/pdf/` generates an expense summary PDF (fuel + maintenance, per-vehicle breakdown) using reportlab
+- [x] **Analytics: fuel efficiency**: `analytics_dashboard` now reports `km_per_liter` per vehicle
+- [x] **Analytics: driver performance**: `analytics_dashboard` now reports per-driver trip totals, acceptance rate, and completion counts
+- [x] **Frontend analytics wiring**: Analytics tab now shows a fuel-efficiency (km/L) chart and a driver-performance table, with empty states when no data exists
+- [x] **Export buttons**: Analytics tab now has working "Download PDF" (expense report) and "Download CSV" (dispatch history) buttons (fixes the previous broken PDF endpoint + wrong token storage key)
+
 ### Not Yet Started / Partial
 - [ ] Operational analytics/reporting dashboard (Chart.js/Recharts)
 - [ ] Real-time WebSocket notifications (Django Channels) — currently using polling
@@ -403,6 +413,8 @@ Auth: `Authorization: Bearer <access_token>`.
 |--------|-----|-------------|
 | POST | `/api/dispatch/` | Dispatch nearest available vehicle `{"lat":..,"lng":..,"vehicle_type":..}` |
 | GET | `/api/dispatch/active/` | Owner's latest active dispatch with live route geometry |
+| GET | `/api/dispatch/stats/` | Dispatch counts by status + daily breakdown (last 30 days) |
+| GET | `/api/dispatch/export/` | CSV download of dispatch history (`?status=&start_date=&end_date=`) |
 
 ### Drivers (`/api/`)
 | Method | URL | Description |
@@ -436,6 +448,14 @@ Auth: `Authorization: Bearer <access_token>`.
 | GET | `/api/issues/` | List owner-scoped driver-issued reports (newest first) |
 | GET | `/api/issues/<id>/` | Issue detail |
 | PATCH | `/api/issues/<id>/` | Update status (`open`, `acknowledged`, `resolved`) |
+
+### Reports & Exports (`/api/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/expenses/summary/` | Aggregated expense stats (fuel + maintenance, per vehicle/driver) |
+| GET | `/api/expenses/report/` | Detailed expense report with daily/monthly breakdown |
+| GET | `/api/expenses/report/pdf/` | PDF download of the expense summary (`?start_date=&end_date=`) |
+| GET | `/api/dispatch/export/` | CSV download of dispatch history (`?status=&start_date=&end_date=`) |
 
 ### Emergency (`/api/emergency/`)
 | Method | URL | Description |
