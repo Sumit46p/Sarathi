@@ -1,6 +1,8 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
-const API_URL = 'http://localhost:8000/api';
+// Relative path — Vite dev server proxies /api to the Django backend
+// (see vite.config.ts), so the same build works locally and in preview.
+const API_URL = '/api';
 
 export const api = axios.create({
   baseURL: API_URL,

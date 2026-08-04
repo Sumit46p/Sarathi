@@ -13,7 +13,6 @@ import { api } from '../api/auth';
 import MaintenanceTab from '../components/MaintenanceTab';
 import IssuesTab from '../components/IssuesTab';
 import FuelTab from '../components/FuelTab';
-import { ExpenseTab } from '../components/ExpenseTab';
 import ThemeToggle from '../components/ThemeToggle';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
 import NotificationBell, { type NotificationItem } from '../components/NotificationBell';
@@ -66,6 +65,9 @@ interface DispatchResult {
   distance_km: number;
   duration_min?: number | null;
   geometry?: Array<[number, number]> | null;
+  progress_percent?: number | null;
+  eta_min?: number | null;
+  remaining_distance_km?: number | null;
 }
 
 type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues' | 'emergency' | 'fuel' | 'analytics';
@@ -671,6 +673,15 @@ export default function Dashboard() {
               <button id="dispatch-nearest-button" className="button button-primary dispatch-button" onClick={handleDispatch} disabled={!requestMarker || dispatchLoading}>{dispatchLoading ? <><RefreshCw className="spin" size={16} />Finding nearest unit</> : <><Navigation size={16} />Dispatch nearest vehicle</>}</button>
 
               {dispatchResult && <div className="dispatch-result" role="status"><div className="result-title"><CheckCircle2 size={18} /><div><strong>Vehicle dispatched</strong><span>Route confirmed</span></div></div><div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Assigned unit</span><strong>{dispatchResult.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div><div className="result-metrics"><div><span>Distance</span><strong>{dispatchResult.distance_km} km</strong></div><div><span>ETA</span><strong>{dispatchResult.duration_min ? `${Math.round(dispatchResult.duration_min)} min` : 'Route set'}</strong></div></div>{dispatchResult.status === 'assigned' && <button className="button button-primary" style={{ marginTop: 12, width: '100%' }} onClick={handleAcceptDispatch}>Accept dispatch</button>}</div>}
+              {activeDispatch && <div className="dispatch-result live-tracking" role="status">
+                <div className="result-title"><Navigation size={18} /><div><strong>Live trip tracking</strong><span>{DISPATCH_STATUS_LABELS[activeDispatch.status] || activeDispatch.status}</span></div></div>
+                <div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Vehicle en route</span><strong>{activeDispatch.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div>
+                <div className="progress-block">
+                  <div className="progress-head"><span>Progress</span><strong>{activeDispatch.progress_percent != null ? `${activeDispatch.progress_percent}%` : 'Calculating…'}</strong></div>
+                  <div className="progress-track"><div className="progress-fill" style={{ width: `${Math.min(100, Math.max(0, activeDispatch.progress_percent ?? 0))}%` }} /></div>
+                </div>
+                <div className="result-metrics"><div><span>ETA</span><strong>{activeDispatch.eta_min != null ? `${Math.round(activeDispatch.eta_min)} min` : 'Calculating…'}</strong></div><div><span>Remaining</span><strong>{activeDispatch.remaining_distance_km != null ? `${activeDispatch.remaining_distance_km} km` : '—'}</strong></div></div>
+              </div>}
               {dispatchError && <div className="inline-alert error" role="alert"><AlertCircle size={16} /><span>{dispatchError}</span></div>}
 
               <div className="rail-section"><div className="rail-section-title"><h3>Fleet units</h3><span>{availableVehicles} ready</span></div><div className="unit-list">{vehicles.length === 0 ? <p className="muted">No fleet units available.</p> : vehicles.map(vehicle => {

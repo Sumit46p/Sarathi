@@ -28,4 +28,19 @@ function geojsonPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), geojsonPlugin()],
+  server: {
+    allowedHosts: ['.monkeycode-ai.live'],
+    proxy: {
+      // Forward API + media requests to the Django backend so the preview
+      // only needs to expose the single Vite port.
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/media': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })
