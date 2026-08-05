@@ -842,6 +842,28 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> getTripPlayback(int dispatchId) async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.get(
+          Uri.parse('$_baseUrl/api/trips/$dispatchId/playback/'),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      throw ApiException(
+        message: 'Failed to load trip route',
+        kind: ApiErrorKind.server,
+        statusCode: response.statusCode,
+      );
+    } on ApiException catch (e) {
+      _log('getTripPlayback failed: $e');
+      rethrow;
+    }
+  }
+
   static Future<List<dynamic>> getNotifications() async {
     try {
       final response = await _authenticatedRequest(
