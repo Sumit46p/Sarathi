@@ -880,6 +880,32 @@ select.input-field {
   color: var(--primary)
 }
 
+.score-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 700
+}
+
+.score-good {
+  background: color-mix(in srgb, #10b981 14%, var(--surface));
+  color: #10b981
+}
+
+.score-mid {
+  background: color-mix(in srgb, #f59e0b 16%, var(--surface));
+  color: #d97706
+}
+
+.score-bad {
+  background: color-mix(in srgb, #ef4444 14%, var(--surface));
+  color: #dc2626
+}
+
 .coordinate {
   display: flex;
   align-items: center;
@@ -887,8 +913,7 @@ select.input-field {
   color: var(--text-muted);
   font-family: Consolas, monospace;
   font-size: .66rem;
-  white-space: nowrap
-}
+  white-space: nowrap}
 
 .row-actions {
   display: flex;

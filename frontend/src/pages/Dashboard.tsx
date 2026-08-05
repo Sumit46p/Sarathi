@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity, AlertCircle, AlertTriangle, BarChart2, CheckCircle2, ChevronRight, CircleDot,
-  Droplets, Gauge, LayoutDashboard, LogOut, MapPin, Navigation, Phone, Plus,
+  Droplets, Gauge, History, LayoutDashboard, LogOut, MapPin, Navigation, Phone, Plus,
   Radio, RefreshCw, Search, Settings, ShieldCheck, Trash2, Truck,
   UserRound, Users, Wrench, X,
 } from 'lucide-react';
@@ -15,6 +15,7 @@ import IssuesTab from '../components/IssuesTab';
 import FuelTab from '../components/FuelTab';
 import ThemeToggle from '../components/ThemeToggle';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
+import TripsTab from '../components/TripsTab';
 import NotificationBell, { type NotificationItem } from '../components/NotificationBell';
 import { toast } from '../components/toast';
 import NEPAL_GEOJSON from '../data/nepalBorder';
@@ -70,7 +71,7 @@ interface DispatchResult {
   remaining_distance_km?: number | null;
 }
 
-type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues' | 'emergency' | 'fuel' | 'analytics';
+type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues' | 'emergency' | 'fuel' | 'analytics' | 'trips';
 type StatusFilter = 'all' | 'available' | 'unavailable';
 
 const VEHICLE_TYPES = [
@@ -589,6 +590,7 @@ export default function Dashboard() {
     issues: { title: 'Reported issues', eyebrow: 'Driver feedback' },
     emergency: { title: 'Emergency requests', eyebrow: 'SOS alerts' },
     fuel: { title: 'Fuel entry log', eyebrow: 'Fuel management' },
+    trips: { title: 'Trip history', eyebrow: 'Route playback' },
     analytics: { title: 'Analytics overview', eyebrow: 'Insights' },
   };
 
@@ -615,6 +617,7 @@ export default function Dashboard() {
           </button>
           <button id="nav-emergency" className={`nav-item ${activeTab === 'emergency' ? 'active' : ''}`} onClick={() => switchTab('emergency')}><AlertCircle size={17} /><span>Emergency</span>{emergencyCount > 0 && <span className="nav-badge" style={{ backgroundColor: '#dc2626' }}>{emergencyCount}</span>}</button>
           <button id="nav-fuel" className={`nav-item ${activeTab === 'fuel' ? 'active' : ''}`} onClick={() => switchTab('fuel')}><Droplets size={17} /><span>Fuel Entry</span></button>
+          <button id="nav-trips" className={`nav-item ${activeTab === 'trips' ? 'active' : ''}`} onClick={() => switchTab('trips')}><History size={17} /><span>Trip History</span></button>
           <button id="nav-analytics" className={`nav-item ${activeTab === 'analytics' ? 'active' : ''}`} onClick={() => switchTab('analytics')}><BarChart2 size={17} /><span>Analytics</span></button>
           <p className="nav-label nav-label-secondary">System</p>
           <button id="nav-settings" className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => switchTab('settings')}><Settings size={17} /><span>Settings</span></button>
@@ -783,6 +786,7 @@ export default function Dashboard() {
           {activeTab === 'fuel' && <section className="tab-content w-full" aria-labelledby="fuel-heading">
             <FuelTab />
           </section>}
+          {activeTab === 'trips' && <TripsTab />}
           {activeTab === 'analytics' && <AnalyticsDashboard />}
         </div>
       </main>
