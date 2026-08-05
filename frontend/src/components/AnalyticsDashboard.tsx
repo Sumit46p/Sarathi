@@ -18,18 +18,15 @@ import { fetchAnalytics, type AnalyticsData } from '../api/vehicles';
 import { Truck, Activity, Users, MapPin, AlertTriangle, Clock, Fuel, CheckCircle2, Download } from 'lucide-react';
 import { toast } from './toast';
 
-const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#6366f1', '#8b5cf6'];
-
 interface KpiCardProps {
   title: string;
   value: string | number;
   subtitle?: string;
   icon: React.ReactNode;
-  trend?: 'up' | 'down' | 'neutral';
   accent?: string;
 }
 
-function KpiCard({ title, value, subtitle, icon, trend, accent = 'var(--accent)' }: KpiCardProps) {
+function KpiCard({ title, value, subtitle, icon, accent = 'var(--accent)' }: KpiCardProps) {
   return (
     <article className="metric-card">
       <div className="metric-heading">
@@ -57,7 +54,7 @@ function CustomTooltip({ active, payload, label }: any) {
 }
 
 function renderPieLabel(props: any) {
-  const { cx, cy, midAngle, midRadius, name, percent } = props;
+  const { cx, cy, midAngle, midRadius, percent } = props;
   if (percent < 0.06) return null;
 
   const RADIAN = Math.PI / 180;
@@ -86,31 +83,54 @@ export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadingCsv, setDownloadingCsv] = useState(false);
+
+  // Exports need the JWT in the Authorization header, so we fetch the file as a
+  // blob and trigger a download rather than navigating to the URL.
+  const downloadFile = async (url: string, filename: string) => {
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+      },
+    });
+    if (!response.ok) throw new Error(`Download failed (${response.status})`);
+    const blob = await response.blob();
+    const objectUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(objectUrl);
+    document.body.removeChild(a);
+  };
 
   const downloadPdf = async () => {
     setDownloadingPdf(true);
     try {
-      const response = await fetch('/api/analytics/pdf/', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      });
-      if (!response.ok) throw new Error('Failed to download PDF');
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sarthi_analytics_${new Date().toISOString().slice(0, 10)}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      await downloadFile(
+        '/api/expenses/report/pdf/',
+        `sarthi_expenses_${new Date().toISOString().slice(0, 10)}.pdf`
+      );
       toast.success('PDF downloaded successfully');
     } catch (err) {
       console.error('Failed to download PDF', err);
       toast.error('Failed to download PDF. Please try again.');
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  const downloadCsv = async () => {
+    setDownloadingCsv(true);
+    try {
+      await downloadFile('/api/dispatch/export/', 'dispatch_history.csv');
+      toast.success('Dispatch CSV downloaded successfully');
+    } catch (err) {
+      console.error('Failed to download CSV', err);
+      toast.error('Failed to download CSV. Please try again.');
+    } finally {
+      setDownloadingCsv(false);
     }
   };
 
@@ -156,7 +176,7 @@ export default function AnalyticsDashboard() {
     );
   }
 
-  const { fleet_status, dispatch_volume, emergency_trends, vehicle_type_dist, top_drivers, issue_breakdown, fuel_trends, kpi } = analytics;
+  const { fleet_status, dispatch_volume, emergency_trends, vehicle_type_dist, top_drivers, issue_breakdown, fuel_trends, vehicle_efficiency, driver_performance, kpi } = analytics;
 
   return (
     <section className="tab-content" aria-labelledby="analytics-heading">
@@ -166,9 +186,13 @@ export default function AnalyticsDashboard() {
           <p>Operational insights and trends for your Nepal fleet.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="button button-secondary" onClick={downloadPdf} disabled={downloadingPdf} title="Download weekly overview PDF">
+          <button className="button button-secondary" onClick={downloadPdf} disabled={downloadingPdf} title="Download expense summary PDF">
             <Download size={16} />
             {downloadingPdf ? 'Downloading...' : 'Download PDF'}
+          </button>
+          <button className="button button-secondary" onClick={downloadCsv} disabled={downloadingCsv} title="Download dispatch history CSV">
+            <Download size={16} />
+            {downloadingCsv ? 'Downloading...' : 'Download CSV'}
           </button>
           <button className="button button-secondary" onClick={() => window.location.reload()} title="Refresh analytics">
             Refresh
@@ -320,6 +344,63 @@ export default function AnalyticsDashboard() {
               <Line yAxisId="right" type="monotone" dataKey="liters" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} name="Liters" />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Charts Row 4: Fuel efficiency + driver performance */}
+      <div className="charts-grid" style={{ marginTop: 24 }}>
+        <div className="chart-card">
+          <h3>Fuel Efficiency (km/L)</h3>
+          {vehicle_efficiency.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={vehicle_efficiency}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="vehicle_id" tick={{ fontSize: 12 }} label={{ value: 'Vehicle ID', position: 'insideBottom', offset: -4 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <Bar dataKey="km_per_liter" fill="#10b981" radius={[4, 4, 0, 0]} name="km/L" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="empty-text" style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--muted)' }}>
+              No fuel efficiency data yet. Add fuel logs to see km/L per vehicle.
+            </p>
+          )}
+        </div>
+
+        <div className="chart-card">
+          <h3>Driver Performance</h3>
+          {driver_performance.length > 0 ? (
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Driver</th>
+                    <th>Trips</th>
+                    <th>Accepted</th>
+                    <th>Acceptance</th>
+                    <th>Completed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {driver_performance.map((d) => (
+                    <tr key={d.name}>
+                      <td>{d.name}</td>
+                      <td>{d.total_trips}</td>
+                      <td>{d.accepted_trips}</td>
+                      <td>{d.acceptance_rate}%</td>
+                      <td>{d.completed_trips}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="empty-text" style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--muted)' }}>
+              No driver trip data yet. Dispatched trips will appear here.
+            </p>
+          )}
         </div>
       </div>
     </section>
