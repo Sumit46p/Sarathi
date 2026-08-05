@@ -38,9 +38,10 @@ class VehicleSerializer(serializers.ModelSerializer):
         ]
 
 class LocationUpdateSerializer(serializers.Serializer):
-    """Accepts just {"lat": ..., "lng": ...} for the update-location endpoint."""
+    """Accepts {"lat": ..., "lng": ..., "speed_kmh": ...} for the update-location endpoint."""
     lat = serializers.FloatField(min_value=-90, max_value=90)
     lng = serializers.FloatField(min_value=-180, max_value=180)
+    speed_kmh = serializers.FloatField(required=False, min_value=0)
 
 class AssignDriverSerializer(serializers.Serializer):
     """Accepts {"driver_id": 5} or {"driver_id": null}."""

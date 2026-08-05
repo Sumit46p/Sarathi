@@ -20,7 +20,16 @@ export interface AnalyticsData {
   issue_breakdown: Array<{ name: string; value: number; color: string }>;
   fuel_trends: Array<{ day: string; cost: number; liters: number }>;
   vehicle_efficiency: Array<{ vehicle_id: number; distance_km: number; liters: number; km_per_liter: number }>;
-  driver_performance: Array<{ name: string; total_trips: number; accepted_trips: number; acceptance_rate: number; completed_trips: number }>;
+  driver_performance: Array<{
+    name: string;
+    total_trips: number;
+    accepted_trips: number;
+    acceptance_rate: number;
+    completed_trips: number;
+    score: number;
+    harsh_events: number;
+    events: { harsh_accel: number; harsh_brake: number; harsh_turn: number; total: number };
+  }>;
   kpi: {
     total_vehicles: number;
     available: number;

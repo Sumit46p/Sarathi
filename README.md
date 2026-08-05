@@ -118,7 +118,7 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] **Dashboard UI fix**: Restored "Add Vehicle" button to dashboard header (was missing after UI restructure)
 
 ### Exports, Security & Analytics (current cycle)
-- [x] **Auth rate limiting**: DRF throttles on login (10/min), register (5/hour), password reset (5/hour), and identity verification (10/hour) per IP
+- [x] **Auth rate limiting**: DRF throttles on login (30/min), register (10/hour), password reset (5/hour), and identity verification (20/hour) per IP
 - [x] **Maintenance cost fix**: `expense_summary` now sums the `MaintenanceRecord.cost` field (was hardcoded to 0) and includes it in the per-vehicle breakdown
 - [x] **Dispatch CSV export**: `GET /api/dispatch/export/` downloads org-scoped dispatch history with optional `status`/`start_date`/`end_date` filters
 - [x] **Expense PDF report**: `GET /api/expenses/report/pdf/` generates an expense summary PDF (fuel + maintenance, per-vehicle breakdown) using reportlab
@@ -126,6 +126,19 @@ dashboard for dispatchers/admins, and a Flutter mobile app for drivers.
 - [x] **Analytics: driver performance**: `analytics_dashboard` now reports per-driver trip totals, acceptance rate, and completion counts
 - [x] **Frontend analytics wiring**: Analytics tab now shows a fuel-efficiency (km/L) chart and a driver-performance table, with empty states when no data exists
 - [x] **Export buttons**: Analytics tab now has working "Download PDF" (expense report) and "Download CSV" (dispatch history) buttons (fixes the previous broken PDF endpoint + wrong token storage key)
+
+### Trip History & Route Playback (current cycle)
+- [x] **Live ETA + route progress**: `active_dispatch` now returns `progress_percent`, `remaining_distance_km`, and `eta_min` via a single OSRM call; the dispatch rail shows a progress bar, ETA, and remaining distance
+- [x] **GPS breadcrumb recording**: every location fix is stored in a new `LocationRecord` model and attributed to the vehicle's active dispatch; optional `speed_kmh` accepted on `update-location` (derived from the fix interval when absent)
+- [x] **Trip history API**: `GET /api/trips/` lists finished dispatches (completed/cancelled/rejected) org-scoped with breadcrumb counts
+- [x] **Route playback API**: `GET /api/trips/<id>/playback/` returns time-ordered GPS breadcrumbs for a trip
+- [x] **Frontend Trip History tab**: table of finished trips with replay button; playback modal with animated route (dimmed full route + growing traveled line), play/pause, restart, 1×/2×/4× speed, scrubber, elapsed time and average speed
+- [x] **Driver app trip history + playback**: `/api/drivers/me/trip-history/` now includes `point_count`; driver app Trip History screen has a "View Route Playback" sheet (flutter_map) with animated vehicle marker, traveled line, request pin, play/pause/restart, speed toggle and scrubber
+
+### Harsh Driving Events & Driver Score (current cycle)
+- [x] **Driving event detection**: server-side heuristic in `update-location` detects `harsh_accel` / `harsh_brake` / `harsh_turn` from consecutive GPS breadcrumbs (speed deltas ≥ 2.5 m/s² and bearing changes ≥ 30° at ≥ 8 km/h), stored in a new `DrivingEvent` model
+- [x] **Driver score API**: `GET /api/drivers/<id>/score/` returns a 0–100 safety score (100 minus weighted per-event penalties over the last 30 days)
+- [x] **Score in analytics**: `analytics_dashboard` driver-performance rows include `score`, `harsh_events`, and an `events` breakdown; the Analytics tab shows a color-coded safety-score pill
 
 ### Not Yet Started / Partial
 - [ ] Operational analytics/reporting dashboard (Chart.js/Recharts)
@@ -431,6 +444,14 @@ Auth: `Authorization: Bearer <access_token>`.
 | GET | `/api/drivers/<id>/` | Driver detail |
 | PATCH | `/api/drivers/<id>/` | Driver update |
 | DELETE | `/api/drivers/<id>/` | Remove a driver |
+| GET | `/api/drivers/<id>/score/` | **Driver safety score** (0–100 over last 30 days, event breakdown) |
+| GET | `/api/drivers/me/trip-history/` | **Driver** finished trips (with `point_count` for playback) |
+
+### Trips (`/api/trips/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/trips/` | Finished dispatches (completed/cancelled/rejected), org-scoped, with `point_count` |
+| GET | `/api/trips/<id>/playback/` | Time-ordered GPS breadcrumbs `{lat, lng, speed_kmh, recorded_at}` (org admin or the vehicle's assigned driver) |
 
 ### Maintenance (`/api/`)
 | Method | URL | Description |
