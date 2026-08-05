@@ -381,6 +381,8 @@ export default function AnalyticsDashboard() {
                     <th>Accepted</th>
                     <th>Acceptance</th>
                     <th>Completed</th>
+                    <th>Safety score</th>
+                    <th>Harsh events</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -391,6 +393,20 @@ export default function AnalyticsDashboard() {
                       <td>{d.accepted_trips}</td>
                       <td>{d.acceptance_rate}%</td>
                       <td>{d.completed_trips}</td>
+                      <td>
+                        <span className={`score-pill ${d.score >= 80 ? 'score-good' : d.score >= 60 ? 'score-mid' : 'score-bad'}`}>
+                          {d.score}
+                        </span>
+                      </td>
+                      <td>
+                        {d.harsh_events > 0 ? (
+                          <span className="score-pill score-bad" title={`${d.events.harsh_accel} accel · ${d.events.harsh_brake} brake · ${d.events.harsh_turn} turn`}>
+                            {d.harsh_events}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--muted)', fontSize: '.72rem' }}>0</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
