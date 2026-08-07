@@ -63,6 +63,8 @@ interface IssueReport {
 
 interface DispatchResult {
   assigned_vehicle: { id: number; name: string; lat: number; lng: number };
+  assigned_vehicle_name?: string | null;
+  assigned_vehicle_driver?: string | null;
   status: string;
   distance_km: number;
   duration_min?: number | null;
@@ -71,7 +73,6 @@ interface DispatchResult {
   eta_min?: number | null;
   remaining_distance_km?: number | null;
 }
-
 type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues' | 'emergency' | 'fuel' | 'analytics' | 'trips';
 type StatusFilter = 'all' | 'available' | 'unavailable';
 
@@ -159,6 +160,60 @@ function getVehicleStatusInfo(vehicle: Vehicle): { label: string; className: str
     return { label: 'Blocked', className: 'unavailable' };
   }
   return { label: 'Off Duty', className: 'unavailable' };
+}
+
+// Ordered lifecycle steps rendered as a compact stepper in the live-tracking card.
+const DISPATCH_STEPS: Array<{ key: string; label: string }> = [
+  { key: 'assigned', label: 'Assigned' },
+  { key: 'accepted', label: 'Accepted' },
+  { key: 'en_route', label: 'En Route' },
+  { key: 'arrived', label: 'On Scene' },
+  { key: 'completed', label: 'Done' },
+];
+
+function DispatchStepper({ status }: { status: string | null }) {
+  const currentIndex = status ? DISPATCH_STEPS.findIndex(step => step.key === status) : -1;
+  return (
+    <div className="trip-stepper" aria-label="Trip status">
+      {DISPATCH_STEPS.map((step, index) => {
+        const reached = index <= currentIndex;
+        const active = index === currentIndex;
+        return (
+          <div key={step.key} className={`stepper-step ${active ? 'active' : ''} ${reached ? 'reached' : ''}`}>
+            <span className="stepper-dot">{reached ? (active ? '' : '✓') : index + 1}</span>
+            <span className="stepper-label">{step.label}</span>
+            {index < DISPATCH_STEPS.length - 1 && <span className="stepper-line" />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Ticking ETA countdown that re-syncs whenever the backend reports a fresh ETA.
+function LiveEta({ etaMin }: { etaMin: number | null | undefined }) {
+  const [remainingSec, setRemainingSec] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (etaMin == null) {
+      setRemainingSec(null);
+      return;
+    }
+    setRemainingSec(Math.max(0, Math.round(etaMin * 60)));
+    const timer = window.setInterval(() => {
+      setRemainingSec(previous => previous == null ? null : Math.max(0, previous - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [etaMin]);
+
+  if (remainingSec == null) return <strong>Calculating…</strong>;
+  const minutes = Math.floor(remainingSec / 60);
+  const seconds = remainingSec % 60;
+  return (
+    <strong className="ticking-eta">
+      {minutes}m {String(seconds).padStart(2, '0')}s
+    </strong>
+  );
 }
 
 export default function Dashboard() {
@@ -581,6 +636,9 @@ export default function Dashboard() {
   const requestIcon = useMemo(() => L.divIcon({
     className: 'fleet-marker-wrap', html: '<span class="request-marker"><span></span></span>', iconSize: [32, 32], iconAnchor: [16, 16],
   }), []);
+  const activeTripIcon = useMemo(() => L.divIcon({
+    className: 'fleet-marker-wrap', html: '<span class="active-trip-marker"><span></span></span>', iconSize: [40, 40], iconAnchor: [20, 20],
+  }), []);
 
   const pageMeta: Record<Tab, { title: string; eyebrow: string }> = {
     dashboard: { title: 'Fleet overview', eyebrow: 'Operations' },
@@ -678,21 +736,25 @@ export default function Dashboard() {
 
               {dispatchResult && <div className="dispatch-result" role="status"><div className="result-title"><CheckCircle2 size={18} /><div><strong>Vehicle dispatched</strong><span>Route confirmed</span></div></div><div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Assigned unit</span><strong>{dispatchResult.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div><div className="result-metrics"><div><span>Distance</span><strong>{dispatchResult.distance_km} km</strong></div><div><span>ETA</span><strong>{dispatchResult.duration_min ? `${Math.round(dispatchResult.duration_min)} min` : 'Route set'}</strong></div></div>{dispatchResult.status === 'assigned' && <button className="button button-primary" style={{ marginTop: 12, width: '100%' }} onClick={handleAcceptDispatch}>Accept dispatch</button>}</div>}
               {activeDispatch && <div className="dispatch-result live-tracking" role="status">
-                <div className="result-title"><Navigation size={18} /><div><strong>Live trip tracking</strong><span>{DISPATCH_STATUS_LABELS[activeDispatch.status] || activeDispatch.status}</span></div></div>
-                <div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Vehicle en route</span><strong>{activeDispatch.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div>
+                <div className="result-title"><Navigation size={18} /><div><strong>Live trip tracking</strong><span>{DISPATCH_STATUS_LABELS[activeDispatch.status] || activeDispatch.status}{activeDispatch.assigned_vehicle_driver ? ` · ${activeDispatch.assigned_vehicle_driver}` : ''}</span></div></div>
+                <div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Vehicle en route</span><strong>{activeDispatch.assigned_vehicle_name || activeDispatch.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div>
+                <DispatchStepper status={activeDispatch.status} />
                 <div className="progress-block">
                   <div className="progress-head"><span>Progress</span><strong>{activeDispatch.progress_percent != null ? `${activeDispatch.progress_percent}%` : 'Calculating…'}</strong></div>
                   <div className="progress-track"><div className="progress-fill" style={{ width: `${Math.min(100, Math.max(0, activeDispatch.progress_percent ?? 0))}%` }} /></div>
                 </div>
-                <div className="result-metrics"><div><span>ETA</span><strong>{activeDispatch.eta_min != null ? `${Math.round(activeDispatch.eta_min)} min` : 'Calculating…'}</strong></div><div><span>Remaining</span><strong>{activeDispatch.remaining_distance_km != null ? `${activeDispatch.remaining_distance_km} km` : '—'}</strong></div></div>
+                <div className="result-metrics"><div><span>ETA</span><LiveEta etaMin={activeDispatch.eta_min} /></div><div><span>Remaining</span><strong>{activeDispatch.remaining_distance_km != null ? `${activeDispatch.remaining_distance_km} km` : '—'}</strong></div></div>
               </div>}
               {dispatchError && <div className="inline-alert error" role="alert"><AlertCircle size={16} /><span>{dispatchError}</span></div>}
 
               <div className="rail-section"><div className="rail-section-title"><h3>Fleet units</h3><span>{availableVehicles} ready</span></div><div className="unit-list">{vehicles.length === 0 ? <p className="muted">No fleet units available.</p> : vehicles.map(vehicle => {
                 const statusInfo = getVehicleStatusInfo(vehicle);
-                return <button key={vehicle.id} className={`unit-row ${selectedVehicleId === vehicle.id ? 'selected' : ''}`} onClick={() => setSelectedVehicleId(vehicle.id)} disabled={!vehicle.location}>
+                const isActiveUnit = activeDispatch?.assigned_vehicle?.id === vehicle.id;
+                return <button key={vehicle.id} className={`unit-row ${selectedVehicleId === vehicle.id ? 'selected' : ''} ${isActiveUnit ? 'active-trip' : ''}`} onClick={() => setSelectedVehicleId(vehicle.id)} disabled={!vehicle.location}>
                   <span className={`unit-status ${statusInfo.className}`} />
-                  <div><strong>{vehicle.name}</strong><span>{vehicle.driver_name || 'Unassigned'} · {formatType(vehicle.vehicle_type)}</span></div><ChevronRight size={15} /></button>;
+                  <div><strong>{vehicle.name}</strong><span>{vehicle.driver_name || 'Unassigned'} · {formatType(vehicle.vehicle_type)}</span></div>
+                  {isActiveUnit && <span className="unit-live-chip">LIVE</span>}
+                  <ChevronRight size={15} /></button>;
               })}</div></div>
             </div>
 
@@ -706,7 +768,8 @@ export default function Dashboard() {
                 {vehicles.map(vehicle => {
                   const statusInfo = getVehicleStatusInfo(vehicle);
                   const popupTextClass = vehicle.is_available ? 'available-text' : (vehicle.has_active_dispatch ? 'on-trip-text' : 'unavailable-text');
-                  return vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={createVehicleIcon(vehicle.is_available)}><Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={popupTextClass}>{statusInfo.label}</span></div></Popup></Marker>;
+                  const isActiveUnit = activeDispatch?.assigned_vehicle?.id === vehicle.id;
+                  return vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={isActiveUnit ? activeTripIcon : createVehicleIcon(vehicle.is_available)}><Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={popupTextClass}>{statusInfo.label}</span>{isActiveUnit && activeDispatch?.assigned_vehicle_driver ? <span className="on-trip-text">Driver: {activeDispatch.assigned_vehicle_driver}</span> : null}</div></Popup></Marker>;
                 })}
                 {requestMarker && <Marker position={[requestMarker.lat, requestMarker.lng]} icon={requestIcon}><Popup><div className="map-popup"><strong>Dispatch request</strong><span>{requestMarker.lat.toFixed(5)}, {requestMarker.lng.toFixed(5)}</span></div></Popup></Marker>}
                 {activeDispatch?.geometry?.length ? <Polyline positions={activeDispatch.geometry} pathOptions={{ color: '#059669', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : null}

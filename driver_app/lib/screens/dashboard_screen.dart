@@ -631,6 +631,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             // Current Status Toggle
             _buildStatusToggle(),
+            const SizedBox(height: 12),
+
+            // GPS / location-sharing status
+            _buildLocationStatusCard(),
             const SizedBox(height: 16),
 
             // Assigned Vehicle Card
@@ -689,6 +693,91 @@ class _DashboardScreenState extends State<DashboardScreen> {
             activeTrackColor: AppTheme.successColor,
             inactiveThumbColor: Colors.white,
             inactiveTrackColor: AppTheme.outline,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationStatusCard() {
+    final isLive = _isOnDuty && _consecutiveLocationFailures < 6;
+    final statusText = _lastLocationStatus ?? (_isOnDuty ? 'Sharing live location' : 'Paused — go on duty to share');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: (isLive ? AppTheme.successColor : AppTheme.warningColor)
+                  .withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              isLive ? Icons.gps_fixed : Icons.gps_off,
+              color: isLive ? AppTheme.successColor : AppTheme.warningColor,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'GPS TRACKING',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.onSurfaceVariant,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: isLive ? AppTheme.successColor : AppTheme.warningColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: isLive
+                          ? Center(
+                              child: Container(
+                                width: 4,
+                                height: 4,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            )
+                          : null,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  statusText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

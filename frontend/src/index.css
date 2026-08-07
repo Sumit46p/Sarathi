@@ -1485,6 +1485,22 @@ select.input-field {
   opacity: .5
 }
 
+.unit-row.active-trip {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--surface-border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface))
+}
+
+.unit-live-chip {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent) !important;
+  font-size: .55rem !important;
+  font-weight: 700;
+  letter-spacing: .04em
+}
+
 .unit-status {
   width: 7px;
   height: 7px;
@@ -1661,6 +1677,131 @@ select.input-field {
   height: 32px;
   background: #2563eb;
   box-shadow: 0 0 0 6px rgba(37, 99, 235, .15), 0 3px 9px rgba(17, 24, 39, .25)
+}
+
+/* Active dispatch unit marker: pulsing ring around the unit dot. */
+.active-trip-marker {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%
+}
+
+.active-trip-marker::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  animation: pulse-ring 1.6s ease-out infinite
+}
+
+.active-trip-marker::after {
+  content: "";
+  width: 16px;
+  height: 16px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 2px 7px rgba(17, 24, 39, .3)
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(.7);
+    opacity: .9
+  }
+  70% {
+    transform: scale(1.25);
+    opacity: 0
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0
+  }
+}
+
+/* Trip lifecycle stepper in the live-tracking card. */
+.trip-stepper {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  margin-top: 13px;
+  padding: 10px 4px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: var(--surface)
+}
+
+.stepper-step {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0
+}
+
+.stepper-dot {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: .6rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-hover);
+  transition: all .25s var(--ease-out)
+}
+
+.stepper-step.reached .stepper-dot {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, var(--surface))
+}
+
+.stepper-step.active .stepper-dot {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent)
+}
+
+.stepper-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .58rem;
+  font-weight: 600;
+  color: var(--text-muted)
+}
+
+.stepper-step.reached .stepper-label {
+  color: var(--text-secondary)
+}
+
+.stepper-step.active .stepper-label {
+  color: var(--accent)
+}
+
+.stepper-line {
+  position: absolute;
+  top: 10px;
+  left: calc(50% + 14px);
+  width: calc(100% - 28px);
+  height: 2px;
+  background: var(--surface-border)
+}
+
+.stepper-step.reached .stepper-line {
+  background: color-mix(in srgb, var(--success) 45%, var(--surface-border))
+}
+
+.ticking-eta {
+  font-variant-numeric: tabular-nums
 }
 
 .driver-grid {
