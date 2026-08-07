@@ -177,7 +177,7 @@ export default function MaintenanceTab() {
         <>
 
           {/* Summary metrics */}
-          <div className="metrics-grid" style={{ marginBottom: 20 }}>
+          <div className="metrics-grid stagger" style={{ marginBottom: 20 }}>
             <article className="metric-card">
               <div className="metric-heading"><span>Total records</span><Wrench size={17} /></div>
               <strong>{records.length}</strong>

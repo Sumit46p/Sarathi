@@ -326,7 +326,7 @@ export default function TripsTab() {
                 </div>
               ) : (
                 <>
-                  <div className="playback-map" style={{ height: 380, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
+                  <div className="playback-map" style={{ height: 380, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
                     <MapContainer center={[currentPoint?.lat ?? 26.65, currentPoint?.lng ?? 87.89]} zoom={13} style={{ width: '100%', height: '100%' }}>
                       <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='&copy; <a href="https://www.esri.com/en-us/home">Esri</a>' />
                       <FitBounds points={selected.points} />
@@ -337,24 +337,24 @@ export default function TripsTab() {
                     </MapContainer>
                   </div>
 
-                  <div className="playback-controls" style={{ marginTop: 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      <button className="button button-primary" style={{ padding: '8px 14px' }} onClick={() => setPlaying(p => !p)}>
+                  <div className="playback-controls">
+                    <div className="playback-btn-row">
+                      <button className="button button-primary" onClick={() => setPlaying(p => !p)}>
                         {playing ? <><Pause size={16} />Pause</> : <><Play size={16} />Play</>}
                       </button>
-                      <button className="button button-secondary" style={{ padding: '8px 14px' }} onClick={() => { setProgress(0); setPlaying(true); }} title="Restart">
+                      <button className="button button-secondary" onClick={() => { setProgress(0); setPlaying(true); }} title="Restart">
                         <RotateCcw size={16} />
                         Restart
                       </button>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
-                        <span style={{ fontSize: '.65rem', color: 'var(--text-muted)' }}>Speed</span>
+                      <div className="playback-speed">
+                        <span className="playback-speed-label">Speed</span>
                         {[1, 2, 4].map(s => (
-                          <button key={s} className={`button ${speed === s ? 'button-primary' : 'button-secondary'}`} style={{ padding: '6px 10px', fontSize: '.68rem' }} onClick={() => setSpeed(s)}>{s}×</button>
+                          <button key={s} className={`button ${speed === s ? 'button-primary' : 'button-secondary'} playback-speed-btn`} onClick={() => setSpeed(s)}>{s}×</button>
                         ))}
                       </div>
-                      <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                        <div style={{ fontSize: '.75rem', fontWeight: 700 }}>{progress} / {selected.points.length - 1} points</div>
-                        <div style={{ fontSize: '.63rem', color: 'var(--text-muted)' }}>{currentPoint ? `@ ${currentPoint.speed_kmh} km/h` : '—'}</div>
+                      <div className="playback-readout">
+                        <div>{progress} / {selected.points.length - 1} points</div>
+                        <div>{currentPoint ? `@ ${currentPoint.speed_kmh} km/h` : '—'}</div>
                       </div>
                     </div>
                     <input
@@ -363,24 +363,16 @@ export default function TripsTab() {
                       max={Math.max(0, selected.points.length - 1)}
                       value={progress}
                       onChange={event => { setProgress(Number(event.target.value)); }}
-                      style={{ width: '100%', marginTop: 12, accentColor: 'var(--accent)' }}
+                      className="playback-scrubber"
                       aria-label="Playback scrubber"
                     />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginTop: 16 }}>
-                    <div className="result-metrics" style={{ gridTemplateColumns: '1fr', gap: 6, marginTop: 0 }}>
-                      <div><span>Elapsed</span><strong>{formatDuration(elapsedSeconds)}</strong></div>
-                    </div>
-                    <div className="result-metrics" style={{ gridTemplateColumns: '1fr', gap: 6, marginTop: 0 }}>
-                      <div><span>Avg speed</span><strong>{averageSpeed} km/h</strong></div>
-                    </div>
-                    <div className="result-metrics" style={{ gridTemplateColumns: '1fr', gap: 6, marginTop: 0 }}>
-                      <div><span>Breadcrumbs</span><strong>{selected.points.length}</strong></div>
-                    </div>
-                    <div className="result-metrics" style={{ gridTemplateColumns: '1fr', gap: 6, marginTop: 0 }}>
-                      <div><span>Status</span><strong>{STATUS_LABELS[selected.status] ?? selected.status}</strong></div>
-                    </div>
+                  <div className="playback-stats">
+                    <div className="playback-stat"><span>Elapsed</span><strong>{formatDuration(elapsedSeconds)}</strong></div>
+                    <div className="playback-stat"><span>Avg speed</span><strong>{averageSpeed} km/h</strong></div>
+                    <div className="playback-stat"><span>Breadcrumbs</span><strong>{selected.points.length}</strong></div>
+                    <div className="playback-stat"><span>Status</span><strong>{STATUS_LABELS[selected.status] ?? selected.status}</strong></div>
                   </div>
                 </>
               )}

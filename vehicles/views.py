@@ -11,6 +11,7 @@ from django.utils import timezone
 from .osrm import get_route_distance
 import threading
 import math
+import json
 
 
 def get_org_user_ids(user):
@@ -451,6 +452,50 @@ def safe_route_info(vehicle, dispatch, deadline=3.0):
     return result
 
 
+def dispatch_live_payload(dispatch):
+    """Serialize a dispatch request with live tracking data.
+
+    Extends the plain serializer output with:
+      - assigned_vehicle_name      → human-readable unit for driver UI
+      - assigned_vehicle_location  → current GPS position of the unit
+      - geometry / remaining_distance_km / eta_min  → live OSRM route info
+      - progress_percent           → how much of the dispatch-time road
+                                     distance has been covered
+
+    The same payload is used by the dispatcher and driver tracking views so
+    both sides show identical live status.
+    """
+    data = DispatchRequestSerializer(dispatch).data
+    vehicle = dispatch.assigned_vehicle
+
+    data['assigned_vehicle_name'] = vehicle.name if vehicle else None
+    data['assigned_vehicle_driver'] = (
+        vehicle.driver.name if vehicle and vehicle.driver_id else None
+    )
+    data['assigned_vehicle_location'] = (
+        {'lat': vehicle.location.y, 'lng': vehicle.location.x}
+        if vehicle and vehicle.location else None
+    )
+
+    route = safe_route_info(vehicle, dispatch) if vehicle else {
+        'geometry': None, 'distance_km': None, 'duration_min': None,
+    }
+    data['geometry'] = route['geometry']
+    data['remaining_distance_km'] = route['distance_km']
+    data['eta_min'] = route['duration_min']
+
+    # Live progress = how much of the dispatch-time road distance has been
+    # covered, based on the remaining road distance from the vehicle's
+    # current location to the request.
+    total_km = dispatch.distance_km
+    if vehicle and total_km and route['distance_km'] is not None and total_km > 0:
+        progress = (1 - (route['distance_km'] / total_km)) * 100
+        data['progress_percent'] = round(max(0.0, min(100.0, progress)), 1)
+    else:
+        data['progress_percent'] = None
+    return data
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def active_dispatch(request):
@@ -471,22 +516,7 @@ def active_dispatch(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    data = DispatchRequestSerializer(dispatch).data
-    route = safe_route_info(dispatch.assigned_vehicle, dispatch)
-    data['geometry'] = route['geometry']
-    data['remaining_distance_km'] = route['distance_km']
-    data['eta_min'] = route['duration_min']
-
-    # Live progress = how much of the dispatch-time road distance has been
-    # covered, based on the remaining road distance from the vehicle's
-    # current location to the request.
-    total_km = dispatch.distance_km
-    if total_km and route['distance_km'] is not None and total_km > 0:
-        progress = (1 - (route['distance_km'] / total_km)) * 100
-        data['progress_percent'] = round(max(0.0, min(100.0, progress)), 1)
-    else:
-        data['progress_percent'] = None
-    return Response(data)
+    return Response(dispatch_live_payload(dispatch))
 
 
 @api_view(['GET'])
@@ -721,9 +751,7 @@ def driver_dispatch(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    data = DispatchRequestSerializer(dispatch).data
-    data['geometry'] = safe_route_geometry(vehicle, dispatch)
-    return Response(data)
+    return Response(dispatch_live_payload(dispatch))
 
 
 @api_view(['POST'])
@@ -772,9 +800,7 @@ def driver_dispatch_transition(request):
     except ValueError as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    data = DispatchRequestSerializer(dispatch).data
-    data['geometry'] = safe_route_geometry(vehicle, dispatch)
-    return Response(data)
+    return Response(dispatch_live_payload(dispatch))
 
 
 @api_view(['GET'])
@@ -1677,10 +1703,36 @@ def create_emergency_request(request):
     }
     Creates an emergency SOS request from the driver.
     """
-    serializer = EmergencyRequestCreateSerializer(data=request.data)
+    data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+    raw_location = data.get('location')
+    location = None
+    if isinstance(raw_location, str) and raw_location:
+        try:
+            raw_location = json.loads(raw_location)
+        except (ValueError, TypeError):
+            raw_location = None
+    if isinstance(raw_location, dict):
+        if 'lat' in raw_location and 'lng' in raw_location:
+            location = Point(
+                float(raw_location['lng']),
+                float(raw_location['lat']),
+                srid=4326,
+            )
+        elif raw_location.get('type') == 'Point':
+            coords = raw_location.get('coordinates')
+            if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                location = Point(float(coords[0]), float(coords[1]), srid=4326)
+
+    if 'location' in data:
+        data['location'] = None
+
+    serializer = EmergencyRequestCreateSerializer(data=data)
     serializer.is_valid(raise_exception=True)
     
     emergency = serializer.save(user=request.user)
+    if location is not None:
+        emergency.location = location
+        emergency.save(update_fields=['location'])
     
     # Create notification for all admins of the organization
     from django.contrib.auth.models import User
