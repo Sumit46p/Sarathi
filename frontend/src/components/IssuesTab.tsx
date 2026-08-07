@@ -90,7 +90,7 @@ export default function IssuesTab() {
       </div>
 
       {/* Summary metrics */}
-      <div className="metrics-grid" style={{ marginBottom: 20 }}>
+      <div className="metrics-grid stagger" style={{ marginBottom: 20 }}>
         <article className="metric-card">
           <div className="metric-heading"><span>Total reports</span><AlertTriangle size={17} /></div>
           <strong>{reports.length}</strong>

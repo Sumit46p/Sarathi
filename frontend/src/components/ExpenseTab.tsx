@@ -198,7 +198,7 @@ export const ExpenseTab: React.FC = () => {
             {activeTab === 'overview' && summary && (
                 <>
                     {/* Summary Metrics */}
-                    <div className="metrics-grid" style={{ marginBottom: 20 }}>
+                    <div className="metrics-grid stagger" style={{ marginBottom: 20 }}>
                         <article className="metric-card">
                             <div className="metric-heading"><span>Total Operational Cost</span><DollarSign size={17} /></div>
                             <strong>रु {summary.total_operational_cost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
@@ -464,7 +464,7 @@ export const ExpenseTab: React.FC = () => {
 
                     {/* Key Insights */}
                     {report.daily_breakdown && report.daily_breakdown.length > 0 && (
-                        <div className="metrics-grid" style={{ marginTop: 24 }}>
+                        <div className="metrics-grid stagger" style={{ marginTop: 24 }}>
                             <article className="metric-card">
                                 <div className="metric-heading"><span>Total Entries</span><TrendingUp size={17} /></div>
                                 <strong>{report.daily_breakdown.reduce((sum, d) => sum + (Number(d.fuel_count) || 0), 0)}</strong>

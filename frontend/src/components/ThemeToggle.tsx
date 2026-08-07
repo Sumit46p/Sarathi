@@ -7,21 +7,12 @@ const ThemeToggle = () => {
   return (
     <button
       onClick={toggleTheme}
-      className="btn-primary"
-      style={{
-        width: '40px',
-        height: '40px',
-        padding: '0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'transparent',
-        border: '1px solid var(--surface-border)',
-        color: 'var(--text-main)',
-      }}
-      title="Toggle Dark Mode"
+      className="icon-button theme-toggle"
+      title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
     >
-      {isDark ? <Sun size={20} /> : <Moon size={20} />}
+      <Sun size={16} className={`theme-icon ${!isDark ? 'active' : ''}`} />
+      <Moon size={16} className={`theme-icon ${isDark ? 'active' : ''}`} />
     </button>
   );
 };

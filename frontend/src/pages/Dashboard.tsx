@@ -19,6 +19,7 @@ import TripsTab from '../components/TripsTab';
 import NotificationBell, { type NotificationItem } from '../components/NotificationBell';
 import { toast } from '../components/toast';
 import NEPAL_GEOJSON from '../data/nepalBorder';
+import { CountUp } from '../hooks/useCountUp';
 
 delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -645,11 +646,11 @@ export default function Dashboard() {
         <div className={`content-area ${activeTab === 'dispatch' ? 'dispatch-content' : ''}`}>
           {activeTab === 'dashboard' && <section className="tab-content" aria-labelledby="overview-heading">
             <div className="page-heading"><div><h2 id="overview-heading">Fleet readiness</h2><p>Live operational status across your Nepal fleet.</p></div><button id="add-vehicle-button" className="button button-primary" onClick={() => { setVehicleFormError(null); setShowAddModal(true); }}><Plus size={16} />Add vehicle</button></div>
-            <div className="metrics-grid">
-              <article className="metric-card"><div className="metric-heading"><span>Fleet size</span><Truck size={17} /></div><strong>{initialLoading ? '—' : totalVehicles}</strong><p>Total registered vehicles</p></article>
-              <article className="metric-card"><div className="metric-heading"><span>Dispatch ready</span><Activity size={17} /></div><strong>{initialLoading ? '—' : availableVehicles}</strong><p><span className="trend-positive"><CircleDot size={12} />Available now</span></p></article>
-              <article className="metric-card"><div className="metric-heading"><span>In service</span><Gauge size={17} /></div><strong>{initialLoading ? '—' : unavailableVehicles}</strong><p>Assigned or unavailable</p></article>
-              <article className="metric-card"><div className="metric-heading"><span>Drivers</span><Users size={17} /></div><strong>{initialLoading ? '—' : drivers.length}</strong><p>{activeDrivers} marked active</p></article>
+            <div className="metrics-grid stagger">
+              <article className="metric-card"><div className="metric-heading"><span>Fleet size</span><Truck size={17} /></div><strong>{initialLoading ? '—' : <CountUp value={totalVehicles} />}</strong><p>Total registered vehicles</p></article>
+              <article className="metric-card"><div className="metric-heading"><span>Dispatch ready</span><Activity size={17} /></div><strong>{initialLoading ? '—' : <CountUp value={availableVehicles} />}</strong><p><span className="trend-positive"><CircleDot size={12} />Available now</span></p></article>
+              <article className="metric-card"><div className="metric-heading"><span>In service</span><Gauge size={17} /></div><strong>{initialLoading ? '—' : <CountUp value={unavailableVehicles} />}</strong><p>Assigned or unavailable</p></article>
+              <article className="metric-card"><div className="metric-heading"><span>Drivers</span><Users size={17} /></div><strong>{initialLoading ? '—' : <CountUp value={drivers.length} />}</strong><p>{activeDrivers} marked active</p></article>
             </div>
 
             <div className="section-toolbar"><div><h2>Vehicles</h2><span>{filteredVehicles.length} of {vehicles.length} units</span></div><div className="toolbar-controls"><div className="search-field"><Search size={15} /><input id="vehicle-search" value={vehicleQuery} onChange={event => setVehicleQuery(event.target.value)} placeholder="Search fleet" aria-label="Search vehicles" /></div><div className="segmented-control" aria-label="Filter vehicle status">{(['all', 'available', 'unavailable'] as StatusFilter[]).map(filter => <button key={filter} className={statusFilter === filter ? 'active' : ''} onClick={() => setStatusFilter(filter)}>{formatType(filter)}</button>)}</div></div></div>
@@ -718,7 +719,7 @@ export default function Dashboard() {
           {activeTab === 'drivers' && <section className="tab-content" aria-labelledby="drivers-heading">
             <div className="page-heading"><div><h2 id="drivers-heading">Driver directory</h2><p>Manage credentials and assignment-ready personnel.</p></div><button id="add-driver-button" className="button button-primary" onClick={() => { setDriverFormError(null); setShowAddDriverModal(true); }}><Plus size={16} />Add driver</button></div>
             <div className="section-toolbar"><div><h2>All drivers</h2><span>{filteredDrivers.length} records</span></div><div className="search-field"><Search size={15} /><input id="driver-search" value={driverQuery} onChange={event => setDriverQuery(event.target.value)} placeholder="Search drivers" aria-label="Search drivers" /></div></div>
-            {initialLoading ? <div className="list-skeleton">{[1, 2, 3].map(item => <div className="skeleton-row" key={item} />)}</div> : filteredDrivers.length === 0 ? renderEmpty(drivers.length ? 'No matching drivers' : 'No drivers registered', drivers.length ? 'Try a different name, phone, or license number.' : 'Add a driver to begin assigning fleet units.') : <div className="driver-grid">{filteredDrivers.map(driver => {
+            {initialLoading ? <div className="list-skeleton">{[1, 2, 3].map(item => <div className="skeleton-row" key={item} />)}</div> : filteredDrivers.length === 0 ? renderEmpty(drivers.length ? 'No matching drivers' : 'No drivers registered', drivers.length ? 'Try a different name, phone, or license number.' : 'Add a driver to begin assigning fleet units.') : <div className="driver-grid stagger">{filteredDrivers.map(driver => {
               const assignmentCount = vehicles.filter(vehicle => vehicle.driver === driver.id).length;
               return <article className="driver-card" key={driver.id}><div className="driver-card-head"><div className="avatar">{driver.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase()}</div><span className={`status-badge ${driver.is_active ? 'available' : 'neutral'}`}><span />{driver.is_active ? 'Active' : 'Inactive'}</span><button className="icon-button danger" onClick={() => handleDeleteDriver(driver.id)} title="Delete driver" aria-label={`Delete ${driver.name}`}><Trash2 size={15} /></button></div><h3>{driver.name}</h3><div className="driver-detail"><Phone size={14} /><span>{driver.phone_number || 'No phone number'}</span></div><div className="driver-detail"><ShieldCheck size={14} /><span className="mono">{driver.license_number}</span></div><div className="driver-card-foot"><span>{assignmentCount ? `${assignmentCount} assigned vehicle${assignmentCount > 1 ? 's' : ''}` : 'No vehicle assigned'}</span><UserRound size={15} /></div></article>;
             })}</div>}
