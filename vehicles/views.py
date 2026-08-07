@@ -11,6 +11,7 @@ from django.utils import timezone
 from .osrm import get_route_distance
 import threading
 import math
+import json
 
 
 def get_org_user_ids(user):
@@ -1702,10 +1703,36 @@ def create_emergency_request(request):
     }
     Creates an emergency SOS request from the driver.
     """
-    serializer = EmergencyRequestCreateSerializer(data=request.data)
+    data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+    raw_location = data.get('location')
+    location = None
+    if isinstance(raw_location, str) and raw_location:
+        try:
+            raw_location = json.loads(raw_location)
+        except (ValueError, TypeError):
+            raw_location = None
+    if isinstance(raw_location, dict):
+        if 'lat' in raw_location and 'lng' in raw_location:
+            location = Point(
+                float(raw_location['lng']),
+                float(raw_location['lat']),
+                srid=4326,
+            )
+        elif raw_location.get('type') == 'Point':
+            coords = raw_location.get('coordinates')
+            if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                location = Point(float(coords[0]), float(coords[1]), srid=4326)
+
+    if 'location' in data:
+        data['location'] = None
+
+    serializer = EmergencyRequestCreateSerializer(data=data)
     serializer.is_valid(raise_exception=True)
     
     emergency = serializer.save(user=request.user)
+    if location is not None:
+        emergency.location = location
+        emergency.save(update_fields=['location'])
     
     # Create notification for all admins of the organization
     from django.contrib.auth.models import User

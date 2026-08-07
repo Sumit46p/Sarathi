@@ -89,6 +89,13 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'message', 'notification_type', 'is_read', 'created_at']
 
 class EmergencyRequestSerializer(serializers.ModelSerializer):
+    location = serializers.SerializerMethodField()
+
+    def get_location(self, obj):
+        if obj.location:
+            return {'lat': obj.location.y, 'lng': obj.location.x}
+        return None
+
     class Meta:
         model = EmergencyRequest
         fields = [
