@@ -563,6 +563,8 @@ select.input-field {
 }
 
 .topbar {
+  position: relative;
+  z-index: 900;
   height: 68px;
   flex: 0 0 68px;
   display: flex;
@@ -2261,7 +2263,7 @@ select.input-field {
 
   .topbar {
     position: sticky;
-    z-index: 800;
+    z-index: 900;
     top: 0;
     height: 60px;
     flex-basis: 60px;
