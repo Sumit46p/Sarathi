@@ -618,6 +618,97 @@ class FuelLog(models.Model):
             models.Index(fields=['vehicle', 'created_at']),
         ]
 
+class DrivingEvent(models.Model):
+    """Detected harsh-driving event (hard acceleration/braking/turn).
+
+    Computed server-side from consecutive GPS breadcrumbs when the client
+    does not report an event itself. Real deployments should push events
+    from the phone's accelerometer for higher fidelity; the heuristics here
+    cover the server-side fallback and the simulator.
+    """
+    EVENT_TYPE_CHOICES = [
+        ('harsh_accel', 'Harsh acceleration'),
+        ('harsh_brake', 'Hard braking'),
+        ('harsh_turn', 'Harsh turn'),
+    ]
+
+    vehicle = models.ForeignKey(
+        Vehicle,
+        on_delete=models.CASCADE,
+        related_name='driving_events',
+    )
+    driver = models.ForeignKey(
+        Driver,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='driving_events',
+    )
+    dispatch = models.ForeignKey(
+        DispatchRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='driving_events',
+    )
+    event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
+    severity = models.FloatField(
+        default=1.0,
+        help_text='Magnitude relative to the detection threshold (>=1 means an event).',
+    )
+    speed_kmh = models.FloatField(default=0, help_text='Vehicle speed at event time.')
+    value = models.FloatField(default=0, help_text='Measured magnitude (m/s^2 or degrees).')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['driver', 'created_at']),
+            models.Index(fields=['vehicle', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_event_type_display()} — {self.vehicle_id}"
+
+
+class LocationRecord(models.Model):
+    """GPS breadcrumb for trip history / route playback.
+
+    One row per location fix received for a vehicle. When a fix arrives while
+    the vehicle has an active dispatch, it is attributed to that trip so the
+    route can be replayed afterwards.
+    """
+    vehicle = models.ForeignKey(
+        Vehicle,
+        on_delete=models.CASCADE,
+        related_name='location_records',
+    )
+    dispatch = models.ForeignKey(
+        DispatchRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='location_records',
+        help_text='Active dispatch at the time of this fix, if any.',
+    )
+    location = models.PointField(srid=4326, help_text='GPS fix (lng, lat)')
+    speed_kmh = models.FloatField(
+        default=0,
+        help_text='Speed at the time of this fix, if reported.',
+    )
+    recorded_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['recorded_at']
+        indexes = [
+            models.Index(fields=['vehicle', 'recorded_at']),
+            models.Index(fields=['dispatch', 'recorded_at']),
+        ]
+
+    def __str__(self):
+        return f"Fix #{self.pk} for {self.vehicle_id} @ {self.recorded_at}"
+
+
 class FuelPrice(models.Model):
     """Stores current fuel prices scraped from NOC (Nepal Oil Corporation)."""
     FUEL_TYPE_CHOICES = [

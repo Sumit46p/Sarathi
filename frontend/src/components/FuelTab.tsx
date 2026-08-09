@@ -108,7 +108,7 @@ export default function FuelTab() {
       </div>
 
       {/* Summary metrics */}
-      <div className="metrics-grid" style={{ marginBottom: 20 }}>
+      <div className="metrics-grid stagger" style={{ marginBottom: 20 }}>
         <article className="metric-card">
           <div className="metric-heading"><span>Total entries</span><Fuel size={17} /></div>
           <strong>{logs.length}</strong>

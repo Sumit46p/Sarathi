@@ -11,6 +11,7 @@ from django.utils import timezone
 from .osrm import get_route_distance
 import threading
 import math
+import json
 
 
 def get_org_user_ids(user):
@@ -44,7 +45,7 @@ def get_org_user_ids(user):
         ids.append(user.id)
     return ids
 
-from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification, EmergencyRequest, FuelEntry, FuelLog, FuelPrice
+from .models import Vehicle, DispatchRequest, Driver, MaintenanceRecord, MaintenanceTemplate, IssueReport, Notification, EmergencyRequest, FuelEntry, FuelLog, FuelPrice, LocationRecord, DrivingEvent
 from .serializers import (
     VehicleSerializer,
     LocationUpdateSerializer,
@@ -93,6 +94,134 @@ def haversine_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) ->
     c = 2 * math.asin(math.sqrt(a))
     
     return R * c
+
+
+def _bearing_deg(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle initial bearing from point 1 to point 2, in degrees [0, 360)."""
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_lng = math.radians(lng2 - lng1)
+    y = math.sin(d_lng) * math.cos(phi2)
+    x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(d_lng)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+# Thresholds for server-side harsh-event detection from GPS breadcrumbs.
+# With coarse (4-5s) fixes only strong events are visible; the Flutter app
+# reports phone-accelerometer events for finer fidelity.
+HARSH_ACCEL_MS2 = 2.5
+HARSH_BRAKE_MS2 = -2.5
+HARSH_TURN_DEG = 30
+MIN_EVENT_SPEED_KMH = 8.0
+
+
+def detect_driving_events(vehicle, dispatch, record):
+    """Detect harsh acceleration/braking/turns from consecutive GPS fixes.
+
+    Called after a new :class:`LocationRecord` is stored. Compares the latest
+    fix against the two previous ones:
+      - longitudinal acceleration = (v2 - v1) / dt  (m/s^2)
+      - turning = heading change across the last two segments (degrees)
+
+    Creates a :class:`DrivingEvent` for every metric that exceeds its
+    threshold while the vehicle is moving.
+    """
+    if record.speed_kmh < MIN_EVENT_SPEED_KMH:
+        return
+
+    history = list(
+        LocationRecord.objects
+        .filter(vehicle=vehicle, id__lte=record.id)
+        .order_by('-id')[:3]
+    )
+    if len(history) < 3:
+        # Not enough consecutive fixes yet (need at least 3 for turning).
+        history.sort(key=lambda r: r.id)
+        if len(history) < 2:
+            return
+        prev = history[-2]
+        dt = (record.recorded_at - prev.recorded_at).total_seconds()
+        if dt <= 0:
+            return
+        accel = (record.speed_kmh - prev.speed_kmh) / 3.6 / dt
+        _record_events(vehicle, dispatch, record, accel=accel, turn_deg=0.0)
+        return
+
+    newest, prev, prev2 = history
+    dt = (newest.recorded_at - prev.recorded_at).total_seconds()
+    if dt <= 0:
+        return
+    accel = (newest.speed_kmh - prev.speed_kmh) / 3.6 / dt
+
+    bearing1 = _bearing_deg(prev2.location.y, prev2.location.x, prev.location.y, prev.location.x)
+    bearing2 = _bearing_deg(prev.location.y, prev.location.x, newest.location.y, newest.location.x)
+    turn = abs((bearing2 - bearing1 + 180) % 360 - 180)
+
+    _record_events(vehicle, dispatch, record, accel=accel, turn_deg=turn)
+
+
+def _record_events(vehicle, dispatch, record, accel: float, turn_deg: float) -> None:
+    """Persist DrivingEvent rows for metrics exceeding their thresholds."""
+    driver = vehicle.driver
+    now = timezone.now()
+
+    if accel > HARSH_ACCEL_MS2:
+        DrivingEvent.objects.create(
+            vehicle=vehicle, driver=driver, dispatch=dispatch,
+            event_type='harsh_accel',
+            severity=round(accel / HARSH_ACCEL_MS2, 2),
+            speed_kmh=record.speed_kmh,
+            value=round(accel, 2),
+            created_at=now,
+        )
+    if accel < HARSH_BRAKE_MS2:
+        DrivingEvent.objects.create(
+            vehicle=vehicle, driver=driver, dispatch=dispatch,
+            event_type='harsh_brake',
+            severity=round(abs(accel) / abs(HARSH_BRAKE_MS2), 2),
+            speed_kmh=record.speed_kmh,
+            value=round(accel, 2),
+            created_at=now,
+        )
+    if turn_deg > HARSH_TURN_DEG and record.speed_kmh >= MIN_EVENT_SPEED_KMH:
+        DrivingEvent.objects.create(
+            vehicle=vehicle, driver=driver, dispatch=dispatch,
+            event_type='harsh_turn',
+            severity=round(turn_deg / HARSH_TURN_DEG, 2),
+            speed_kmh=record.speed_kmh,
+            value=round(turn_deg, 2),
+            created_at=now,
+        )
+
+
+DRIVER_SCORE_WINDOW_DAYS = 30
+DRIVER_SCORE_WEIGHTS = {
+    'harsh_accel': 2,
+    'harsh_brake': 3,
+    'harsh_turn': 4,
+}
+
+
+def compute_driver_score(driver, days: int = DRIVER_SCORE_WINDOW_DAYS):
+    """0-100 driver safety score over the rolling window.
+
+    Starts at 100 and subtracts weighted penalties per harsh-driving event
+    (clamped at 0). Returns (score, breakdown_by_type, total_events).
+    """
+    cutoff = timezone.now() - timezone.timedelta(days=days)
+    breakdown = {key: 0 for key in DRIVER_SCORE_WEIGHTS}
+    total = 0
+    rows = (
+        DrivingEvent.objects
+        .filter(driver=driver, created_at__gte=cutoff)
+        .values('event_type')
+        .annotate(count=Count('id'))
+    )
+    for row in rows:
+        breakdown[row['event_type']] = row['count']
+        total += row['count']
+    penalty = sum(breakdown[k] * w for k, w in DRIVER_SCORE_WEIGHTS.items())
+    return max(0, 100 - penalty), breakdown, total
+
 
 def check_and_update_maintenance_due(vehicle: Vehicle) -> None:
     """
@@ -323,6 +452,52 @@ def safe_route_info(vehicle, dispatch, deadline=3.0):
     return result
 
 
+
+
+def dispatch_live_payload(dispatch):
+    """Serialize a dispatch request with live tracking data.
+
+    Extends the plain serializer output with:
+      - assigned_vehicle_name      → human-readable unit for driver UI
+      - assigned_vehicle_location  → current GPS position of the unit
+      - geometry / remaining_distance_km / eta_min  → live OSRM route info
+      - progress_percent           → how much of the dispatch-time road
+                                     distance has been covered
+
+    The same payload is used by the dispatcher and driver tracking views so
+    both sides show identical live status.
+    """
+    data = DispatchRequestSerializer(dispatch).data
+    vehicle = dispatch.assigned_vehicle
+
+    data['assigned_vehicle_name'] = vehicle.name if vehicle else None
+    data['assigned_vehicle_driver'] = (
+        vehicle.driver.name if vehicle and vehicle.driver_id else None
+    )
+    data['assigned_vehicle_location'] = (
+        {'lat': vehicle.location.y, 'lng': vehicle.location.x}
+        if vehicle and vehicle.location else None
+    )
+
+    route = safe_route_info(vehicle, dispatch) if vehicle else {
+        'geometry': None, 'distance_km': None, 'duration_min': None,
+    }
+    data['geometry'] = route['geometry']
+    data['remaining_distance_km'] = route['distance_km']
+    data['eta_min'] = route['duration_min']
+
+    # Live progress = how much of the dispatch-time road distance has been
+    # covered, based on the remaining road distance from the vehicle's
+    # current location to the request.
+    total_km = dispatch.distance_km
+    if vehicle and total_km and route['distance_km'] is not None and total_km > 0:
+        progress = (1 - (route['distance_km'] / total_km)) * 100
+        data['progress_percent'] = round(max(0.0, min(100.0, progress)), 1)
+    else:
+        data['progress_percent'] = None
+    return data
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def active_dispatch(request):
@@ -343,22 +518,7 @@ def active_dispatch(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    data = DispatchRequestSerializer(dispatch).data
-    route = safe_route_info(dispatch.assigned_vehicle, dispatch)
-    data['geometry'] = route['geometry']
-    data['remaining_distance_km'] = route['distance_km']
-    data['eta_min'] = route['duration_min']
-
-    # Live progress = how much of the dispatch-time road distance has been
-    # covered, based on the remaining road distance from the vehicle's
-    # current location to the request.
-    total_km = dispatch.distance_km
-    if total_km and route['distance_km'] is not None and total_km > 0:
-        progress = (1 - (route['distance_km'] / total_km)) * 100
-        data['progress_percent'] = round(max(0.0, min(100.0, progress)), 1)
-    else:
-        data['progress_percent'] = None
-    return Response(data)
+    return Response(dispatch_live_payload(dispatch))
 
 
 @api_view(['GET'])
@@ -593,9 +753,7 @@ def driver_dispatch(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    data = DispatchRequestSerializer(dispatch).data
-    data['geometry'] = safe_route_geometry(vehicle, dispatch)
-    return Response(data)
+    return Response(dispatch_live_payload(dispatch))
 
 
 @api_view(['POST'])
@@ -644,9 +802,7 @@ def driver_dispatch_transition(request):
     except ValueError as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    data = DispatchRequestSerializer(dispatch).data
-    data['geometry'] = safe_route_geometry(vehicle, dispatch)
-    return Response(data)
+    return Response(dispatch_live_payload(dispatch))
 
 
 @api_view(['GET'])
@@ -766,11 +922,14 @@ def update_location(request, pk):
     new_lat = serializer.validated_data['lat']
     new_lng = serializer.validated_data['lng']
     new_location = Point(new_lng, new_lat, srid=4326)
+    speed_kmh = serializer.validated_data.get('speed_kmh')
 
     # Calculate distance from previous location if it exists
     NOISE_THRESHOLD_METERS = 15
     distance_increment_km = 0
-    
+    now = timezone.now()
+    prev_fix_at = vehicle.last_location_at
+
     if vehicle.location is not None:
         # Calculate great-circle distance using haversine formula
         distance_m = haversine_distance_km(
@@ -779,15 +938,37 @@ def update_location(request, pk):
             new_lat,
             new_lng,
         ) * 1000  # Convert to meters
-        
+
         # Only count distance if above noise threshold (likely real movement, not GPS jitter)
         if distance_m > NOISE_THRESHOLD_METERS:
             distance_increment_km = distance_m / 1000
             vehicle.total_distance_km += distance_increment_km
-    
+
     vehicle.location = new_location
-    vehicle.last_location_at = timezone.now()
+    vehicle.last_location_at = now
     vehicle.save(update_fields=['location', 'last_location_at', 'total_distance_km'])
+
+    # Record a GPS breadcrumb for trip history / route playback. If the vehicle
+    # is mid-dispatch the fix is attributed to that trip so the route can be
+    # replayed afterwards. Speed is derived from the fix interval when the
+    # client did not report one.
+    active_dispatch = vehicle.dispatch_requests.filter(
+        status__in=ACTIVE_DISPATCH_STATUSES
+    ).order_by('-created_at').first()
+    derived_speed = 0.0
+    if speed_kmh is None and distance_increment_km and prev_fix_at is not None:
+        seconds = max(1.0, (now - prev_fix_at).total_seconds())
+        derived_speed = distance_increment_km / (seconds / 3600)
+    record = LocationRecord.objects.create(
+        vehicle=vehicle,
+        dispatch=active_dispatch,
+        location=new_location,
+        speed_kmh=speed_kmh if speed_kmh is not None else round(derived_speed, 1),
+        recorded_at=now,
+    )
+    # Detect harsh-driving events from the breadcrumb stream (server-side
+    # heuristics; the Flutter app reports accelerometer events for fidelity).
+    detect_driving_events(vehicle, active_dispatch, record)
 
     # Check if any maintenance records should be marked as due
     # (calendar or mileage-based recurrence)
@@ -1308,6 +1489,7 @@ def driver_trip_history(request):
         DispatchRequest.objects
         .filter(assigned_vehicle__in=vehicles, status__in=['completed', 'cancelled', 'rejected'])
         .select_related('assigned_vehicle')
+        .annotate(point_count=Count('location_records'))
         .order_by('-created_at')
     )
 
@@ -1332,9 +1514,131 @@ def driver_trip_history(request):
             'response_time_seconds': dispatch.response_time_seconds,
             'request_lat': dispatch.request_lat,
             'request_lng': dispatch.request_lng,
+            'point_count': dispatch.point_count,
         })
 
     return Response(history)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def trip_list(request):
+    """
+    GET /api/trips/
+    Org-scoped list of finished dispatches (completed/cancelled/rejected) with
+    GPS breadcrumb counts, backing the Trip History / route playback tab.
+    """
+    dispatches = (
+        DispatchRequest.objects
+        .filter(
+            assigned_vehicle__owner__in=get_org_user_ids(request.user),
+            status__in=['completed', 'cancelled', 'rejected'],
+        )
+        .select_related('assigned_vehicle', 'assigned_vehicle__driver')
+        .annotate(point_count=Count('location_records'))
+        .order_by('-created_at')
+    )
+
+    trips = []
+    for dispatch in dispatches:
+        veh = dispatch.assigned_vehicle
+        trips.append({
+            'id': dispatch.id,
+            'status': dispatch.status,
+            'vehicle_name': veh.name if veh else None,
+            'vehicle_type': veh.vehicle_type if veh else None,
+            'number_plate': veh.number_plate if veh else None,
+            'driver_name': veh.driver.name if veh and veh.driver else None,
+            'created_at': dispatch.created_at.isoformat(),
+            'assigned_at': dispatch.assigned_at.isoformat() if dispatch.assigned_at else None,
+            'completed_at': dispatch.completed_at.isoformat() if dispatch.completed_at else None,
+            'distance_km': dispatch.distance_km,
+            'duration_min': dispatch.duration_min,
+            'trip_duration_seconds': dispatch.trip_duration_seconds,
+            'request_lat': dispatch.request_lat,
+            'request_lng': dispatch.request_lng,
+            'point_count': dispatch.point_count,
+        })
+
+    return Response(trips)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def trip_playback(request, pk):
+    """
+    GET /api/trips/<dispatch_id>/playback/
+    Returns time-ordered GPS breadcrumbs for a dispatch so the route can be
+    replayed on the map. Accessible to the org admin or the vehicle's
+    assigned driver (for the driver app's trip history).
+    """
+    try:
+        dispatch = DispatchRequest.objects.select_related(
+            'assigned_vehicle', 'assigned_vehicle__driver'
+        ).get(pk=pk)
+    except DispatchRequest.DoesNotExist:
+        return Response(
+            {'error': 'Trip not found or access denied'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    veh = dispatch.assigned_vehicle
+    is_owner = veh is not None and veh.owner_id in get_org_user_ids(request.user)
+    is_assigned_driver = (
+        veh is not None and veh.driver is not None
+        and veh.driver.user is not None and veh.driver.user_id == request.user.id
+    )
+    if not (is_owner or is_assigned_driver):
+        return Response(
+            {'error': 'Trip not found or access denied'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    records = dispatch.location_records.order_by('recorded_at')
+    points = [{
+        'lat': record.location.y,
+        'lng': record.location.x,
+        'speed_kmh': record.speed_kmh,
+        'recorded_at': record.recorded_at.isoformat(),
+    } for record in records]
+
+    veh = dispatch.assigned_vehicle
+    return Response({
+        'dispatch_id': dispatch.id,
+        'status': dispatch.status,
+        'vehicle_name': veh.name if veh else None,
+        'number_plate': veh.number_plate if veh else None,
+        'request_lat': dispatch.request_lat,
+        'request_lng': dispatch.request_lng,
+        'points': points,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def driver_score(request, pk):
+    """
+    GET /api/drivers/<driver_id>/score/
+    Org-scoped driver safety score (0-100) from harsh-driving events in the
+    rolling 30-day window, plus per-type event counts.
+    """
+    try:
+        driver = Driver.objects.get(pk=pk, owner__in=get_org_user_ids(request.user))
+    except Driver.DoesNotExist:
+        return Response(
+            {'error': 'Driver not found or access denied'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    score, breakdown, total = compute_driver_score(driver)
+    return Response({
+        'driver_id': driver.id,
+        'name': driver.name,
+        'score': score,
+        'events': breakdown,
+        'total_events': total,
+        'window_days': DRIVER_SCORE_WINDOW_DAYS,
+    })
 
 
 @api_view(['GET'])
@@ -1413,10 +1717,36 @@ def create_emergency_request(request):
     }
     Creates an emergency SOS request from the driver.
     """
-    serializer = EmergencyRequestCreateSerializer(data=request.data)
+    data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+    raw_location = data.get('location')
+    location = None
+    if isinstance(raw_location, str) and raw_location:
+        try:
+            raw_location = json.loads(raw_location)
+        except (ValueError, TypeError):
+            raw_location = None
+    if isinstance(raw_location, dict):
+        if 'lat' in raw_location and 'lng' in raw_location:
+            location = Point(
+                float(raw_location['lng']),
+                float(raw_location['lat']),
+                srid=4326,
+            )
+        elif raw_location.get('type') == 'Point':
+            coords = raw_location.get('coordinates')
+            if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                location = Point(float(coords[0]), float(coords[1]), srid=4326)
+
+    if 'location' in data:
+        data['location'] = None
+
+    serializer = EmergencyRequestCreateSerializer(data=data)
     serializer.is_valid(raise_exception=True)
     
     emergency = serializer.save(user=request.user)
+    if location is not None:
+        emergency.location = location
+        emergency.save(update_fields=['location'])
     
     # Create notification for all admins of the organization
     from django.contrib.auth.models import User
@@ -2772,16 +3102,20 @@ def analytics_dashboard(request):
         .filter(total_trips__gt=0)
         .order_by('-completed_trips')[:5]
     )
-    driver_performance = [
-        {
+    driver_performance = []
+    for d in driver_perf_rows:
+        breakdown = event_breakdown.get(d.id, {'harsh_accel': 0, 'harsh_brake': 0, 'harsh_turn': 0, 'total': 0})
+        penalty = sum(breakdown[row_type] * w for row_type, w in DRIVER_SCORE_WEIGHTS.items())
+        driver_performance.append({
             'name': d.name,
             'total_trips': d.total_trips,
             'accepted_trips': d.accepted_trips,
             'acceptance_rate': round((d.accepted_trips / d.total_trips) * 100, 1) if d.total_trips else 0,
             'completed_trips': d.completed_trips,
-        }
-        for d in driver_perf_rows
-    ]
+            'score': max(0, 100 - penalty),
+            'harsh_events': breakdown['total'],
+            'events': breakdown,
+        })
 
     return Response({
         'fleet_status': fleet_status,

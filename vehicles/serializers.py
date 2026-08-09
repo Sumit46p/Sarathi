@@ -38,9 +38,10 @@ class VehicleSerializer(serializers.ModelSerializer):
         ]
 
 class LocationUpdateSerializer(serializers.Serializer):
-    """Accepts just {"lat": ..., "lng": ...} for the update-location endpoint."""
+    """Accepts {"lat": ..., "lng": ..., "speed_kmh": ...} for the update-location endpoint."""
     lat = serializers.FloatField(min_value=-90, max_value=90)
     lng = serializers.FloatField(min_value=-180, max_value=180)
+    speed_kmh = serializers.FloatField(required=False, min_value=0)
 
 class AssignDriverSerializer(serializers.Serializer):
     """Accepts {"driver_id": 5} or {"driver_id": null}."""
@@ -127,6 +128,7 @@ class NotificationSerializer(serializers.ModelSerializer):
 class EmergencyRequestSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     driver_vehicle_name = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
 
     def get_image_url(self, obj):
         if obj.image and obj.image.name:
@@ -144,6 +146,10 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
         except Driver.DoesNotExist:
             return None
 
+    def get_location(self, obj):
+        if obj.location:
+            return {'lat': obj.location.y, 'lng': obj.location.x}
+        return None
     class Meta:
         model = EmergencyRequest
         fields = [
