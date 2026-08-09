@@ -42,10 +42,17 @@ function KpiCard({ title, value, subtitle, icon, accent = 'var(--accent)' }: Kpi
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="recharts-tooltip">
-      <p className="recharts-tooltip-label">{label}</p>
+    <div className="recharts-tooltip" style={{
+      backgroundColor: 'var(--panel-bg, #1a1a1a)',
+      border: '1px solid var(--border, #333)',
+      padding: '12px',
+      borderRadius: '8px',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+      color: 'var(--text, #fff)'
+    }}>
+      <p className="recharts-tooltip-label" style={{ margin: '0 0 8px 0', fontWeight: 'bold', fontSize: '0.85rem' }}>{label}</p>
       {payload.map((entry: any, index: number) => (
-        <p key={index} style={{ color: entry.color }}>
+        <p key={index} style={{ color: entry.color, margin: '4px 0 0 0', fontSize: '0.8rem', fontWeight: 500 }}>
           {entry.name}: {typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value}
         </p>
       ))}
