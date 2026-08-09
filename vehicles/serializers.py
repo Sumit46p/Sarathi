@@ -58,13 +58,36 @@ class DispatchRequestSerializer(serializers.ModelSerializer):
         ]
 
 class MaintenanceRecordSerializer(serializers.ModelSerializer):
+    vehicle_name = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    proof_image_url = serializers.SerializerMethodField()
+
+    def get_vehicle_name(self, obj):
+        return obj.vehicle.name if obj.vehicle else None
+
+    def get_image_url(self, obj):
+        if obj.image and obj.image.name:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+    def get_proof_image_url(self, obj):
+        if obj.proof_image and obj.proof_image.name:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.proof_image.url)
+            return obj.proof_image.url
+        return None
+
     class Meta:
         model = MaintenanceRecord
         fields = [
-            'id', 'vehicle', 'maintenance_type', 'description',
+            'id', 'vehicle', 'vehicle_name', 'maintenance_type', 'description',
             'due_date', 'completed', 'completed_at', 'recurrence_days',
-            'recurrence_km', 'image', 'proof_image', 'completed_by',
-            'completion_notes', 'cost'
+            'recurrence_km', 'image', 'image_url', 'proof_image', 'proof_image_url',
+            'completed_by', 'completion_notes', 'cost'
         ]
 
 class MaintenanceTemplateSerializer(serializers.ModelSerializer):
@@ -74,13 +97,27 @@ class MaintenanceTemplateSerializer(serializers.ModelSerializer):
 
 class IssueReportSerializer(serializers.ModelSerializer):
     driver_name = serializers.SerializerMethodField()
+    vehicle_name = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
 
     def get_driver_name(self, obj):
         return obj.driver.name
 
+    def get_vehicle_name(self, obj):
+        vehicle = obj.driver.assigned_vehicles.first()
+        return vehicle.name if vehicle else "Unassigned"
+
+    def get_image_url(self, obj):
+        if obj.image and obj.image.name:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
     class Meta:
         model = IssueReport
-        fields = ['id', 'driver', 'driver_name', 'description', 'image', 'status', 'created_at']
+        fields = ['id', 'driver', 'driver_name', 'vehicle_name', 'description', 'image', 'image_url', 'status', 'created_at']
         read_only_fields = ['id', 'driver', 'created_at']
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -89,19 +126,36 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'message', 'notification_type', 'is_read', 'created_at']
 
 class EmergencyRequestSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+    driver_vehicle_name = serializers.SerializerMethodField()
     location = serializers.SerializerMethodField()
+
+    def get_image_url(self, obj):
+        if obj.image and obj.image.name:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+    def get_driver_vehicle_name(self, obj):
+        try:
+            driver = Driver.objects.get(user=obj.user)
+            vehicle = driver.assigned_vehicles.first()
+            return vehicle.name if vehicle else None
+        except Driver.DoesNotExist:
+            return None
 
     def get_location(self, obj):
         if obj.location:
             return {'lat': obj.location.y, 'lng': obj.location.x}
         return None
-
     class Meta:
         model = EmergencyRequest
         fields = [
             'id', 'user', 'emergency_type', 'description', 'location',
-            'image', 'status', 'assigned_vehicle', 'created_at', 'updated_at',
-            'resolved_at'
+            'image', 'image_url', 'driver_vehicle_name', 'status',
+            'assigned_vehicle', 'created_at', 'updated_at', 'resolved_at'
         ]
 
 class FuelEntrySerializer(serializers.ModelSerializer):

@@ -7,9 +7,11 @@ import {
   Search,
   ShieldCheck,
   Truck,
+  Trash2,
   X,
+  Image,
 } from 'lucide-react';
-import { fetchIssueReports, updateIssueStatus, type IssueReport } from '../api/issues';
+import { fetchIssueReports, updateIssueStatus, deleteIssueReport, type IssueReport } from '../api/issues';
 import { toast } from './toast';
 
 const STATUS_BADGES: Record<string, { className: string; label: string }> = {
@@ -53,6 +55,22 @@ export default function IssuesTab() {
       console.error('Failed to update issue status', error);
       setDataError('Could not update issue status.');
       toast.error('Could not update issue status.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this issue report?')) return;
+    setUpdatingId(id);
+    try {
+      await deleteIssueReport(id);
+      setReports(prev => prev.filter(r => r.id !== id));
+      toast.success('Issue report deleted');
+    } catch (error) {
+      console.error('Failed to delete issue report', error);
+      setDataError('Could not delete issue report.');
+      toast.error('Could not delete issue report.');
     } finally {
       setUpdatingId(null);
     }
@@ -191,7 +209,9 @@ export default function IssuesTab() {
                     </td>
                     <td>
                       {report.image_url ? (
-                        <a href={report.image_url} target="_blank" rel="noreferrer" className="link" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>View</a>
+                        <a href={report.image_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '.78rem', color: 'var(--primary)' }}>
+                          <Image size={14} /> View
+                        </a>
                       ) : (
                         <span className="muted">None</span>
                       )}
@@ -245,8 +265,17 @@ export default function IssuesTab() {
                           </button>
                         )}
                         {report.status === 'resolved' && (
-                          <span className="muted" style={{ fontSize: '.7rem' }}>Closed</span>
+                          <span className="muted" style={{ fontSize: '.7rem', marginRight: 8 }}>Closed</span>
                         )}
+                        <button
+                          className="icon-button danger"
+                          onClick={() => handleDelete(report.id)}
+                          disabled={updatingId === report.id}
+                          title="Delete issue"
+                          aria-label={`Delete issue ${report.id}`}
+                        >
+                          {updatingId === report.id ? '...' : <Trash2 size={15} />}
+                        </button>
                       </div>
                     </td>
                   </tr>

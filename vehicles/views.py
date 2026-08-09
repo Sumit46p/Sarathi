@@ -452,6 +452,8 @@ def safe_route_info(vehicle, dispatch, deadline=3.0):
     return result
 
 
+
+
 def dispatch_live_payload(dispatch):
     """Serialize a dispatch request with live tracking data.
 
@@ -1251,6 +1253,13 @@ def driver_maintenance_request(request):
     except Driver.DoesNotExist:
         vehicle = None
 
+    cost = request.data.get('cost')
+    if cost:
+        try:
+            cost = float(cost)
+        except ValueError:
+            cost = None
+
     # Create a pending maintenance record for the driver
     record = MaintenanceRecord.objects.create(
         vehicle=vehicle,
@@ -1260,9 +1269,10 @@ def driver_maintenance_request(request):
         completed=False,
         owner=request.user,
         image=image,
+        cost=cost,
     )
 
-    serializer = MaintenanceRecordSerializer(record)
+    serializer = MaintenanceRecordSerializer(record, context={'request': request})
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -1345,6 +1355,10 @@ def issue_report_detail(request, pk):
     if request.method == 'GET':
         serializer = IssueReportSerializer(report, context={'request': request})
         return Response(serializer.data)
+        
+    if request.method == 'DELETE':
+        report.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     new_status = request.data.get('status')
     if new_status not in dict(IssueReport.STATUS_CHOICES):
@@ -3088,9 +3102,6 @@ def analytics_dashboard(request):
         .filter(total_trips__gt=0)
         .order_by('-completed_trips')[:5]
     )
-
-    # Harsh-driving events per driver (rolling window) — folded into the
-    # driver safety score shown in the performance table.
     event_cutoff = timezone.now() - timezone.timedelta(days=DRIVER_SCORE_WINDOW_DAYS)
     driver_ids = [d.id for d in driver_perf_rows]
     event_breakdown = {}

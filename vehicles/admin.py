@@ -70,7 +70,7 @@ class EmergencyRequestAdmin(admin.ModelAdmin):
 @admin.register(MaintenanceRecord)
 class MaintenanceRecordAdmin(admin.ModelAdmin):
     """Admin interface for maintenance records."""
-    list_display = ('id', 'vehicle', 'maintenance_type', 'due_date', 'completed', 'owner')
+    list_display = ('id', 'vehicle', 'maintenance_type', 'due_date', 'completed', 'cost', 'owner')
     list_filter = ('maintenance_type', 'completed', 'due_date')
     search_fields = ('vehicle__name', 'description')
     readonly_fields = ('completed_at',)

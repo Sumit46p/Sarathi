@@ -50,10 +50,17 @@ function KpiCard({ title, value, subtitle, icon, accent = 'var(--primary)', suff
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="recharts-tooltip">
-      <p className="recharts-tooltip-label">{label}</p>
+    <div className="recharts-tooltip" style={{
+      backgroundColor: 'var(--panel-bg, #1a1a1a)',
+      border: '1px solid var(--border, #333)',
+      padding: '12px',
+      borderRadius: '8px',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+      color: 'var(--text, #fff)'
+    }}>
+      <p className="recharts-tooltip-label" style={{ margin: '0 0 8px 0', fontWeight: 'bold', fontSize: '0.85rem' }}>{label}</p>
       {payload.map((entry: any, index: number) => (
-        <p key={index} style={{ color: entry.color }}>
+        <p key={index} style={{ color: entry.color, margin: '4px 0 0 0', fontSize: '0.8rem', fontWeight: 500 }}>
           {entry.name}: {typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value}
         </p>
       ))}
@@ -172,7 +179,6 @@ export default function AnalyticsDashboard() {
       })
       .finally(() => setLoading(false));
   };
-
   useEffect(() => {
     fetchAnalytics()
       .then(setAnalytics)
@@ -217,7 +223,6 @@ export default function AnalyticsDashboard() {
   }
 
   const { fleet_status, dispatch_volume, emergency_trends, vehicle_type_dist, top_drivers, issue_breakdown, fuel_trends, vehicle_efficiency, driver_performance, kpi } = analytics;
-
   const completionRate = kpi.total_dispatches ? Math.round((kpi.completed_dispatches / kpi.total_dispatches) * 100) : 0;
 
   return (
@@ -414,7 +419,6 @@ export default function AnalyticsDashboard() {
             </LineChart>
           </ResponsiveContainer>
         </div>
-
         <div className="chart-card" style={{ gridColumn: '1 / 2' }}>
           <div className="chart-card-head">
             <h3>Fuel efficiency (km/L)</h3>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/auth';
-import { AlertCircle, CheckCircle2, Plus, Search, Trash2, Truck, Wrench, X, DollarSign } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Plus, Search, Trash2, Truck, Wrench, X, DollarSign, Image } from 'lucide-react';
 import { toast } from './toast';
 import { ExpenseTab } from './ExpenseTab';
 
@@ -16,6 +16,7 @@ interface MaintenanceRecord {
   owner: number;
   is_overdue: boolean;
   cost?: string | null;
+  image_url?: string;
 }
 
 const MAINTENANCE_TYPES = [
@@ -44,6 +45,7 @@ export default function MaintenanceTab() {
     due_date: new Date().toISOString().split('T')[0],
     description: '',
     cost: '',
+    image: null as File | null,
   });
   const [addLoading, setAddLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -78,7 +80,20 @@ export default function MaintenanceTab() {
     setAddLoading(true);
     setFormError(null);
     try {
-      await api.post('/maintenance/', newRecord);
+      if (newRecord.image) {
+        const formData = new FormData();
+        formData.append('vehicle', newRecord.vehicle);
+        formData.append('maintenance_type', newRecord.maintenance_type);
+        formData.append('due_date', newRecord.due_date);
+        if (newRecord.description) formData.append('description', newRecord.description);
+        if (newRecord.cost) formData.append('cost', newRecord.cost);
+        formData.append('image', newRecord.image);
+        await api.post('/maintenance/', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+      } else {
+        await api.post('/maintenance/', newRecord);
+      }
       setShowAddModal(false);
       setNewRecord({
         vehicle: '',
@@ -86,6 +101,7 @@ export default function MaintenanceTab() {
         due_date: new Date().toISOString().split('T')[0],
         description: '',
         cost: '',
+        image: null,
       });
       await fetchMaintenance();
       toast.success('Maintenance record added');
@@ -250,6 +266,7 @@ export default function MaintenanceTab() {
                   <tr>
                     <th>Vehicle</th>
                     <th>Service</th>
+                    <th>Photo</th>
                     <th>Due date</th>
                     <th style={{ textAlign: 'right' }}>Cost</th>
                     <th>Status</th>
@@ -265,7 +282,17 @@ export default function MaintenanceTab() {
                           <div><strong>{rec.vehicle_name || 'Unassigned'}</strong></div>
                         </div>
                       </td>
-                      <td><span>{formatType(rec.maintenance_type)}</span>{rec.description ? <span className="muted" style={{ display: 'block', fontSize: '.65rem', marginTop: 2 }}>{rec.description}</span> : null}</td>
+                      <td>
+                        <span>{formatType(rec.maintenance_type)}</span>
+                        {rec.description ? <span className="muted" style={{ display: 'block', fontSize: '.65rem', marginTop: 2 }}>{rec.description}</span> : null}
+                      </td>
+                      <td>
+                        {rec.image_url ? (
+                          <a href={rec.image_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '.78rem', color: 'var(--primary)' }}>
+                            <Image size={14} /> View
+                          </a>
+                        ) : <span className="muted">None</span>}
+                      </td>
                       <td><span className={rec.is_overdue ? 'overdue-date' : ''}>{rec.due_date}</span></td>
                       <td style={{ textAlign: 'right' }}><span>{rec.cost ? `रु ${Number(rec.cost).toLocaleString()}` : '—'}</span></td>
                       <td>
@@ -343,6 +370,14 @@ export default function MaintenanceTab() {
                   <div className="form-group">
                     <label htmlFor="cost">Cost <span className="muted">(optional)</span></label>
                     <input id="cost" type="number" step="0.01" min="0" className="input-field" value={newRecord.cost} onChange={event => setNewRecord({ ...newRecord, cost: event.target.value })} placeholder="Enter cost in NPR" />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="image">Image <span className="muted">(optional)</span></label>
+                    <input id="image" type="file" className="input-field" accept="image/*" onChange={event => {
+                      if (event.target.files && event.target.files[0]) {
+                        setNewRecord({ ...newRecord, image: event.target.files[0] });
+                      }
+                    }} style={{ paddingTop: '5px' }} />
                   </div>
                   {formError && <div className="inline-alert error"><AlertCircle size={16} />{formError}</div>}
                 </div>

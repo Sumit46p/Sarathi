@@ -648,6 +648,7 @@ class ApiService {
   static Future<bool> submitMaintenanceRequest({
     required String description,
     String? imagePath,
+    String? cost,
   }) async {
     try {
       final token = await _storage.read(key: 'access_token');
@@ -660,6 +661,9 @@ class ApiService {
         request.headers['Authorization'] = 'Bearer $token';
       }
       request.fields['description'] = description;
+      if (cost != null && cost.trim().isNotEmpty) {
+        request.fields['cost'] = cost.trim();
+      }
 
       if (imagePath != null) {
         request.files.add(
