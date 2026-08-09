@@ -123,6 +123,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
 
   Future<void> _submitMaintenanceRequest() async {
     final descriptionController = TextEditingController();
+    final costController = TextEditingController();
     File? selectedImage;
     bool isLoading = false;
 
@@ -156,6 +157,28 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                 maxLength: 500,
                 decoration: InputDecoration(
                   hintText: 'Describe the maintenance issue...',
+                  filled: true,
+                  fillColor: AppTheme.surfaceLowest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppTheme.primaryColor, width: 1.5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: costController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  hintText: 'Cost (optional) in NPR',
                   filled: true,
                   fillColor: AppTheme.surfaceLowest,
                   border: OutlineInputBorder(
@@ -268,6 +291,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                             ? 'Maintenance request (image attached)'
                             : descriptionController.text.trim(),
                         imagePath: selectedImage?.path,
+                        cost: costController.text.trim(),
                       );
 
                       if (!dialogContext.mounted) return;
@@ -576,13 +600,44 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                                                     color: AppTheme.secondaryColor,
                                                   ),
                                                 ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  if (record['cost'] != null) ...[
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.monetization_on_rounded, size: 16, color: AppTheme.outline),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'रु ${record['cost']}',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.primaryColor,
                                           ),
                                         ),
                                       ],
-                                    ],
-                                  ),
+                                    ),
+                                  ],
+                                  if (record['image_url'] != null) ...[
+                                    const SizedBox(height: 12),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        record['image_url'].toString(),
+                                        height: 120,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) =>
+                                            const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

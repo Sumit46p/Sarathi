@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity, AlertCircle, AlertTriangle, BarChart2, CheckCircle2, ChevronRight, CircleDot,
-  Droplets, Gauge, LayoutDashboard, LogOut, MapPin, Navigation, Phone, Plus,
+  Droplets, Gauge, Image, LayoutDashboard, LogOut, MapPin, Navigation, Phone, Plus,
   Radio, RefreshCw, Search, Settings, ShieldCheck, Trash2, Truck,
   UserRound, Users, Wrench, X,
 } from 'lucide-react';
@@ -129,9 +129,32 @@ function DispatchMapBoundsFitter({ geometry, requestMarker, assignedVehicle }: {
   return null;
 }
 
-const formatType = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+const formatType = (value: string | undefined | null) => {
+  if (!value) return '—';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
 
-// Human-readable label for an active dispatch status.
+function formatLocation(location: unknown): string {
+  if (!location || typeof location !== 'object') return 'Not provided';
+  let lat: number | null = null;
+  let lng: number | null = null;
+  if (Array.isArray(location)) {
+    lng = Number(location[0]);
+    lat = Number(location[1]);
+  } else if (location && typeof location === 'object') {
+    const loc = location as Record<string, unknown>;
+    if (loc.coordinates && Array.isArray(loc.coordinates)) {
+      lng = Number(loc.coordinates[0]);
+      lat = Number(loc.coordinates[1]);
+    } else if (loc.lat != null && loc.lng != null) {
+      lat = Number(loc.lat);
+      lng = Number(loc.lng);
+    }
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'Not provided';
+  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+}
+
 const DISPATCH_STATUS_LABELS: Record<string, string> = {
   assigned: 'Assigned',
   accepted: 'Accepted',
@@ -139,11 +162,6 @@ const DISPATCH_STATUS_LABELS: Record<string, string> = {
   arrived: 'On Scene',
 };
 
-// Derives the status badge for a vehicle, distinguishing:
-//  - Available            → driver on duty, not blocked, no active trip
-//  - On Trip / En Route.. → currently on an active dispatch
-//  - Off Duty             → driver is not assigned or off-duty
-//  - Blocked              → admin has blocked the vehicle
 function getVehicleStatusInfo(vehicle: Vehicle): { label: string; className: string } {
   if (vehicle.is_available) return { label: 'Available', className: 'available' };
   if (vehicle.has_active_dispatch) {
@@ -152,7 +170,6 @@ function getVehicleStatusInfo(vehicle: Vehicle): { label: string; className: str
       : 'On Trip';
     return { label, className: 'on-trip' };
   }
-  // If admin blocked, show "Blocked"; otherwise show "Off Duty" (driver offline)
   if (vehicle.admin_blocked) {
     return { label: 'Blocked', className: 'unavailable' };
   }
@@ -203,12 +220,15 @@ export default function Dashboard() {
     location: { lat: number; lng: number } | null;
     image: string | null;
     image_url?: string;
+    driver_vehicle_name?: string | null;
     driver_vehicle_id?: number | null;
     status: string;
     assigned_vehicle: number | null;
     created_at: string;
   }>>([]);
   const [unreadEmergencyCount, setUnreadEmergencyCount] = useState(0);
+  const [emergencyMapModal, setEmergencyMapModal] = useState<{ lat: number; lng: number } | null>(null);
+  const [dispatchDialog, setDispatchDialog] = useState<number | null>(null);
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -456,13 +476,12 @@ export default function Dashboard() {
     catch (error) { console.error('Failed to delete vehicle', error); setDataError('Vehicle could not be deleted.'); toast.error('Vehicle could not be deleted.'); }
   };
 
-  const handleDispatchEmergency = async (emergencyId: number) => {
-    const vehicleId = window.prompt('Enter vehicle ID to dispatch:');
-    if (!vehicleId) return;
+  const handleDispatchEmergency = async (emergencyId: number, vehicleId: number) => {
     try {
-      await api.post(`/emergency/requests/${emergencyId}/dispatch/`, { vehicle_id: parseInt(vehicleId) });
+      await api.post(`/emergency/requests/${emergencyId}/dispatch/`, { vehicle_id: vehicleId });
       await fetchEmergencies();
       await fetchVehicles();
+      setDispatchDialog(null);
       toast.success('Vehicle dispatched to emergency');
     } catch (error: unknown) {
       const responseError = error as { response?: { data?: { error?: string } } };
@@ -659,128 +678,7 @@ export default function Dashboard() {
                   <td><span className="type-label">{formatType(vehicle.vehicle_type)}</span></td>
                   <td><select className="table-select" value={vehicle.driver || ''} onChange={event => handleAssignDriver(vehicle.id, event.target.value)} aria-label={`Assign driver to ${vehicle.name}`}><option value="">Unassigned</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></td>
                   <td><span className={`status-badge ${statusInfo.className}`}><span />{statusInfo.label}</span></td>
-                  <td>{vehicle.location ? <span className="coordinate"><MapPin size={13} />{vehicle.location.lat.toFixed(3)}, {vehicle.location.lng.toFixed(3)}</span> : <span className="muted">Not reported</span>}</td>
-                  <td><div className="row-actions"><label className="toggle-switch" title={vehicle.admin_blocked ? 'Set available' : 'Block vehicle'}><input type="checkbox" checked={!vehicle.admin_blocked} onChange={() => handleToggleAvailability(vehicle)} /><span className="toggle-slider" /></label><button className="icon-button danger" onClick={() => handleDeleteVehicle(vehicle.id)} title="Delete vehicle" aria-label={`Delete ${vehicle.name}`}><Trash2 size={15} /></button></div></td>
-                </tr>;
-              })}</tbody></table></div>}
-          </section>}
-
-          {activeTab === 'dispatch' && <section className="tab-content dispatch-workspace" aria-labelledby="dispatch-heading">
-            <div className="dispatch-rail">
-              <div className="dispatch-rail-header"><div><span className="live-label"><span />Live dispatch</span><h2 id="dispatch-heading">New request</h2></div>{requestMarker && <button className="text-button" onClick={clearDispatch}>Clear</button>}</div>
-              <div className="dispatch-step"><span className={`step-number ${requestMarker ? 'complete' : ''}`}>{requestMarker ? <CheckCircle2 size={16} /> : '1'}</span><div><strong>Set incident location</strong><p>{requestMarker ? `${requestMarker.lat.toFixed(5)}, ${requestMarker.lng.toFixed(5)}` : 'Select a point inside Nepal on the map.'}</p></div></div>
-              <div className="dispatch-step"><span className={`step-number ${requestMarker ? 'active' : ''}`}>2</span><div className="step-content"><strong>Choose response unit</strong><label htmlFor="dispatch-type">Vehicle type</label><select id="dispatch-type" className="input-field" value={dispatchType} onChange={event => setDispatchType(event.target.value)}>{VEHICLE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div></div>
-              <button id="dispatch-nearest-button" className="button button-primary dispatch-button" onClick={handleDispatch} disabled={!requestMarker || dispatchLoading}>{dispatchLoading ? <><RefreshCw className="spin" size={16} />Finding nearest unit</> : <><Navigation size={16} />Dispatch nearest vehicle</>}</button>
-
-              {dispatchResult && <div className="dispatch-result" role="status"><div className="result-title"><CheckCircle2 size={18} /><div><strong>Vehicle dispatched</strong><span>Route confirmed</span></div></div><div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Assigned unit</span><strong>{dispatchResult.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div><div className="result-metrics"><div><span>Distance</span><strong>{dispatchResult.distance_km} km</strong></div><div><span>ETA</span><strong>{dispatchResult.duration_min ? `${Math.round(dispatchResult.duration_min)} min` : 'Route set'}</strong></div></div>{dispatchResult.status === 'assigned' && <button className="button button-primary" style={{ marginTop: 12, width: '100%' }} onClick={handleAcceptDispatch}>Accept dispatch</button>}</div>}
-              {activeDispatch && <div className="dispatch-result live-tracking" role="status">
-                <div className="result-title"><Navigation size={18} /><div><strong>Live trip tracking</strong><span>{DISPATCH_STATUS_LABELS[activeDispatch.status] || activeDispatch.status}</span></div></div>
-                <div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Vehicle en route</span><strong>{activeDispatch.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div>
-                <div className="progress-block">
-                  <div className="progress-head"><span>Progress</span><strong>{activeDispatch.progress_percent != null ? `${activeDispatch.progress_percent}%` : 'Calculating…'}</strong></div>
-                  <div className="progress-track"><div className="progress-fill" style={{ width: `${Math.min(100, Math.max(0, activeDispatch.progress_percent ?? 0))}%` }} /></div>
-                </div>
-                <div className="result-metrics"><div><span>ETA</span><strong>{activeDispatch.eta_min != null ? `${Math.round(activeDispatch.eta_min)} min` : 'Calculating…'}</strong></div><div><span>Remaining</span><strong>{activeDispatch.remaining_distance_km != null ? `${activeDispatch.remaining_distance_km} km` : '—'}</strong></div></div>
-              </div>}
-              {dispatchError && <div className="inline-alert error" role="alert"><AlertCircle size={16} /><span>{dispatchError}</span></div>}
-
-              <div className="rail-section"><div className="rail-section-title"><h3>Fleet units</h3><span>{availableVehicles} ready</span></div><div className="unit-list">{vehicles.length === 0 ? <p className="muted">No fleet units available.</p> : vehicles.map(vehicle => {
-                const statusInfo = getVehicleStatusInfo(vehicle);
-                return <button key={vehicle.id} className={`unit-row ${selectedVehicleId === vehicle.id ? 'selected' : ''}`} onClick={() => setSelectedVehicleId(vehicle.id)} disabled={!vehicle.location}>
-                  <span className={`unit-status ${statusInfo.className}`} />
-                  <div><strong>{vehicle.name}</strong><span>{vehicle.driver_name || 'Unassigned'} · {formatType(vehicle.vehicle_type)}</span></div><ChevronRight size={15} /></button>;
-              })}</div></div>
-            </div>
-
-            <div className="dispatch-map-shell"><div className="map-top-overlay"><span><MapPin size={14} />Nepal operations area</span><span className="map-legend"><i className="available" />Available <i className="unavailable" />In service <i className="request" />Request</span></div>
-              <MapContainer center={NEPAL_CENTER} zoom={7} {...MAP_OPTIONS} style={{ width: '100%', height: '100%' }}>
-                <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='&copy; <a href="https://www.esri.com/en-us/home">Esri</a> &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community' />
-                <GeoJSON data={NEPAL_GEOJSON as GeoJSON.GeoJsonObject} style={() => NEPAL_BORDER_STYLE} />
-                <MapController center={selectedCenter} />
-                <MapClickHandler onMapClick={(lat, lng) => { setRequestMarker({ lat, lng }); setDispatchResult(null); setDispatchError(null); }} />
-                <DispatchMapBoundsFitter geometry={dispatchResult?.geometry} requestMarker={requestMarker} assignedVehicle={dispatchResult?.assigned_vehicle || null} />
-                {vehicles.map(vehicle => {
-                  const statusInfo = getVehicleStatusInfo(vehicle);
-                  const popupTextClass = vehicle.is_available ? 'available-text' : (vehicle.has_active_dispatch ? 'on-trip-text' : 'unavailable-text');
-                  return vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={createVehicleIcon(vehicle.is_available)}><Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={popupTextClass}>{statusInfo.label}</span></div></Popup></Marker>;
-                })}
-                {requestMarker && <Marker position={[requestMarker.lat, requestMarker.lng]} icon={requestIcon}><Popup><div className="map-popup"><strong>Dispatch request</strong><span>{requestMarker.lat.toFixed(5)}, {requestMarker.lng.toFixed(5)}</span></div></Popup></Marker>}
-                {activeDispatch?.geometry?.length ? <Polyline positions={activeDispatch.geometry} pathOptions={{ color: '#059669', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : null}
-                {dispatchResult?.geometry?.length ? <Polyline positions={dispatchResult.geometry} pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : dispatchResult && requestMarker && <Polyline positions={[[requestMarker.lat, requestMarker.lng], [dispatchResult.assigned_vehicle.lat, dispatchResult.assigned_vehicle.lng]]} pathOptions={{ color: '#2563eb', weight: 4, dashArray: '8 7', opacity: 0.85 }} />}
-              </MapContainer>
-              <div className="map-hint"><CircleDot size={13} />Click the map to place a request</div>
-            </div>
-          </section>}
-
-          {activeTab === 'drivers' && <section className="tab-content" aria-labelledby="drivers-heading">
-            <div className="page-heading"><div><h2 id="drivers-heading">Driver directory</h2><p>Manage credentials and assignment-ready personnel.</p></div><button id="add-driver-button" className="button button-primary" onClick={() => { setDriverFormError(null); setShowAddDriverModal(true); }}><Plus size={16} />Add driver</button></div>
-            <div className="section-toolbar"><div><h2>All drivers</h2><span>{filteredDrivers.length} records</span></div><div className="search-field"><Search size={15} /><input id="driver-search" value={driverQuery} onChange={event => setDriverQuery(event.target.value)} placeholder="Search drivers" aria-label="Search drivers" /></div></div>
-            {initialLoading ? <div className="list-skeleton">{[1, 2, 3].map(item => <div className="skeleton-row" key={item} />)}</div> : filteredDrivers.length === 0 ? renderEmpty(drivers.length ? 'No matching drivers' : 'No drivers registered', drivers.length ? 'Try a different name, phone, or license number.' : 'Add a driver to begin assigning fleet units.') : <div className="driver-grid">{filteredDrivers.map(driver => {
-              const assignmentCount = vehicles.filter(vehicle => vehicle.driver === driver.id).length;
-              return <article className="driver-card" key={driver.id}><div className="driver-card-head"><div className="avatar">{driver.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase()}</div><span className={`status-badge ${driver.is_active ? 'available' : 'neutral'}`}><span />{driver.is_active ? 'Active' : 'Inactive'}</span><button className="icon-button danger" onClick={() => handleDeleteDriver(driver.id)} title="Delete driver" aria-label={`Delete ${driver.name}`}><Trash2 size={15} /></button></div><h3>{driver.name}</h3><div className="driver-detail"><Phone size={14} /><span>{driver.phone_number || 'No phone number'}</span></div><div className="driver-detail"><ShieldCheck size={14} /><span className="mono">{driver.license_number}</span></div><div className="driver-card-foot"><span>{assignmentCount ? `${assignmentCount} assigned vehicle${assignmentCount > 1 ? 's' : ''}` : 'No vehicle assigned'}</span><UserRound size={15} /></div></article>;
-            })}</div>}
-          </section>}
-
-          {activeTab === 'maintenance' && <MaintenanceTab />}
-          {activeTab === 'issues' && <IssuesTab />}
-
-          {activeTab === 'emergency' && <section className="tab-content" aria-labelledby="emergency-heading">
-            <div className="page-heading"><div><h2 id="emergency-heading">Emergency requests</h2><p>Active SOS alerts requiring immediate response.</p></div></div>
-            <div className="section-toolbar"><div><h2>All emergencies</h2><span>{emergencies.length} requests</span></div></div>
-            {emergencies.length === 0 ? renderEmpty('No emergency requests', 'Emergency SOS alerts will appear here.') : (
-              <div className="data-table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Type</th>
-                      <th>User / Vehicle</th>
-                      <th>Description</th>
-                      <th>Attachment</th>
-                      <th>Location</th>
-                      <th>Status</th>
-                      <th>Assigned Vehicle</th>
-                      <th>Created</th>
-                      <th><span className="sr-only">Actions</span></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {emergencies.map(emergency => (
-                      <tr key={emergency.id}>
-                        <td><strong>#{emergency.id}</strong></td>
-                        <td><span className="type-label">{formatType(emergency.emergency_type)}</span></td>
-                        <td>{emergency.driver_vehicle_id ? `Vehicle #${emergency.driver_vehicle_id}` : `User #${emergency.user}`}</td>
-                        <td>{emergency.description ? <span title={emergency.description}>{emergency.description.length > 50 ? emergency.description.slice(0, 50) + '...' : emergency.description}</span> : '—'}</td>
-                        <td>{emergency.image_url ? <a href={emergency.image_url} target="_blank" rel="noreferrer" className="link" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>View</a> : <span className="muted">None</span>}</td>
-                        <td>{emergency.location ? <span className="coordinate"><MapPin size={13} />{emergency.location.lat.toFixed(4)}, {emergency.location.lng.toFixed(4)}</span> : <span className="muted">Not provided</span>}</td>
-                        <td><span className={`status-badge ${emergency.status === 'pending' ? 'unavailable' : emergency.status === 'dispatched' ? 'on-trip' : 'available'}`}><span />{formatType(emergency.status)}</span></td>
-                        <td>{emergency.assigned_vehicle ? <span>Vehicle #{emergency.assigned_vehicle}</span> : <span className="muted">Unassigned</span>}</td>
-                        <td>{new Date(emergency.created_at).toLocaleString()}</td>
-                        <td>
-                          <div className="row-actions">
-                            {emergency.status === 'pending' && (
-                              <button className="icon-button" onClick={() => handleDispatchEmergency(emergency.id)} title="Dispatch vehicle" aria-label={`Dispatch for emergency ${emergency.id}`}>
-                                <Radio size={15} />
-                              </button>
-                            )}
-                            {emergency.status === 'dispatched' && (
-                              <button className="icon-button" onClick={() => handleResolveEmergency(emergency.id)} title="Mark resolved" aria-label={`Resolve emergency ${emergency.id}`}>
-                                <CheckCircle2 size={15} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>}
-
-          {activeTab === 'settings' && <section className="tab-content" aria-labelledby="settings-heading"><div className="page-heading"><div><h2 id="settings-heading">Workspace settings</h2><p>Configuration for your Sarthi operations workspace.</p></div></div><div className="settings-panel"><div className="settings-icon"><Settings size={20} /></div><div><h3>Configuration is not available yet</h3><p>No settings API is currently exposed. This section is intentionally read-only to avoid changing backend behavior.</p></div></div></section>}
-
-          {activeTab === 'fuel' && <section className="tab-content w-full" aria-labelledby="fuel-heading">
+                   <td>{vehicle.location ? <span className="coordinate"><MapPin size={13} />{formatLocation(vehicle.location)}</span> : <span className="muted">Not reported</span>}</td>
             <FuelTab />
           </section>}
           {activeTab === 'analytics' && <AnalyticsDashboard />}
@@ -809,7 +707,45 @@ export default function Dashboard() {
                   <span className="mono">{v.number_plate || 'No registration'}</span>
                   <span className={`status-badge ${getVehicleStatusInfo(v).className}`}><span />{getVehicleStatusInfo(v).label}</span>
                   {v.driver_name && <span className="muted">Driver: {v.driver_name}</span>}
-                  <span className="muted">{v.location ? `Last: ${v.location.lat.toFixed(4)}, ${v.location.lng.toFixed(4)}` : 'No location reported'}</span>
+                  <span className="muted">{v.location ? `Last: ${formatLocation(v.location)}` : 'No location reported'}</span>
+                </div>
+                <div className="vehicle-live-map">
+                  <MapContainer center={center} zoom={15} maxBounds={NEPAL_BOUNDS} maxBoundsViscosity={1} style={{ width: '100%', height: '100%' }}>
+                    <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='&copy; <a href="https://www.esri.com/en-us/home">Esri</a>' />
+                    {v.location && <Marker position={[v.location.lat, v.location.lng]} icon={createVehicleIcon(v.is_available)}>
+                      <Popup><div className="map-popup"><strong>{v.name}</strong><span>{formatType(v.vehicle_type)}</span></div></Popup>
+                    </Marker>}
+                    <MapController center={v.location ? [v.location.lat, v.location.lng] : null} />
+                </tr>;
+              })}</tbody></table></div>}
+          </section>}
+          {activeTab === 'analytics' && <AnalyticsDashboard />}
+        </div>
+      </main>
+
+      {showAddModal && <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowAddModal(false); }}><div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="vehicle-modal-title"><div className="modal-header"><div><span>Fleet inventory</span><h2 id="vehicle-modal-title">Add vehicle</h2></div><button className="icon-button" onClick={() => setShowAddModal(false)} aria-label="Close vehicle form"><X size={17} /></button></div><div className="modal-body"><div className="form-grid"><div className="form-group"><label htmlFor="vehicle-name">Vehicle name</label><input id="vehicle-name" className="input-field" value={newVehicle.name} onChange={event => setNewVehicle({ ...newVehicle, name: event.target.value })} placeholder="Ambulance 07" autoFocus /></div><div className="form-group"><label htmlFor="vehicle-plate">Number plate</label><input id="vehicle-plate" className="input-field" value={newVehicle.number_plate} onChange={event => setNewVehicle({ ...newVehicle, number_plate: event.target.value })} placeholder="BA 1 PA 1234" /></div></div><div className="form-grid"><div className="form-group"><label htmlFor="vehicle-type">Vehicle type</label><select id="vehicle-type" className="input-field" value={newVehicle.vehicle_type} onChange={event => setNewVehicle({ ...newVehicle, vehicle_type: event.target.value })}>{VEHICLE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div><div className="form-group"><label>Initial status</label><label className="availability-control"><input type="checkbox" checked={newVehicle.is_available} onChange={event => setNewVehicle({ ...newVehicle, is_available: event.target.checked })} /><span className="toggle-switch"><span className="toggle-slider" /></span><span>{newVehicle.is_available ? 'Available' : 'Unavailable'}</span></label></div></div><div className="form-group"><div className="label-row"><label>Operating location</label><span>Select a point within Nepal</span></div><div className="mini-map"><MapContainer center={NEPAL_CENTER} zoom={7} {...MAP_OPTIONS} style={{ width: '100%', height: '100%' }}><TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='&copy; <a href="https://www.esri.com/en-us/home">Esri</a> &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community' /><GeoJSON data={NEPAL_GEOJSON as GeoJSON.GeoJsonObject} style={() => NEPAL_BORDER_STYLE} /><MapClickHandler onMapClick={(lat, lng) => setNewVehicle(previous => ({ ...previous, location: { lat, lng } }))} />{newVehicle.location && <Marker position={[newVehicle.location.lat, newVehicle.location.lng]} />}</MapContainer></div>{newVehicle.location ? <p className="location-confirm"><CheckCircle2 size={14} />Location set: <span className="mono">{newVehicle.location.lat.toFixed(5)}, {newVehicle.location.lng.toFixed(5)}</span></p> : <p className="field-hint"><MapPin size={14} />A location is required before adding the vehicle.</p>}</div>{vehicleFormError && <div className="inline-alert error"><AlertCircle size={16} />{vehicleFormError}</div>}</div><div className="modal-footer"><button className="button button-secondary" onClick={() => setShowAddModal(false)}>Cancel</button><button id="submit-vehicle-button" className="button button-primary" onClick={handleAddVehicle} disabled={!newVehicle.name || !newVehicle.location || addLoading}>{addLoading ? <><RefreshCw className="spin" size={15} />Adding vehicle</> : 'Add vehicle'}</button></div></div></div>}
+
+      {showAddDriverModal && <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowAddDriverModal(false); }}><div className="modal-content modal-compact" role="dialog" aria-modal="true" aria-labelledby="driver-modal-title"><div className="modal-header"><div><span>Driver directory</span><h2 id="driver-modal-title">Add driver</h2></div><button className="icon-button" onClick={() => setShowAddDriverModal(false)} aria-label="Close driver form"><X size={17} /></button></div><div className="modal-body"><div className="form-group"><label htmlFor="driver-name">Full name</label><input id="driver-name" className="input-field" value={newDriver.name} onChange={event => setNewDriver({ ...newDriver, name: event.target.value })} placeholder="Full legal name" autoFocus /></div><div className="form-group"><label htmlFor="driver-phone">Phone number</label><input id="driver-phone" className="input-field" value={newDriver.phone_number} onChange={event => setNewDriver({ ...newDriver, phone_number: event.target.value })} placeholder="98XXXXXXXX" /></div><div className="form-group"><label htmlFor="driver-license">License number</label><input id="driver-license" className="input-field" value={newDriver.license_number} onChange={event => setNewDriver({ ...newDriver, license_number: event.target.value })} placeholder="01-02-003344" /></div><div className="form-group"><label htmlFor="driver-username">Login username</label><input id="driver-username" className="input-field" value={newDriver.username} onChange={event => setNewDriver({ ...newDriver, username: event.target.value })} placeholder="driver01" /></div><div className="form-group"><label htmlFor="driver-password">Login password</label><input id="driver-password" className="input-field" type="password" value={newDriver.password} onChange={event => setNewDriver({ ...newDriver, password: event.target.value })} placeholder="Min 8 characters" /></div>{driverFormError && <div className="inline-alert error"><AlertCircle size={16} />{driverFormError}</div>}</div><div className="modal-footer"><button className="button button-secondary" onClick={() => setShowAddDriverModal(false)}>Cancel</button><button id="submit-driver-button" className="button button-primary" onClick={handleAddDriver} disabled={!newDriver.name || !newDriver.license_number || !newDriver.username || !newDriver.password || addDriverLoading}>{addDriverLoading ? <><RefreshCw className="spin" size={15} />Adding driver</> : 'Add driver'}</button></div></div></div>}
+      {showVehiclePanel && (() => {
+        const v = vehicles.find(veh => veh.id === selectedVehicleId);
+        if (!v) return null;
+        const center: [number, number] = v.location
+          ? [v.location.lat, v.location.lng]
+          : NEPAL_CENTER;
+        return (
+          <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowVehiclePanel(false); }}>
+            <div className="modal-content modal-wide" role="dialog" aria-modal="true" aria-labelledby="vehicle-live-title">
+              <div className="modal-header">
+                <div><span>Live vehicle</span><h2 id="vehicle-live-title">{v.name}</h2></div>
+                <button className="icon-button" onClick={() => setShowVehiclePanel(false)} aria-label="Close live view"><X size={17} /></button>
+              </div>
+              <div className="modal-body">
+                <div className="vehicle-live-meta">
+                  <span className="type-label">{formatType(v.vehicle_type)}</span>
+                  <span className="mono">{v.number_plate || 'No registration'}</span>
+                  <span className={`status-badge ${getVehicleStatusInfo(v).className}`}><span />{getVehicleStatusInfo(v).label}</span>
+                  {v.driver_name && <span className="muted">Driver: {v.driver_name}</span>}
+                  <span className="muted">{v.location ? `Last: ${formatLocation(v.location)}` : 'No location reported'}</span>
                 </div>
                 <div className="vehicle-live-map">
                   <MapContainer center={center} zoom={15} maxBounds={NEPAL_BOUNDS} maxBoundsViscosity={1} style={{ width: '100%', height: '100%' }}>
@@ -821,6 +757,71 @@ export default function Dashboard() {
                   </MapContainer>
                 </div>
                 <p className="muted vehicle-live-note">Position refreshes automatically with the fleet (every few seconds).</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Emergency Location Map Modal */}
+      {emergencyMapModal && (
+        <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setEmergencyMapModal(null); }}>
+          <div className="modal-content modal-wide" role="dialog" aria-modal="true" aria-labelledby="emergency-map-title">
+            <div className="modal-header">
+              <div><span>Emergency</span><h2 id="emergency-map-title">Location &amp; Nearby Vehicles</h2></div>
+              <button className="icon-button" onClick={() => setEmergencyMapModal(null)} aria-label="Close map"><X size={17} /></button>
+            </div>
+            <div className="modal-body" style={{ padding: 0 }}>
+              <div style={{ height: '60vh' }}>
+                <MapContainer center={[emergencyMapModal.lat, emergencyMapModal.lng]} zoom={14} maxBounds={NEPAL_BOUNDS} maxBoundsViscosity={1} style={{ width: '100%', height: '100%' }}>
+                  <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='&copy; Esri' />
+                  <Marker position={[emergencyMapModal.lat, emergencyMapModal.lng]} icon={L.divIcon({ className: 'fleet-marker-wrap', html: '<span class="request-marker"><span></span></span>', iconSize: [32, 32], iconAnchor: [16, 16] })}>
+                    <Popup><div className="map-popup"><strong>🚨 Emergency</strong><span>{emergencyMapModal.lat.toFixed(5)}, {emergencyMapModal.lng.toFixed(5)}</span></div></Popup>
+                  </Marker>
+                  {vehicles.map(vehicle => vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && (
+                    <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={createVehicleIcon(vehicle.is_available)}>
+                      <Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={vehicle.is_available ? 'available-text' : 'unavailable-text'}>{vehicle.is_available ? 'Available' : 'Unavailable'}</span></div></Popup>
+                    </Marker>
+                  ))}
+                </MapContainer>
+              </div>
+              <p style={{ padding: '10px 16px', fontSize: '.78rem', color: 'var(--text-muted)', margin: 0 }}>
+                Red marker = emergency location. Other markers show fleet vehicles (green = available).
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Emergency Dispatch Dialog */}
+      {dispatchDialog !== null && (() => {
+        const available = vehicles.filter(v => v.is_available);
+        return (
+          <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setDispatchDialog(null); }}>
+            <div className="modal-content modal-compact" role="dialog" aria-modal="true" aria-labelledby="dispatch-dlg-title">
+              <div className="modal-header">
+                <div><span>Emergency #{dispatchDialog}</span><h2 id="dispatch-dlg-title">Dispatch Vehicle</h2></div>
+                <button className="icon-button" onClick={() => setDispatchDialog(null)} aria-label="Close"><X size={17} /></button>
+              </div>
+              <div className="modal-body">
+                <p style={{ marginBottom: 12, fontSize: '.85rem', color: 'var(--text-muted)' }}>Select an available vehicle:</p>
+                {available.length === 0 ? (
+                  <div className="inline-alert error"><AlertCircle size={16} />No available vehicles right now.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {available.map(v => (
+                      <button key={v.id} className="unit-row" style={{ width: '100%', textAlign: 'left' }}
+                        onClick={() => handleDispatchEmergency(dispatchDialog, v.id)}>
+                        <span className="unit-status available" />
+                        <div><strong>{v.name}</strong><span>{formatType(v.vehicle_type)} · {v.driver_name || 'No driver'}</span></div>
+                        <ChevronRight size={15} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button className="button button-secondary" onClick={() => setDispatchDialog(null)}>Cancel</button>
               </div>
             </div>
           </div>

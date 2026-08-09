@@ -1072,6 +1072,13 @@ def driver_maintenance_request(request):
     except Driver.DoesNotExist:
         vehicle = None
 
+    cost = request.data.get('cost')
+    if cost:
+        try:
+            cost = float(cost)
+        except ValueError:
+            cost = None
+
     # Create a pending maintenance record for the driver
     record = MaintenanceRecord.objects.create(
         vehicle=vehicle,
@@ -1081,9 +1088,10 @@ def driver_maintenance_request(request):
         completed=False,
         owner=request.user,
         image=image,
+        cost=cost,
     )
 
-    serializer = MaintenanceRecordSerializer(record)
+    serializer = MaintenanceRecordSerializer(record, context={'request': request})
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -1166,6 +1174,10 @@ def issue_report_detail(request, pk):
     if request.method == 'GET':
         serializer = IssueReportSerializer(report, context={'request': request})
         return Response(serializer.data)
+        
+    if request.method == 'DELETE':
+        report.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     new_status = request.data.get('status')
     if new_status not in dict(IssueReport.STATUS_CHOICES):

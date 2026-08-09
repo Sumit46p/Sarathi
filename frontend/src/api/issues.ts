@@ -29,3 +29,7 @@ export async function updateIssueStatus(id: number, status: IssueReport['status'
   const { data } = await api.patch<IssueReport>(`/issues/${id}/`, { status });
   return data;
 }
+
+export async function deleteIssueReport(id: number): Promise<void> {
+  await api.delete(`/issues/${id}/`);
+}
