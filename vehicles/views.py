@@ -3102,6 +3102,23 @@ def analytics_dashboard(request):
         .filter(total_trips__gt=0)
         .order_by('-completed_trips')[:5]
     )
+    event_cutoff = timezone.now() - timezone.timedelta(days=DRIVER_SCORE_WINDOW_DAYS)
+    driver_ids = [d.id for d in driver_perf_rows]
+    event_breakdown = {}
+    if driver_ids:
+        agg = (
+            DrivingEvent.objects
+            .filter(driver_id__in=driver_ids, created_at__gte=event_cutoff)
+            .values('driver_id', 'event_type')
+            .annotate(count=Count('id'))
+        )
+        for row in agg:
+            entry = event_breakdown.setdefault(
+                row['driver_id'], {'harsh_accel': 0, 'harsh_brake': 0, 'harsh_turn': 0, 'total': 0}
+            )
+            entry[row['event_type']] = row['count']
+            entry['total'] += row['count']
+
     driver_performance = []
     for d in driver_perf_rows:
         breakdown = event_breakdown.get(d.id, {'harsh_accel': 0, 'harsh_brake': 0, 'harsh_turn': 0, 'total': 0})
