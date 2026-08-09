@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/auth';
-import { AlertCircle, CheckCircle2, Plus, Search, Trash2, Truck, Wrench, X, DollarSign } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Plus, Search, Trash2, Truck, Wrench, X, DollarSign, Image } from 'lucide-react';
 import { toast } from './toast';
 import { ExpenseTab } from './ExpenseTab';
 
@@ -266,6 +266,7 @@ export default function MaintenanceTab() {
                   <tr>
                     <th>Vehicle</th>
                     <th>Service</th>
+                    <th>Photo</th>
                     <th>Due date</th>
                     <th style={{ textAlign: 'right' }}>Cost</th>
                     <th>Status</th>
@@ -284,11 +285,13 @@ export default function MaintenanceTab() {
                       <td>
                         <span>{formatType(rec.maintenance_type)}</span>
                         {rec.description ? <span className="muted" style={{ display: 'block', fontSize: '.65rem', marginTop: 2 }}>{rec.description}</span> : null}
+                      </td>
+                      <td>
                         {rec.image_url ? (
-                          <a href={rec.image_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '.65rem', marginTop: '4px', color: 'var(--primary)' }}>
-                            View Image
+                          <a href={rec.image_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '.78rem', color: 'var(--primary)' }}>
+                            <Image size={14} /> View
                           </a>
-                        ) : null}
+                        ) : <span className="muted">None</span>}
                       </td>
                       <td><span className={rec.is_overdue ? 'overdue-date' : ''}>{rec.due_date}</span></td>
                       <td style={{ textAlign: 'right' }}><span>{rec.cost ? `रु ${Number(rec.cost).toLocaleString()}` : '—'}</span></td>

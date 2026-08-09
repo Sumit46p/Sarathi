@@ -9,6 +9,7 @@ import {
   Truck,
   Trash2,
   X,
+  Image,
 } from 'lucide-react';
 import { fetchIssueReports, updateIssueStatus, deleteIssueReport, type IssueReport } from '../api/issues';
 import { toast } from './toast';
@@ -208,7 +209,9 @@ export default function IssuesTab() {
                     </td>
                     <td>
                       {report.image_url ? (
-                        <a href={report.image_url} target="_blank" rel="noreferrer" className="link" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>View</a>
+                        <a href={report.image_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '.78rem', color: 'var(--primary)' }}>
+                          <Image size={14} /> View
+                        </a>
                       ) : (
                         <span className="muted">None</span>
                       )}
