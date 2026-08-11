@@ -87,6 +87,7 @@ except Exception:
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -98,6 +99,7 @@ INSTALLED_APPS = [
     # Third-party
     'rest_framework',
     'corsheaders',
+    'channels',
     # Local apps
     'vehicles.apps.VehiclesConfig',
     'accounts',
@@ -133,7 +135,18 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'sarthi_backend.wsgi.application'
+ASGI_APPLICATION = 'sarthi_backend.asgi.application'
 
+# ---------- Channels / WebSockets ----------
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
+            "db": 2, # Use db 2 for websockets
+        },
+    },
+}
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
@@ -148,6 +161,42 @@ DATABASES = {
         'PORT': '5433',
     }
 }
+
+
+# ---------- Cache (Redis) ----------
+# django-redis backend. Falls back gracefully to LocMemCache if Redis is down
+# (DRF throttle and template-fragment cache will continue to work in-process).
+#
+# NOTE: individual cache.set() calls use jittered_ttl() from vehicles/cache_utils.py
+# to spread expiry times and prevent thundering-herd cache stampedes.
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            # Don't let a Redis outage crash the Django process
+            'IGNORE_EXCEPTIONS': True,
+        },
+        'KEY_PREFIX': 'sarathi',
+        'TIMEOUT': 300,  # fallback TTL; explicit callers use jittered_ttl()
+    }
+}
+
+# ---------- Sessions (stored in Redis via the cache backend) ----------
+# Faster than DB-backed sessions: each authenticated request is a Redis GET
+# instead of a SQL SELECT.
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'default'
+
+# Session lifetime: 12 hours (43 200 s).
+# Each session write applies ±5-minute jitter (see SESSION_JITTER_SECONDS
+# constant referenced in accounts/views.py) so sessions from a burst of
+# logins don't all expire at the same instant.
+SESSION_COOKIE_AGE = 43_200          # 12 * 60 * 60
+SESSION_SAVE_EVERY_REQUEST = False   # Only save on change, not every request
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Honour the 12-hour cookie age
+SESSION_JITTER_SECONDS = 300         # ±5 min jitter applied at login
 
 
 # Password validation
@@ -195,13 +244,18 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
-
     ),
+    # Throttle classes backed by the Redis cache so rate-limit counters
+    # survive server restarts and are shared across multiple processes.
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
     # Per-endpoint rate limits. Keyed by IP for anonymous requests
     # (login/register/reset) and by user id for authenticated requests.
-    # Limits brute-force attempts without a cache dependency in dev
-    # (DRF falls back to LocMemCache).
     'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/min',
+        'user': '300/min',
         'login': '30/min',
         'register': '10/hour',
         'reset_password': '5/hour',

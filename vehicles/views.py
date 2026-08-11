@@ -8,7 +8,9 @@ from django.contrib.auth.models import User
 from django.db.models import Q, ExpressionWrapper, DurationField, Count, Sum, Avg, F, Value, CharField
 from django.db.models.functions import TruncDate, Coalesce
 from django.utils import timezone
+from django.core.cache import cache
 from .osrm import get_route_distance
+from .cache_utils import jittered_ttl
 import threading
 import math
 import json
@@ -947,6 +949,21 @@ def update_location(request, pk):
     vehicle.location = new_location
     vehicle.last_location_at = now
     vehicle.save(update_fields=['location', 'last_location_at', 'total_distance_km'])
+
+    # Cache the latest GPS fix in Redis so dashboard / nearest-vehicle lookups
+    # can read the freshest coordinates without a DB round-trip.
+    # Base TTL = 60 s ± 30 s jitter so a fleet of vehicles doesn't cause a
+    # simultaneous cache-miss storm on the same tick.
+    cache.set(
+        f'vehicle_location:{vehicle.pk}',
+        {
+            'lat': new_lat,
+            'lng': new_lng,
+            'ts': now.isoformat(),
+            'speed_kmh': speed_kmh,
+        },
+        timeout=jittered_ttl(60, 30),   # → 30–90 s
+    )
 
     # Record a GPS breadcrumb for trip history / route playback. If the vehicle
     # is mid-dispatch the fix is attributed to that trip so the route can be

@@ -1,9 +1,12 @@
+import random
+from datetime import timedelta
 from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from django.conf import settings
 from django.contrib.auth.models import User
 from .models import get_organization_name
 from .serializers import (
@@ -12,10 +15,36 @@ from .serializers import (
     EmailOrUsernameTokenObtainPairSerializer,
 )
 
+# Base session / token lifetime: 12 hours (matches SESSION_COOKIE_AGE).
+_SESSION_BASE_SECONDS = getattr(settings, 'SESSION_COOKIE_AGE', 43_200)
+# Max jitter in seconds applied per login (default ±5 min from settings).
+_SESSION_JITTER_SECONDS = getattr(settings, 'SESSION_JITTER_SECONDS', 300)
+
+
 class LoginView(TokenObtainPairView):
+    """
+    Extends the default JWT login view to apply per-login TTL jitter.
+
+    Each successful login receives an access-token lifetime of
+    SESSION_COOKIE_AGE ± SESSION_JITTER_SECONDS (12 h ± 5 min by default).
+    This staggers token expiry across a burst of concurrent logins so they
+    don't all hammer the refresh endpoint at the same instant
+    (thundering-herd prevention).
+    """
     serializer_class = EmailOrUsernameTokenObtainPairSerializer
     throttle_classes = (ScopedRateThrottle,)
     throttle_scope = 'login'
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            # Apply jitter: random delta in [-jitter, +jitter] seconds
+            jitter = random.randint(0, _SESSION_JITTER_SECONDS) * random.choice([-1, 1])
+            jittered_lifetime = timedelta(seconds=max(60, _SESSION_BASE_SECONDS + jitter))
+            # Inform the client of the actual expiry seconds so it can
+            # schedule its own refresh before the token lapses.
+            response.data['expires_in'] = int(jittered_lifetime.total_seconds())
+        return response
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
