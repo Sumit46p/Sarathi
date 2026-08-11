@@ -59,6 +59,7 @@ const formatDate = (value: string | null) => {
 
 const formatDuration = (seconds: number | null) => {
   if (seconds == null) return '—';
+  seconds = Math.round(seconds);
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -279,7 +280,7 @@ export default function TripsTab() {
                     </div>
                   </td>
                   <td>{trip.driver_name ?? '—'}</td>
-                  <td><span className={`status-badge ${trip.status === 'completed' ? 'available' : 'neutral'}`}><span>{STATUS_LABELS[trip.status] ?? trip.status}</span></span></td>
+                  <td><span className={`status-badge ${trip.status === 'completed' ? 'available' : 'neutral'}`}><span />{STATUS_LABELS[trip.status] ?? trip.status}</span></td>
                   <td>{formatDate(trip.created_at)}</td>
                   <td>{trip.distance_km != null ? `${trip.distance_km} km` : '—'}</td>
                   <td>{formatDuration(trip.trip_duration_seconds)}</td>

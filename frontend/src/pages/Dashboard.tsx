@@ -16,6 +16,7 @@ import FuelTab from '../components/FuelTab';
 import ThemeToggle from '../components/ThemeToggle';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
 import TripsTab from '../components/TripsTab';
+import SettingsTab from '../components/SettingsTab';
 import NotificationBell, { type NotificationItem } from '../components/NotificationBell';
 import { useAdminNotifications } from '../hooks/useAdminNotifications';
 import { toast } from '../components/toast';
@@ -901,7 +902,7 @@ export default function Dashboard() {
             )}
           </section>}
 
-          {activeTab === 'settings' && <section className="tab-content" aria-labelledby="settings-heading"><div className="page-heading"><div><h2 id="settings-heading">Workspace settings</h2><p>Configuration for your Sarthi operations workspace.</p></div></div><div className="settings-panel"><div className="settings-icon"><Settings size={20} /></div><div><h3>Configuration is not available yet</h3><p>No settings API is currently exposed. This section is intentionally read-only to avoid changing backend behavior.</p></div></div></section>}
+          {activeTab === 'settings' && <SettingsTab />}
 
           {activeTab === 'fuel' && <section className="tab-content w-full" aria-labelledby="fuel-heading">
             <FuelTab />

@@ -112,6 +112,25 @@ class ResetAdminPasswordView(APIView):
 
         return Response({'success': True, 'message': 'Password reset successfully'})
 
+class ChangeAdminPasswordView(APIView):
+    permission_classes = (IsAuthenticated,)
+    throttle_classes = (ScopedRateThrottle,)
+    throttle_scope = 'reset_password'
+
+    def post(self, request):
+        from .serializers import ChangeAdminPasswordSerializer
+        serializer = ChangeAdminPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        user = request.user
+        if not user.check_password(serializer.validated_data['old_password']):
+            return Response({'error': 'Incorrect current password'}, status=400)
+        
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+        return Response({'success': True, 'message': 'Password updated successfully'})
+
 class OrganizationsView(APIView):
     permission_classes = (AllowAny,)
 
