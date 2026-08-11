@@ -107,3 +107,15 @@ class RegisterSerializer(serializers.ModelSerializer):
             profile.organization_name = org_name
             profile.save()
         return user
+
+
+class ChangeAdminPasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True)
+
+    def validate_new_password(self, value):
+        try:
+            validate_password(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        return value
