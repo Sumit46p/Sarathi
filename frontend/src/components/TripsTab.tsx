@@ -6,7 +6,7 @@ import { api } from '../api/auth';
 import { toast } from './toast';
 import {
   AlertCircle, History, MapPin, Pause, Play, RefreshCw,
-  RotateCcw, Route, X,
+  RotateCcw, Route, X, Trophy
 } from 'lucide-react';
 
 interface Trip {
@@ -104,6 +104,20 @@ export default function TripsTab() {
   const [progress, setProgress] = useState(0);
   const [speed, setSpeed] = useState(1);
   const timerRef = useRef<number | null>(null);
+
+  const driverScores = useMemo(() => {
+    const scores: Record<string, number> = {};
+    for (const trip of trips) {
+      if (trip.status === 'completed' && trip.driver_name) {
+        scores[trip.driver_name] = (scores[trip.driver_name] || 0) + 1;
+      }
+    }
+    return Object.entries(scores)
+      .map(([name, score]) => ({ name, score }))
+      .sort((a, b) => b.score - a.score);
+  }, [trips]);
+
+  const topDriver = driverScores.length > 0 ? driverScores[0] : null;
 
   const fetchTrips = useCallback(async () => {
     setLoading(true);
@@ -247,6 +261,20 @@ export default function TripsTab() {
         </button>
       </div>
 
+      {topDriver && (
+        <div className="card" style={{ marginBottom: 24, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16, backgroundColor: 'var(--primary-light)', border: '1px solid var(--primary)', borderRadius: 'var(--radius-md)' }}>
+          <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: 12, borderRadius: '50%', display: 'flex' }}>
+            <Trophy size={24} />
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--primary)' }}>Top Driver</h3>
+            <p style={{ margin: 0, fontWeight: 600, fontSize: '1.2rem', color: 'var(--text-main)' }}>
+              {topDriver.name} <span style={{ color: 'var(--primary)', fontSize: '1rem', fontWeight: 500, marginLeft: 8 }}>{topDriver.score} pts (completed trips)</span>
+            </p>
+          </div>
+        </div>
+      )}
+
       {trips.length === 0 ? (
         <div className="empty-state">
           <div>
@@ -266,7 +294,8 @@ export default function TripsTab() {
                 <th>Date</th>
                 <th>Distance</th>
                 <th>Duration</th>
-                <th>Points</th>
+                <th>Breadcrumbs</th>
+                <th>Score</th>
                 <th style={{ textAlign: 'right' }}>Replay</th>
               </tr>
             </thead>
@@ -285,6 +314,7 @@ export default function TripsTab() {
                   <td>{trip.distance_km != null ? `${trip.distance_km} km` : '—'}</td>
                   <td>{formatDuration(trip.trip_duration_seconds)}</td>
                   <td>{trip.point_count}</td>
+                  <td>{trip.status === 'completed' && <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>+1 pt</span>}</td>
                   <td style={{ textAlign: 'right' }}>
                     <button
                       className="button button-secondary"
