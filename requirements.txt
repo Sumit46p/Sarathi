@@ -13,3 +13,5 @@ tzdata==2026.3
 urllib3==2.7.0
 djangorestframework-simplejwt==5.3.1
 reportlab==4.2.4
+redis==5.0.8
+django-redis==5.4.0

@@ -17,6 +17,7 @@ import ThemeToggle from '../components/ThemeToggle';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
 import TripsTab from '../components/TripsTab';
 import NotificationBell, { type NotificationItem } from '../components/NotificationBell';
+import { useAdminNotifications } from '../hooks/useAdminNotifications';
 import { toast } from '../components/toast';
 import NEPAL_GEOJSON from '../data/nepalBorder';
 import { CountUp } from '../hooks/useCountUp';
@@ -240,7 +241,18 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [unreadIssuesCount, setUnreadIssuesCount] = useState(0);
   const [unreadMaintenanceCount, setUnreadMaintenanceCount] = useState(0);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  
+  const { 
+    notifications, 
+    markAsRead, 
+    deleteNotification, 
+    isWsConnected, 
+    setNotifications,
+    issueTrigger, 
+    emergencyTrigger, 
+    maintenanceTrigger 
+  } = useAdminNotifications();
+
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [showVehiclePanel, setShowVehiclePanel] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -425,6 +437,11 @@ export default function Dashboard() {
     }
   }, [activeTab]);
 
+  // Keep a ref so the interval callback can read the latest value without
+  // being re-created every time the WebSocket connects/disconnects.
+  const isWsConnectedRef = useRef(isWsConnected);
+  useEffect(() => { isWsConnectedRef.current = isWsConnected; }, [isWsConnected]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -443,16 +460,30 @@ export default function Dashboard() {
       fetchVehicles();
       fetchDrivers();
       fetchActiveDispatch();
-      fetchIssues();
-      fetchEmergencies();
-      fetchMaintenance();
-      fetchUnreadEmergencyCount();
+
+      // Only poll alert-driven endpoints when WebSocket is down
+      if (!isWsConnectedRef.current) {
+        fetchIssues();
+        fetchEmergencies();
+        fetchMaintenance();
+      }
     }, 5000);
+
     return () => {
       mounted = false;
       window.clearInterval(interval);
     };
-  }, [fetchDrivers, fetchVehicles, fetchActiveDispatch, fetchIssues, fetchEmergencies, fetchMaintenance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Handle immediate refetches when WebSocket pushes a notification
+  useEffect(() => { if (issueTrigger > 0) fetchIssues(); }, [issueTrigger, fetchIssues]);
+  useEffect(() => { if (emergencyTrigger > 0) fetchEmergencies(); }, [emergencyTrigger, fetchEmergencies]);
+  useEffect(() => { if (maintenanceTrigger > 0) fetchMaintenance(); }, [maintenanceTrigger, fetchMaintenance]);
+
+  const handleMapClick = useCallback((lat: number, lng: number) => {
+    if (activeTab === 'dispatch') setRequestMarker({ lat, lng });
+  }, [activeTab]);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
@@ -709,8 +740,8 @@ export default function Dashboard() {
           <div className="topbar-actions">
             <NotificationBell
               notifications={notifications}
-              onMarkRead={(ids) => setNotifications(prev => prev.map(n => ids.includes(n.id) ? { ...n, is_read: true } : n))}
-              onDelete={(id) => setNotifications(prev => prev.filter(n => n.id !== id))}
+              onMarkRead={markAsRead}
+              onDelete={deleteNotification}
             />
             <ThemeToggle />
             <span className="live-date">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
