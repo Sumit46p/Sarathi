@@ -1,12 +1,6 @@
-# 🚑 Sarthi — Smart Vehicle Dispatch System
+# 🚑 Sarthi — Intelligent Vehicle Dispatch & Fleet Management Platform
 
-Sarthi is an intelligent, location-aware vehicle dispatch platform built for
-emergency and municipal services. It enables real-time tracking and routing of
-ambulances, logistics trucks, and municipal vehicles using geospatial data,
-helping dispatchers assign the nearest available vehicle to any request. The
-backend is powered by Django + PostGIS with OSRM real-road routing, a React
-dashboard for dispatchers/admins, a Flutter mobile app for drivers, and a
-**Redis-backed real-time WebSocket notification system** for instant alerts.
+Sarthi is an enterprise-grade, location-aware vehicle dispatch and fleet intelligence platform built for emergency response, municipal services, enterprise logistics, public transit, and commercial vehicle rentals. It combines real-time geospatial tracking, automated multi-factor dispatch ranking, rules-based alert evaluation, live route playback, and rental workflows. The platform is powered by a high-performance Django + PostGIS backend with OSRM real-road routing, a Redis-backed real-time WebSocket messaging layer, a React + TypeScript dispatcher workspace, and a cross-platform Flutter driver mobile app.
 
 ---
 
@@ -118,11 +112,20 @@ dashboard for dispatchers/admins, a Flutter mobile app for drivers, and a
 - [x] **Instant targeted refetch**: WebSocket events trigger immediate refetch of only the affected data type (no full dashboard refresh)
 - [x] **NotificationBell integration**: Bell icon wired to the hook with live `markAsRead` and `deleteNotification` actions
 
+### 🚀 Operations & Dispatch Intelligence Suite
+- [x] **Universal Dispatch Engine** (`vehicles/dispatch_engine.py`): Multi-factor candidate ranking algorithm that calculates match scores based on driver status, road travel time, distance, vehicle suitability, battery/fuel levels, and emergency priority.
+- [x] **Interactive Dispatch Workspace** (`frontend/src/components/DispatchWorkspace.tsx`): Real-time dispatcher console supporting candidate auto-recommendation, one-click manual or automated assignment, destination routing, and instant driver notification.
+- [x] **Rules & Alerts Engine** (`vehicles/rules_engine.py`): Automated policy evaluation for geofencing, speed limits, maximum idling, and service boundaries with instant alerts (`Alert` and `Rule` models).
+- [x] **Live Fleet Telemetry & Tracking Tab** (`frontend/src/components/LiveTrackingTab.tsx`, `LiveTracking.tsx`): Full-screen real-time telemetry map with status filter pills (all, on duty, en route, idle, offline), vehicle telemetry overlay, speed gauges, and camera centering.
+- [x] **Fixed Routes & Stops Management** (`frontend/src/components/RoutesTab.tsx`): Define fixed routes with sequenced waypoints/stops, vehicle route assignments, and schedule tracking.
+- [x] **Commercial Rental Management** (`frontend/src/components/RentalsTab.tsx`): End-to-end commercial vehicle rental tracking including customer details, rental start/end dates, rates, and active vehicle assignment.
+- [x] **Enhanced Vehicle Profiles & Media**: Custom vehicle photo upload (rendered on map markers and cards), fuel types (Petrol, Diesel, EV), and expanded categories (Rental, Government, Company, Personal, Logistics, Public Transport, Commercial).
+- [x] **Multi-Tenant Organization & Fleet Scoping**: First-class `Organization` and `Fleet` data models with role-based profile permissions (`admin`, `dispatcher`, `viewer`, `driver`).
+
 ### Not Yet Started / Partial
-- [ ] Role-based access control *within* an organization (one admin = one org; no dispatcher/viewer sub-roles yet)
 - [ ] Firebase Cloud Messaging push notifications (mobile)
 - [ ] Docker Compose full-stack deployment (Nginx + Gunicorn + Daphne)
-- [ ] Unit / integration testing
+- [ ] Automated integration test suite
 - [ ] User Acceptance Testing (UAT) with a partner organization
 - [ ] Performance benchmarking (sub-2s dispatch @ 50 concurrent updates/sec)
 
@@ -500,17 +503,20 @@ Sarathi/
 ├── vehicles/                       # Vehicle tracking + dispatch + drivers
 │   ├── models.py                   # Vehicle, DispatchRequest, Driver, IssueReport,
 │   │                               #   MaintenanceRecord, Notification, EmergencyRequest,
-│   │                               #   LocationRecord, DrivingEvent
+│   │                               #   LocationRecord, DrivingEvent, Route, Rental, Alert, Rule
 │   ├── serializers.py
 │   ├── views.py                    # CRUD, nearest, dispatch, driver_me, signals, etc.
+│   ├── dispatch_views.py           # Universal dispatch endpoints (candidates, confirm)
+│   ├── dispatch_engine.py          # Intelligent multi-factor dispatch matching engine
+│   ├── rules_engine.py             # Policy & geofence automated rule evaluation engine
 │   ├── urls.py
 │   ├── osrm.py                     # OSRM real-road routing helper (with cache jitter)
 │   ├── consumers.py                # WebSocket NotificationConsumer + JWTAuthMiddleware
 │   ├── signals.py                  # post_save signals → WebSocket push for all alert models
 │   ├── cache_utils.py              # jittered_ttl() utility for thundering-herd prevention
 │   └── migrations/
-├── accounts/                       # JWT auth + user profiles
-│   ├── models.py                   # Profile (org type, is_online)
+├── accounts/                       # JWT auth + multi-tenant user profiles
+│   ├── models.py                   # Profile (organization, role, is_online), Organization
 │   ├── serializers.py
 │   ├── views.py                    # LoginView (with expires_in jitter), RegisterView
 │   └── urls.py
@@ -531,8 +537,13 @@ Sarathi/
 ├── frontend/                       # React + TypeScript + Vite (dispatcher console)
 │   ├── src/
 │   │   ├── api/auth.ts
+│   │   ├── api/vehicles.ts
 │   │   ├── components/
 │   │   │   ├── NotificationBell.tsx  # Real-time notification bell
+│   │   │   ├── DispatchWorkspace.tsx # Interactive dispatch console
+│   │   │   ├── LiveTrackingTab.tsx   # Fleet telemetry & live map view
+│   │   │   ├── RoutesTab.tsx         # Fixed routes & stops management
+│   │   │   ├── RentalsTab.tsx        # Commercial rental contracts management
 │   │   │   ├── MaintenanceTab.tsx
 │   │   │   ├── IssuesTab.tsx
 │   │   │   ├── FuelTab.tsx
@@ -541,7 +552,7 @@ Sarathi/
 │   │   │   └── ThemeToggle.tsx
 │   │   ├── hooks/
 │   │   │   ├── useAdminNotifications.ts  # WebSocket hook + polling fallback
-│   │   │   └── useNotifications.ts       # Driver-side WS notifications (future)
+│   │   │   └── useNotifications.ts       # Driver-side WS notifications
 │   │   ├── pages/
 │   │   │   ├── Dashboard.tsx             # Fleet + Dispatch + Drivers + all tabs
 │   │   │   ├── Login.tsx

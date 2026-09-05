@@ -2,21 +2,33 @@ import L from 'leaflet';
 
 
 export const VEHICLE_TYPES = [
-  { value: 'ambulance', label: 'Ambulance' },
+  { value: 'rental', label: 'Rental Vehicle' },
+  { value: 'government', label: 'Government Vehicle' },
+  { value: 'company', label: 'Company Vehicle' },
+  { value: 'personal', label: 'Personal Vehicle' },
   { value: 'logistics', label: 'Logistics' },
-  { value: 'municipal', label: 'Municipal' },
+  { value: 'public_transport', label: 'Public Transport' },
+  { value: 'commercial', label: 'Commercial / Construction' },
 ] as const;
 
 export const TYPE_COLORS: Record<string, string> = {
-  ambulance: '#dc2626',
-  logistics: '#2563eb',
-  municipal: '#059669',
+  rental: '#7c3aed',
+  government: '#dc2626',
+  company: '#2563eb',
+  personal: '#d97706',
+  logistics: '#0891b2',
+  public_transport: '#059669',
+  commercial: '#9a3412',
 };
 
 export const TYPE_LABELS: Record<string, string> = {
-  ambulance: 'Ambulance',
+  rental: 'Rental Vehicle',
+  government: 'Government Vehicle',
+  company: 'Company Vehicle',
+  personal: 'Personal Vehicle',
   logistics: 'Logistics',
-  municipal: 'Municipal',
+  public_transport: 'Public Transport',
+  commercial: 'Commercial / Construction',
 };
 
 export const NEPAL_CENTER: [number, number] = [28.2, 84.0];

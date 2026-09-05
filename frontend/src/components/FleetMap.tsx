@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, MapPinned, Navigation, RefreshCw } from 'lucide-react';
-import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
+import { CircleMarker, GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchVehicles } from '../api/vehicles';
@@ -8,15 +8,23 @@ import type { Vehicle } from '../api/vehicles';
 import NEPAL_GEOJSON from '../data/nepalBorder';
 
 const TYPE_COLORS: Record<Vehicle['vehicle_type'], string> = {
-  ambulance: '#dc2626',
-  logistics: '#2563eb',
-  municipal: '#059669',
+  rental: '#7c3aed',
+  government: '#dc2626',
+  company: '#2563eb',
+  personal: '#d97706',
+  logistics: '#0891b2',
+  public_transport: '#059669',
+  commercial: '#9a3412',
 };
 
 const TYPE_LABELS: Record<Vehicle['vehicle_type'], string> = {
-  ambulance: 'Ambulance',
+  rental: 'Rental Vehicle',
+  government: 'Government Vehicle',
+  company: 'Company Vehicle',
+  personal: 'Personal Vehicle',
   logistics: 'Logistics',
-  municipal: 'Municipal',
+  public_transport: 'Public Transport',
+  commercial: 'Commercial / Construction',
 };
 
 const POLL_INTERVAL = 4000;
@@ -30,12 +38,22 @@ const BORDER_STYLE: L.PathOptions = {
   fillOpacity: 0.08,
 };
 
+function createPhotoIcon(photoUrl: string, borderColor: string) {
+  return L.divIcon({
+    className: 'vehicle-photo-marker',
+    html: `<div style="width:28px;height:28px;border-radius:50%;border:2px solid ${borderColor};overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.4);"><img src="${photoUrl}" style="width:100%;height:100%;object-fit:cover;" /></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -16],
+  });
+}
+
 function VehicleBounds({ vehicles }: { vehicles: Vehicle[] }) {
   const map = useMap();
 
   useEffect(() => {
     const points = vehicles
-      .filter(vehicle => NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]))
+      .filter(vehicle => vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]))
       .map(vehicle => [vehicle.location.lat, vehicle.location.lng] as [number, number]);
 
     if (points.length > 1) {
@@ -79,7 +97,7 @@ export default function FleetMap() {
   }, []);
 
   const nepalVehicles = useMemo(
-    () => vehicles.filter(vehicle => NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng])),
+    () => vehicles.filter(vehicle => vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng])),
     [vehicles],
   );
 
@@ -119,30 +137,54 @@ export default function FleetMap() {
           style={() => BORDER_STYLE}
         />
         <VehicleBounds vehicles={nepalVehicles} />
-        {nepalVehicles.map(vehicle => (
-          <CircleMarker
-            key={vehicle.id}
-            center={[vehicle.location.lat, vehicle.location.lng]}
-            radius={8}
-            pathOptions={{
-              color: '#ffffff',
-              weight: 2.5,
-              fillColor: TYPE_COLORS[vehicle.vehicle_type] ?? '#64748b',
-              fillOpacity: vehicle.is_available ? 1 : 0.65,
-            }}
-          >
-            <Popup>
-              <div className="map-popup">
-                <strong>{vehicle.name}</strong>
-                <span>{TYPE_LABELS[vehicle.vehicle_type]}</span>
-                <span className={vehicle.is_available ? 'available-text' : 'unavailable-text'}>
-                  {vehicle.is_available ? 'Available' : 'In service'}
-                </span>
-                <span className="mono">{vehicle.location.lat.toFixed(5)}, {vehicle.location.lng.toFixed(5)}</span>
-              </div>
-            </Popup>
-          </CircleMarker>
-        ))}
+        {nepalVehicles.map(vehicle => {
+          const color = TYPE_COLORS[vehicle.vehicle_type] ?? '#64748b';
+          if (vehicle.photo_url) {
+            return (
+              <Marker
+                key={vehicle.id}
+                position={[vehicle.location.lat, vehicle.location.lng]}
+                icon={createPhotoIcon(vehicle.photo_url, color)}
+              >
+                <Popup>
+                  <div className="map-popup">
+                    <img src={vehicle.photo_url} alt={vehicle.name} style={{ width: 80, height: 56, objectFit: 'cover', borderRadius: 6, marginBottom: 6 }} />
+                    <strong>{vehicle.name}</strong>
+                    <span>{TYPE_LABELS[vehicle.vehicle_type]}</span>
+                    <span className={vehicle.is_available ? 'available-text' : 'unavailable-text'}>
+                      {vehicle.is_available ? 'Available' : 'In service'}
+                    </span>
+                    <span className="mono">{vehicle.location.lat.toFixed(5)}, {vehicle.location.lng.toFixed(5)}</span>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          }
+          return (
+            <CircleMarker
+              key={vehicle.id}
+              center={[vehicle.location.lat, vehicle.location.lng]}
+              radius={8}
+              pathOptions={{
+                color: '#ffffff',
+                weight: 2.5,
+                fillColor: color,
+                fillOpacity: vehicle.is_available ? 1 : 0.65,
+              }}
+            >
+              <Popup>
+                <div className="map-popup">
+                  <strong>{vehicle.name}</strong>
+                  <span>{TYPE_LABELS[vehicle.vehicle_type]}</span>
+                  <span className={vehicle.is_available ? 'available-text' : 'unavailable-text'}>
+                    {vehicle.is_available ? 'Available' : 'In service'}
+                  </span>
+                  <span className="mono">{vehicle.location.lat.toFixed(5)}, {vehicle.location.lng.toFixed(5)}</span>
+                </div>
+              </Popup>
+            </CircleMarker>
+          );
+        })}
       </MapContainer>
     </main>
   );

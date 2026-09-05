@@ -2,9 +2,33 @@ from django.db import models
 from django.contrib.auth.models import User
 from vehicles.models import Vehicle
 
+class Organization(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    organization_type = models.CharField(max_length=50, blank=True)
+    contact_information = models.TextField(blank=True)
+    address = models.TextField(blank=True)
+    status = models.CharField(max_length=20, default='active')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
 class Profile(models.Model):
+    ROLE_CHOICES = [
+        ('SUPER_ADMIN', 'Super Admin'),
+        ('ORGANIZATION_ADMIN', 'Organization Admin'),
+        ('FLEET_MANAGER', 'Fleet Manager'),
+        ('OFFICER', 'Officer'),
+        ('DRIVER', 'Driver'),
+        ('AUDITOR', 'Auditor'),
+        ('VIEWER', 'Viewer'),
+    ]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     organization_name = models.CharField(max_length=255, default='Default Org')
+    organization = models.ForeignKey(Organization, on_delete=models.SET_NULL, null=True, blank=True, related_name='profiles')
+    role = models.CharField(max_length=30, choices=ROLE_CHOICES, default='VIEWER')
     last_app_activity = models.DateTimeField(
         null=True,
         blank=True,

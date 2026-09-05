@@ -12,20 +12,23 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
     username_field = User.USERNAME_FIELD
 
     def validate(self, attrs):
-        identifier = attrs.get('username') or attrs.get('email')
+        identifier = (attrs.get('username') or attrs.get('email') or '').strip()
         password = attrs.get('password')
-
         user = (
             User.objects.filter(username=identifier).first()
             or User.objects.filter(email__iexact=identifier).first()
         )
 
-        if user is None or not user.check_password(password):
+        if user is None:
+            raise serializers.ValidationError(
+                'No active account found with the given credentials'
+            )
+        if not user.check_password(password):
             raise serializers.ValidationError(
                 'No active account found with the given credentials'
             )
 
-        organization_name = self.initial_data.get('organization_name')
+        organization_name = (self.initial_data.get('organization_name') or '').strip()
         if not hasattr(user, 'profile'):
             raise serializers.ValidationError(
                 'User profile not found. Please contact support.'
@@ -34,7 +37,7 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Validate against the canonical org name (the admin's), not the
         # user's own profile value — which may still hold the default placeholder.
         expected_org = get_organization_name()
-        if expected_org.lower() != (organization_name or '').lower():
+        if expected_org.lower() != organization_name.lower():
             raise serializers.ValidationError(
                 f'Invalid organization name. Expected: {expected_org}'
             )
