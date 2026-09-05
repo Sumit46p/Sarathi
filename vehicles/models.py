@@ -2,6 +2,28 @@ from django.contrib.gis.db import models
 from django.utils import timezone
 
 
+class Fleet(models.Model):
+    FLEET_TYPE_CHOICES = [
+        ('RENTAL', 'Rental'),
+        ('LOGISTICS', 'Logistics'),
+        ('PUBLIC_TRANSPORT', 'Public Transport'),
+        ('ORGANIZATION', 'Organization'),
+        ('GOVERNMENT', 'Government'),
+        ('MUNICIPAL', 'Municipal'),
+        ('EMERGENCY', 'Emergency'),
+        ('OTHER', 'Other'),
+    ]
+    name = models.CharField(max_length=200)
+    fleet_type = models.CharField(max_length=50, choices=FLEET_TYPE_CHOICES, default='OTHER')
+    description = models.TextField(blank=True)
+    status = models.CharField(max_length=20, default='active')
+    organization = models.ForeignKey('accounts.Organization', on_delete=models.CASCADE, related_name='fleets')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.get_fleet_type_display()})"
+
+
 class Driver(models.Model):
     """Represents a driver that can be assigned to a vehicle."""
     name = models.CharField(max_length=100)
@@ -16,6 +38,20 @@ class Driver(models.Model):
         default=False,
         db_index=True,
         help_text='Driver duty status. When True the assigned vehicle is available.',
+    )
+    organization = models.ForeignKey(
+        'accounts.Organization',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='drivers',
+    )
+    fleet = models.ForeignKey(
+        Fleet,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='drivers',
     )
     owner = models.ForeignKey(
         'auth.User',
@@ -98,6 +134,38 @@ class Vehicle(models.Model):
         default=0,
         help_text='Cumulative GPS-derived distance (approximate, not true odometer). Updated via location updates with noise filtering.',
     )
+    brand = models.CharField(max_length=100, blank=True, help_text='Brand / model name')
+    color = models.CharField(max_length=50, blank=True)
+    odometer_km = models.FloatField(default=0, help_text='Current odometer reading in km')
+    vehicle_status = models.CharField(
+        max_length=15,
+        default='available',
+        db_index=True,
+        choices=[
+            ('available', 'Available'),
+            ('assigned', 'Assigned'),
+            ('reserved', 'Reserved'),
+            ('in_use', 'In Use'),
+            ('on_route', 'On Route'),
+            ('rented', 'Rented'),
+            ('maintenance', 'Maintenance'),
+            ('offline', 'Offline'),
+        ],
+    )
+    organization = models.ForeignKey(
+        'accounts.Organization',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='vehicles',
+    )
+    fleet = models.ForeignKey(
+        Fleet,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vehicles',
+    )
     owner = models.ForeignKey(
         'auth.User',
         on_delete=models.CASCADE,
@@ -114,22 +182,20 @@ class Vehicle(models.Model):
             return True
         return (timezone.now() - self.last_location_at).total_seconds() > 300
 
+    ACTIVE_DISPATCH_STATUSES = ['assigned', 'dispatched', 'DISPATCHED', 'accepted', 'en_route', 'arrived', 'in_service', 'RESPONDING', 'IN_PROGRESS']
+
     @property
     def has_active_dispatch(self) -> bool:
-        """True if this vehicle has any dispatch request in a non-terminal state.
-
-        Active dispatch states (anything not yet completed or cancelled):
-        'assigned', 'accepted', 'en_route', 'arrived'.
-        """
+        """True if this vehicle has any dispatch request in a non-terminal state."""
         return self.dispatch_requests.filter(
-            status__in=['assigned', 'accepted', 'en_route', 'arrived']
+            status__in=self.ACTIVE_DISPATCH_STATUSES
         ).exists()
 
     @property
     def active_dispatch_status(self) -> str | None:
         """Returns the current status of an active dispatch, or None if no active dispatch."""
         active = self.dispatch_requests.filter(
-            status__in=['assigned', 'accepted', 'en_route', 'arrived']
+            status__in=self.ACTIVE_DISPATCH_STATUSES
         ).order_by('-created_at').first()
         return active.status if active else None
 
@@ -195,24 +261,132 @@ class DispatchRequest(models.Model):
         ('rejected', 'Rejected'),
         ('en_route', 'En Route'),
         ('arrived', 'Arrived'),
+        ('in_service', 'In Service'),
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
+        ('expired', 'Expired'),
+        ('CREATED', 'Created'),
+        ('SEARCHING', 'Searching'),
+        ('RECOMMENDED', 'Recommended'),
+        ('DISPATCHED', 'Dispatched'),
+        ('RESPONDING', 'Responding'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('NO_VEHICLE_AVAILABLE', 'No Vehicle Available'),
+        ('EN_ROUTE_TO_PICKUP', 'En Route to Pickup'),
+        ('AT_PICKUP', 'At Pickup'),
+        ('IN_TRANSIT', 'In Transit'),
+        ('ARRIVED_AT_DESTINATION', 'Arrived at Destination'),
+        ('VEHICLE_BREAKDOWN', 'Vehicle Breakdown'),
+        ('RECOVERY_IN_PROGRESS', 'Recovery in Progress'),
+        ('EN_ROUTE_TO_BREAKDOWN', 'En Route to Breakdown'),
+        ('AT_BREAKDOWN_LOCATION', 'At Breakdown Location'),
+        ('GOODS_TRANSFERRED', 'Goods Transferred'),
+        ('IN_TRANSIT_TO_DESTINATION', 'In Transit to Destination'),
     ]
 
     # Valid forward transitions from each status.
     VALID_TRANSITIONS = {
-        'pending':   ['assigned', 'cancelled'],
-        'assigned':  ['accepted', 'rejected', 'cancelled'],
-        'accepted':  ['en_route', 'cancelled'],
-        'en_route':  ['arrived', 'cancelled'],
-        'arrived':   ['completed', 'cancelled'],
+        'pending':   ['assigned', 'cancelled', 'DISPATCHED', 'CREATED'],
+        'assigned':  ['accepted', 'rejected', 'cancelled', 'expired'],
+        'DISPATCHED': ['accepted', 'rejected', 'cancelled', 'expired'],
+        'accepted':  ['en_route', 'EN_ROUTE_TO_PICKUP', 'EN_ROUTE_TO_BREAKDOWN', 'cancelled'],
+        'en_route':  ['arrived', 'AT_PICKUP', 'AT_BREAKDOWN_LOCATION', 'cancelled', 'VEHICLE_BREAKDOWN'],
+        'EN_ROUTE_TO_PICKUP': ['AT_PICKUP', 'arrived', 'cancelled', 'VEHICLE_BREAKDOWN'],
+        'AT_PICKUP': ['in_service', 'IN_TRANSIT', 'cancelled', 'VEHICLE_BREAKDOWN'],
+        'in_service': ['completed', 'ARRIVED_AT_DESTINATION', 'VEHICLE_BREAKDOWN', 'cancelled'],
+        'IN_TRANSIT': ['ARRIVED_AT_DESTINATION', 'completed', 'VEHICLE_BREAKDOWN', 'cancelled'],
+        'arrived':   ['in_service', 'completed', 'AT_PICKUP', 'AT_BREAKDOWN_LOCATION', 'cancelled', 'VEHICLE_BREAKDOWN'],
+        'ARRIVED_AT_DESTINATION': ['completed', 'cancelled'],
+        'VEHICLE_BREAKDOWN': ['RECOVERY_IN_PROGRESS', 'cancelled'],
+        'RECOVERY_IN_PROGRESS': ['completed', 'cancelled'],
+        'EN_ROUTE_TO_BREAKDOWN': ['AT_BREAKDOWN_LOCATION', 'cancelled'],
+        'AT_BREAKDOWN_LOCATION': ['GOODS_TRANSFERRED', 'cancelled'],
+        'GOODS_TRANSFERRED': ['IN_TRANSIT_TO_DESTINATION', 'cancelled'],
+        'IN_TRANSIT_TO_DESTINATION': ['ARRIVED_AT_DESTINATION', 'completed', 'cancelled'],
         'completed': [],
         'rejected':  [],
         'cancelled': [],
+        'expired':   [],
+        'CREATED':   ['SEARCHING', 'RECOMMENDED', 'DISPATCHED', 'assigned', 'cancelled'],
+        'SEARCHING': ['RECOMMENDED', 'NO_VEHICLE_AVAILABLE', 'cancelled'],
+        'RECOMMENDED': ['DISPATCHED', 'assigned', 'cancelled'],
+        'NO_VEHICLE_AVAILABLE': ['SEARCHING', 'cancelled'],
     }
 
-    request_lat = models.FloatField(help_text='Latitude of the dispatch request')
-    request_lng = models.FloatField(help_text='Longitude of the dispatch request')
+    request_lat = models.FloatField(help_text='Latitude of the dispatch request', null=True, blank=True)
+    request_lng = models.FloatField(help_text='Longitude of the dispatch request', null=True, blank=True)
+    pickup_location = models.PointField(srid=4326, null=True, blank=True, help_text='Pickup or Incident location')
+    destination = models.PointField(srid=4326, null=True, blank=True, help_text='Destination (for logistics/rentals)')
+    dest_lat = models.FloatField(null=True, blank=True, help_text='Latitude of delivery destination')
+    dest_lng = models.FloatField(null=True, blank=True, help_text='Longitude of delivery destination')
+    destination_name = models.CharField(max_length=255, blank=True, null=True, help_text='Destination landmark or city')
+    destination_address = models.TextField(blank=True, null=True, help_text='Destination address or depot')
+    location_name = models.CharField(max_length=255, blank=True, null=True, help_text='Name of landmark, venue, or building')
+    address = models.TextField(blank=True, null=True, help_text='Human-readable address or locality description')
+    access_lat = models.FloatField(blank=True, null=True, help_text='Road access navigation latitude')
+    access_lng = models.FloatField(blank=True, null=True, help_text='Road access navigation longitude')
+    cargo_description = models.CharField(max_length=255, blank=True, null=True, help_text='Cargo / goods description')
+    cargo_weight_kg = models.FloatField(null=True, blank=True, help_text='Cargo weight in kg')
+    operation_type = models.CharField(
+        max_length=30,
+        choices=[
+            ('NORMAL_LOGISTICS', 'Normal Logistics Operation'),
+            ('EMERGENCY_REPLACEMENT', 'Emergency Breakdown Replacement'),
+        ],
+        default='NORMAL_LOGISTICS',
+    )
+    original_dispatch = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='recovery_dispatches',
+        help_text='Original logistics delivery if this is an emergency breakdown replacement'
+    )
+    failed_vehicle = models.ForeignKey(
+        'Vehicle',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='breakdown_recoveries',
+        help_text='Broken down vehicle being recovered'
+    )
+    breakdown_reason = models.TextField(blank=True, null=True, help_text='Reason for breakdown (engine, tire, etc.)')
+    request_type = models.CharField(
+        max_length=20,
+        choices=[('NORMAL', 'Normal Dispatch'), ('EMERGENCY', 'Emergency Dispatch')],
+        default='NORMAL',
+    )
+    priority = models.CharField(
+        max_length=20,
+        choices=[('LOW', 'Low'), ('MEDIUM', 'Medium'), ('HIGH', 'High'), ('CRITICAL', 'Critical')],
+        default='MEDIUM',
+    )
+    required_capability = models.CharField(max_length=50, blank=True, null=True)
+    score_weights = models.JSONField(blank=True, null=True, help_text='Weights used during dispatch engine scoring')
+    organization = models.ForeignKey(
+        'accounts.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispatches',
+    )
+    generic_trip = models.OneToOneField(
+        'Trip',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='legacy_dispatch',
+    )
+    selection_reason = models.TextField(blank=True, null=True, help_text='Explainable reason for vehicle recommendation and assignment')
+    created_by = models.ForeignKey(
+        'auth.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_dispatches',
+        help_text='Admin who initiated the dispatch',
+    )
     vehicle_type = models.CharField(
         max_length=20,
         choices=Vehicle.VEHICLE_TYPE_CHOICES,
@@ -225,7 +399,7 @@ class DispatchRequest(models.Model):
         related_name='dispatch_requests',
     )
     status = models.CharField(
-        max_length=20,
+        max_length=30,
         choices=STATUS_CHOICES,
         default='pending',
         db_index=True,
@@ -249,6 +423,7 @@ class DispatchRequest(models.Model):
     accepted_at   = models.DateTimeField(null=True, blank=True)
     en_route_at   = models.DateTimeField(null=True, blank=True)
     arrived_at    = models.DateTimeField(null=True, blank=True)
+    in_service_at = models.DateTimeField(null=True, blank=True)
     completed_at  = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
@@ -264,11 +439,13 @@ class DispatchRequest(models.Model):
         now = timezone.now()
         self.status = new_status
         timestamp_field = {
-            'assigned':  'assigned_at',
-            'accepted':  'accepted_at',
-            'en_route':  'en_route_at',
-            'arrived':   'arrived_at',
-            'completed': 'completed_at',
+            'assigned':    'assigned_at',
+            'DISPATCHED':  'assigned_at',
+            'accepted':    'accepted_at',
+            'en_route':    'en_route_at',
+            'arrived':     'arrived_at',
+            'in_service':  'in_service_at',
+            'completed':   'completed_at',
         }.get(new_status)
         if timestamp_field:
             setattr(self, timestamp_field, now)
@@ -512,6 +689,22 @@ class EmergencyRequest(models.Model):
         on_delete=models.SET_NULL,
         related_name='emergency_requests',
     )
+    related_dispatch = models.ForeignKey(
+        'DispatchRequest',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='breakdown_emergencies',
+        help_text='Original dispatch during which breakdown occurred',
+    )
+    replacement_dispatch = models.ForeignKey(
+        'DispatchRequest',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='recovery_for_emergencies',
+        help_text='Replacement dispatch sent to recover cargo and complete delivery',
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
@@ -712,6 +905,13 @@ class LocationRecord(models.Model):
         related_name='location_records',
         help_text='Active dispatch at the time of this fix, if any.',
     )
+    trip = models.ForeignKey(
+        'Trip',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='location_records',
+    )
     location = models.PointField(srid=4326, help_text='GPS fix (lng, lat)')
     speed_kmh = models.FloatField(
         default=0,
@@ -763,3 +963,233 @@ class FuelPrice(models.Model):
     class Meta:
         verbose_name_plural = "Fuel Prices"
         ordering = ['fuel_type']
+
+
+class Trip(models.Model):
+    TRIP_TYPE_CHOICES = [
+        ('RENTAL', 'Rental'),
+        ('DELIVERY', 'Delivery'),
+        ('PASSENGER_SERVICE', 'Passenger Service'),
+        ('OFFICIAL', 'Official'),
+        ('EMERGENCY', 'Emergency'),
+        ('PERSONAL', 'Personal'),
+        ('MAINTENANCE', 'Maintenance'),
+        ('OTHER', 'Other'),
+    ]
+    STATUS_CHOICES = [
+        ('planned', 'Planned'),
+        ('active', 'Active'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ]
+    trip_type = models.CharField(max_length=50, choices=TRIP_TYPE_CHOICES, default='OTHER')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planned')
+    start_time = models.DateTimeField(null=True, blank=True)
+    expected_end_time = models.DateTimeField(null=True, blank=True)
+    actual_end_time = models.DateTimeField(null=True, blank=True)
+    start_location = models.CharField(max_length=255, blank=True)
+    destination = models.CharField(max_length=255, blank=True)
+    distance_km = models.FloatField(default=0.0)
+    driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='trips')
+    fleet = models.ForeignKey(Fleet, on_delete=models.SET_NULL, null=True, blank=True, related_name='trips')
+    organization = models.ForeignKey('accounts.Organization', on_delete=models.CASCADE, null=True, blank=True, related_name='trips')
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True, related_name='trips')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Trip #{self.id} ({self.get_trip_type_display()} - {self.status})"
+
+
+class Route(models.Model):
+    name = models.CharField(max_length=200, help_text='Human-readable route name')
+    description = models.TextField(blank=True)
+    start_name = models.CharField(max_length=200, help_text='Start location name')
+    start_lat = models.FloatField()
+    start_lng = models.FloatField()
+    end_name = models.CharField(max_length=200, help_text='End / destination name')
+    end_lat = models.FloatField()
+    end_lng = models.FloatField()
+    expected_distance_km = models.FloatField(null=True, blank=True, help_text='Expected total route distance in km')
+    expected_duration_min = models.FloatField(null=True, blank=True, help_text='Expected travel duration in minutes')
+    is_active = models.BooleanField(default=True, db_index=True)
+    owner = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='routes')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class RouteStop(models.Model):
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name='stops')
+    order = models.PositiveIntegerField(help_text='Position in the route (0 = first)')
+    name = models.CharField(max_length=200)
+    lat = models.FloatField()
+    lng = models.FloatField()
+
+    class Meta:
+        ordering = ['route', 'order']
+
+    def __str__(self):
+        return f"{self.route.name} - Stop {self.order}: {self.name}"
+
+
+class VehicleAssignment(models.Model):
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='assignments')
+    user = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='vehicle_assignments')
+    purpose = models.CharField(max_length=300, blank=True, help_text='Stated purpose of vehicle use')
+    destination = models.CharField(max_length=300, blank=True)
+    expected_return_datetime = models.DateTimeField(null=True, blank=True)
+    actual_return_datetime = models.DateTimeField(null=True, blank=True)
+    start_location = models.CharField(max_length=200, blank=True)
+    status = models.CharField(max_length=10, default='assigned', db_index=True, choices=[
+        ('assigned', 'Assigned'),
+        ('active', 'Active'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ])
+    notes = models.TextField(blank=True)
+    dispatch = models.ForeignKey(DispatchRequest, on_delete=models.SET_NULL, null=True, blank=True, related_name='vehicle_assignments')
+    generic_trip = models.ForeignKey(Trip, on_delete=models.SET_NULL, null=True, blank=True, related_name='vehicle_assignments')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class VehicleRoute(models.Model):
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='route_assignments')
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name='vehicle_assignments')
+    is_active = models.BooleanField(default=True, db_index=True)
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    unassigned_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-assigned_at']
+
+
+class Rental(models.Model):
+    RENTAL_TYPE_CHOICES = [
+        ('daily', 'Daily'),
+        ('hourly', 'Hourly'),
+        ('weekly', 'Weekly'),
+        ('monthly', 'Monthly'),
+    ]
+    STATUS_CHOICES = [
+        ('reserved', 'Reserved'),
+        ('active', 'Active'),
+        ('overdue', 'Overdue'),
+        ('returned', 'Returned'),
+        ('cancelled', 'Cancelled'),
+    ]
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='rentals')
+    owner = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='rentals')
+    customer_name = models.CharField(max_length=200)
+    customer_phone = models.CharField(max_length=20, blank=True)
+    customer_id_number = models.CharField(max_length=100, blank=True, help_text='Government ID / citizenship number')
+    rental_type = models.CharField(max_length=10, choices=RENTAL_TYPE_CHOICES, default='daily')
+    rate = models.DecimalField(max_digits=10, decimal_places=2, help_text='Rate per unit in NPR')
+    deposit = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text='Security deposit in NPR')
+    start_datetime = models.DateTimeField()
+    expected_return_datetime = models.DateTimeField()
+    actual_return_datetime = models.DateTimeField(null=True, blank=True)
+    start_odometer_km = models.FloatField(null=True, blank=True)
+    end_odometer_km = models.FloatField(null=True, blank=True)
+    start_location_name = models.CharField(max_length=200, blank=True)
+    end_location_name = models.CharField(max_length=200, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='reserved', db_index=True)
+    notes = models.TextField(blank=True)
+    generic_trip = models.ForeignKey(Trip, on_delete=models.SET_NULL, null=True, blank=True, related_name='rentals')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class Rule(models.Model):
+    RULE_TYPE_CHOICES = [
+        ('SPEED_LIMIT', 'Speed Limit'),
+        ('GEOFENCE', 'Geofence'),
+        ('ROUTE_DEVIATION', 'Route Deviation'),
+        ('UNAUTHORIZED_USE', 'Unauthorized Use'),
+        ('OPERATING_HOURS', 'Operating Hours'),
+    ]
+    organization = models.ForeignKey('accounts.Organization', on_delete=models.CASCADE, related_name='rules')
+    fleet = models.ForeignKey(Fleet, on_delete=models.CASCADE, null=True, blank=True, related_name='rules')
+    rule_type = models.CharField(max_length=50, choices=RULE_TYPE_CHOICES)
+    name = models.CharField(max_length=200)
+    configuration = models.JSONField(default=dict)
+    enabled = models.BooleanField(default=True)
+    severity = models.CharField(max_length=20, default='warning')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.get_rule_type_display()})"
+
+
+class Alert(models.Model):
+    organization = models.ForeignKey('accounts.Organization', on_delete=models.CASCADE, related_name='alerts')
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='alerts')
+    trip = models.ForeignKey(Trip, on_delete=models.SET_NULL, null=True, blank=True, related_name='alerts')
+    rule = models.ForeignKey(Rule, on_delete=models.SET_NULL, null=True, blank=True, related_name='generated_alerts')
+    alert_type = models.CharField(max_length=50)
+    severity = models.CharField(max_length=20)
+    message = models.TextField()
+    location = models.PointField(srid=4326, null=True, blank=True)
+    status = models.CharField(max_length=20, default='active')
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+    acknowledged_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"Alert: {self.alert_type} ({self.severity}) - {self.vehicle.name}"
+
+
+class OperationalLocation(models.Model):
+    """Important operational locations stored in application database.
+    
+    Includes Hospitals, Police stations, Fire stations, Government offices,
+    Bus parks, Warehouses, Company locations, Fleet depots, and Landmarks.
+    """
+    LOCATION_TYPE_CHOICES = [
+        ('hospital', 'Hospital'),
+        ('police_station', 'Police Station'),
+        ('fire_station', 'Fire Station'),
+        ('government_office', 'Government Office'),
+        ('bus_park', 'Bus Park'),
+        ('warehouse', 'Warehouse'),
+        ('company_location', 'Company Location'),
+        ('fleet_depot', 'Fleet Depot'),
+        ('landmark', 'Registered Landmark'),
+        ('other', 'Other Operational Location'),
+    ]
+
+    name = models.CharField(max_length=200, db_index=True)
+    category = models.CharField(max_length=50, choices=LOCATION_TYPE_CHOICES, default='landmark', db_index=True)
+    address = models.CharField(max_length=255, blank=True)
+    location = models.PointField(srid=4326, help_text='Exact authoritative coordinates')
+    access_point = models.PointField(srid=4326, null=True, blank=True, help_text='Optional road access navigation point')
+    organization_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Scoped to org name or empty for public/emergency landmarks',
+    )
+    contact_phone = models.CharField(max_length=50, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.get_category_display()})"
+
+    class Meta:
+        ordering = ['name']

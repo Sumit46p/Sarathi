@@ -21,6 +21,7 @@ import NotificationBell, { type NotificationItem } from '../components/Notificat
 import LiveTracking from '../components/LiveTracking';
 import { useAdminNotifications } from '../hooks/useAdminNotifications';
 import { toast } from '../components/toast';
+import DispatchWorkspace from '../components/DispatchWorkspace';
 import NEPAL_GEOJSON from '../data/nepalBorder';
 import { CountUp } from '../hooks/useCountUp';
 
@@ -806,54 +807,12 @@ export default function Dashboard() {
               })}</tbody></table></div>}
           </section>}
 
-          {activeTab === 'dispatch' && <section className="tab-content dispatch-workspace" aria-labelledby="dispatch-heading">
-            <div className="dispatch-rail">
-              <div className="dispatch-rail-header"><div><span className="live-label"><span />Live dispatch</span><h2 id="dispatch-heading">New request</h2></div>{requestMarker && <button className="text-button" onClick={clearDispatch}>Clear</button>}</div>
-              <div className="dispatch-step"><span className={`step-number ${requestMarker ? 'complete' : ''}`}>{requestMarker ? <CheckCircle2 size={16} /> : '1'}</span><div><strong>Set incident location</strong><p>{requestMarker ? `${requestMarker.lat.toFixed(5)}, ${requestMarker.lng.toFixed(5)}` : 'Select a point inside Nepal on the map.'}</p></div></div>
-              <div className="dispatch-step"><span className={`step-number ${requestMarker ? 'active' : ''}`}>2</span><div className="step-content"><strong>Choose response unit</strong><label htmlFor="dispatch-type">Vehicle type</label><select id="dispatch-type" className="input-field" value={dispatchType} onChange={event => setDispatchType(event.target.value)}>{VEHICLE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div></div>
-              <button id="dispatch-nearest-button" className="button button-primary dispatch-button" onClick={handleDispatch} disabled={!requestMarker || dispatchLoading}>{dispatchLoading ? <><RefreshCw className="spin" size={16} />Finding nearest unit</> : <><Navigation size={16} />Dispatch nearest vehicle</>}</button>
-              {dispatchResult && <div className="dispatch-result" role="status"><div className="result-title"><CheckCircle2 size={18} /><div><strong>Vehicle dispatched</strong><span>Route confirmed</span></div></div><div className="result-vehicle"><div className="entity-icon success">{dispatchResult.assigned_vehicle.photo_url ? <img src={dispatchResult.assigned_vehicle.photo_url} alt={dispatchResult.assigned_vehicle.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Truck size={18} />}</div><div><span>Assigned unit</span><strong>{dispatchResult.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div><div className="result-metrics"><div><span>Distance</span><strong>{dispatchResult.distance_km} km</strong></div><div><span>ETA</span><strong>{dispatchResult.duration_min ? `${Math.round(dispatchResult.duration_min)} min` : 'Route set'}</strong></div></div>{dispatchResult.status === 'assigned' && <button className="button button-primary" style={{ marginTop: 12, width: '100%' }} onClick={handleAcceptDispatch}>Accept dispatch</button>}</div>}
-              {activeDispatch && <div className="dispatch-result live-tracking" role="status">
-                <div className="result-title"><Navigation size={18} /><div><strong>Live trip tracking</strong><span>{DISPATCH_STATUS_LABELS[activeDispatch.status] || activeDispatch.status}{activeDispatch.assigned_vehicle_driver ? ` · ${activeDispatch.assigned_vehicle_driver}` : ''}</span></div></div>
-                <div className="result-vehicle"><div className="entity-icon success">{activeDispatch.assigned_vehicle.photo_url ? <img src={activeDispatch.assigned_vehicle.photo_url} alt={activeDispatch.assigned_vehicle_name || activeDispatch.assigned_vehicle.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Truck size={18} />}</div><div><span>Vehicle en route</span><strong>{activeDispatch.assigned_vehicle_name || activeDispatch.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div>
-                <DispatchStepper status={activeDispatch.status} />
-                <div className="progress-block">
-                  <div className="progress-head"><span>Progress</span><strong>{activeDispatch.progress_percent != null ? `${activeDispatch.progress_percent}%` : 'Calculating…'}</strong></div>
-                  <div className="progress-track"><div className="progress-fill" style={{ width: `${Math.min(100, Math.max(0, activeDispatch.progress_percent ?? 0))}%` }} /></div>
-                </div>
-                <div className="result-metrics"><div><span>ETA</span><LiveEta etaMin={activeDispatch.eta_min} /></div><div><span>Remaining</span><strong>{activeDispatch.remaining_distance_km != null ? `${activeDispatch.remaining_distance_km} km` : '—'}</strong></div></div>
-              </div>}
-              {dispatchError && <div className="inline-alert error" role="alert"><AlertCircle size={16} /><span>{dispatchError}</span></div>}
-              <div className="rail-section"><div className="rail-section-title"><h3>Fleet units</h3><span>{availableVehicles} ready</span></div><div className="unit-list">{vehicles.length === 0 ? <p className="muted">No fleet units available.</p> : vehicles.map(vehicle => {
-                const statusInfo = getVehicleStatusInfo(vehicle);
-                const isActiveUnit = activeDispatch?.assigned_vehicle?.id === vehicle.id;
-                return <button key={vehicle.id} className={`unit-row ${selectedVehicleId === vehicle.id ? 'selected' : ''} ${isActiveUnit ? 'active-trip' : ''}`} onClick={() => setSelectedVehicleId(vehicle.id)} disabled={!vehicle.location}>
-                  <span className={`unit-status ${statusInfo.className}`} />
-                  <div><strong>{vehicle.name}</strong><span>{vehicle.driver_name || 'Unassigned'} · {formatType(vehicle.vehicle_type)}</span></div>
-                  {isActiveUnit && <span className="unit-live-chip">LIVE</span>}
-                  <ChevronRight size={15} /></button>;
-              })}</div></div>
-            </div>
-            <div className="dispatch-map-shell"><div className="map-top-overlay"><span><MapPin size={14} />Nepal operations area</span><span className="map-legend"><i className="available" />Available <i className="unavailable" />In service <i className="request" />Request</span></div>
-              <MapContainer center={NEPAL_CENTER} zoom={7} {...MAP_OPTIONS} style={{ width: '100%', height: '100%' }}>
-                <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='&copy; <a href="https://www.esri.com/en-us/home">Esri</a> &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community' />
-                <GeoJSON data={NEPAL_GEOJSON as GeoJSON.GeoJsonObject} style={() => NEPAL_BORDER_STYLE} />
-                <MapController center={selectedCenter} />
-                <MapClickHandler onMapClick={(lat, lng) => { setRequestMarker({ lat, lng }); setDispatchResult(null); setDispatchError(null); }} />
-                <DispatchMapBoundsFitter geometry={dispatchResult?.geometry} requestMarker={requestMarker} assignedVehicle={dispatchResult?.assigned_vehicle || null} />
-                {vehicles.map(vehicle => {
-                  const statusInfo = getVehicleStatusInfo(vehicle);
-                  const popupTextClass = vehicle.is_available ? 'available-text' : (vehicle.has_active_dispatch ? 'on-trip-text' : 'unavailable-text');
-                  const isActiveUnit = activeDispatch?.assigned_vehicle?.id === vehicle.id;
-                  return vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={getVehicleIcon(vehicle, isActiveUnit)}><Popup><div className="map-popup">{vehicle.photo_url && <img src={vehicle.photo_url} alt={vehicle.name} style={{ width: 80, height: 56, objectFit: 'cover', borderRadius: 6, marginBottom: 6 }} />}<strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={popupTextClass}>{statusInfo.label}</span>{isActiveUnit && activeDispatch?.assigned_vehicle_driver ? <span className="on-trip-text">Driver: {activeDispatch.assigned_vehicle_driver}</span> : null}</div></Popup></Marker>;
-                })}
-                {requestMarker && <Marker position={[requestMarker.lat, requestMarker.lng]} icon={requestIcon}><Popup><div className="map-popup"><strong>Dispatch request</strong><span>{requestMarker.lat.toFixed(5)}, {requestMarker.lng.toFixed(5)}</span></div></Popup></Marker>}
-                {activeDispatch?.geometry?.length ? <Polyline positions={activeDispatch.geometry} pathOptions={{ color: '#059669', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : null}
-                {dispatchResult?.geometry?.length ? <Polyline positions={dispatchResult.geometry} pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : dispatchResult && requestMarker && <Polyline positions={[[requestMarker.lat, requestMarker.lng], [dispatchResult.assigned_vehicle.lat, dispatchResult.assigned_vehicle.lng]]} pathOptions={{ color: '#2563eb', weight: 4, dashArray: '8 7', opacity: 0.85 }} />}
-              </MapContainer>
-              <div className="map-hint"><CircleDot size={13} />Click the map to place a request</div>
-            </div>
-          </section>}
+          {activeTab === 'dispatch' && (
+            <DispatchWorkspace
+              fleetVehicles={vehicles}
+              onRefreshVehicles={fetchVehicles}
+            />
+          )}
 
           {activeTab === 'drivers' && <section className="tab-content" aria-labelledby="drivers-heading">
             <div className="page-heading"><div><h2 id="drivers-heading">Driver directory</h2><p>Manage credentials and assignment-ready personnel.</p></div><button id="add-driver-button" className="button button-primary" onClick={() => { setDriverFormError(null); setShowAddDriverModal(true); }}><Plus size={16} />Add driver</button></div>
