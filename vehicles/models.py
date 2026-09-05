@@ -38,15 +38,36 @@ class Vehicle(models.Model):
     """Represents a dispatchable vehicle with real-time location."""
 
     VEHICLE_TYPE_CHOICES = [
-        ('ambulance', 'Ambulance'),
+        ('rental', 'Rental Vehicle'),
+        ('government', 'Government Vehicle'),
+        ('company', 'Company Vehicle'),
+        ('personal', 'Personal Vehicle'),
         ('logistics', 'Logistics'),
-        ('municipal', 'Municipal'),
+        ('public_transport', 'Public Transport'),
+        ('commercial', 'Commercial / Construction'),
     ]
 
     name = models.CharField(max_length=100)
     vehicle_type = models.CharField(
         max_length=20,
         choices=VEHICLE_TYPE_CHOICES,
+    )
+    FUEL_TYPE_CHOICES = [
+        ('petrol', 'Petrol'),
+        ('diesel', 'Diesel'),
+        ('ev', 'EV'),
+    ]
+    fuel_type = models.CharField(
+        max_length=20,
+        choices=FUEL_TYPE_CHOICES,
+        null=True,
+        blank=True,
+    )
+    photo = models.ImageField(
+        upload_to='vehicles/photos/',
+        null=True,
+        blank=True,
+        help_text='Photo or icon of the vehicle for map tracking'
     )
     number_plate = models.CharField(max_length=20, unique=True, null=True, blank=True)
     is_available = models.BooleanField(default=True)

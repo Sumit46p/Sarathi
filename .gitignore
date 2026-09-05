@@ -1,7 +1,13 @@
-# Python / Django
+# ==============================================================================
+# Sarthi - Comprehensive .gitignore
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Python & Bytecode
+# ------------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
-*.class
+*$py.class
 *.so
 .Python
 *.egg-info/
@@ -22,7 +28,9 @@ MANIFEST
 *.manifest
 *.spec
 
-# Virtual environments
+# ------------------------------------------------------------------------------
+# 2. Virtual Environments
+# ------------------------------------------------------------------------------
 venv/
 env/
 .venv/
@@ -30,60 +38,95 @@ env/
 .ENV/
 env.bak/
 venv.bak/
+ENV/
 
-# Django
+# ------------------------------------------------------------------------------
+# 3. Django & Database
+# ------------------------------------------------------------------------------
 *.sqlite3
 db.sqlite3
+db.sqlite3-journal
 media/
 staticfiles/
 local_settings.py
 
-# Environment / secrets
+# ------------------------------------------------------------------------------
+# 4. Environment Variables & Secrets
+# ------------------------------------------------------------------------------
 .env
 .env.*
 !.env.example
 *.env
 *.local
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/.env.development
+frontend/.env.production
 *.pem
 *.key
 *.crt
 *.p12
 *.pfx
 
-# Logs / caches / coverage
+# ------------------------------------------------------------------------------
+# 5. Logs, Caching & Testing
+# ------------------------------------------------------------------------------
 *.log
 logs/
 pip-log.txt
+pip-delete-this-directory.txt
 .coverage
 .coverage.*
 htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .cache/
 *.tmp
 *.temp
+*.bak
 
-# IDE / editors
+# ------------------------------------------------------------------------------
+# 6. IDEs & Editors
+# ------------------------------------------------------------------------------
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.iml
 
-# OS files
+# ------------------------------------------------------------------------------
+# 7. Operating System Artifacts
+# ------------------------------------------------------------------------------
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 desktop.ini
 
-# Node / frontend
+# ------------------------------------------------------------------------------
+# 8. Node.js & React Frontend
+# ------------------------------------------------------------------------------
 node_modules/
-dist/
-dist-ssr/
+frontend/node_modules/
+frontend/dist/
+frontend/out/
+frontend/build/
+frontend/coverage/
 *.tsbuildinfo
 .eslintcache
 .parcel-cache/
@@ -92,14 +135,40 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
+.npm/
+package-lock.json
 
-# Flutter / mobile
+# Keep frontend's own package-lock.json tracked
+!frontend/package-lock.json
+
+# ------------------------------------------------------------------------------
+# 9. Flutter & Mobile (Driver App)
+# ------------------------------------------------------------------------------
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-coverage/
+driver_app/build/
+driver_app/.dart_tool/
+driver_app/.flutter-plugins
+driver_app/.flutter-plugins-dependencies
+driver_app/.pub-cache/
+driver_app/.pub/
+driver_app/.metadata
+driver_app/android/.gradle/
+driver_app/android/local.properties
+driver_app/android/app/google-services.json
+driver_app/android/app/src/main/java/
+driver_app/ios/Flutter/Generated.xcconfig
+driver_app/ios/Flutter/ephemeral/
+driver_app/ios/Flutter/flutter_export_environment.sh
+driver_app/ios/Runner/GeneratedPluginRegistrant.h
+driver_app/ios/Runner/GeneratedPluginRegistrant.m
+driver_app/linux/flutter/ephemeral/
+driver_app/macos/Flutter/ephemeral/
+driver_app/windows/flutter/ephemeral/
 android/app/debug/
 android/app/profile/
 android/app/release/
@@ -108,329 +177,17 @@ android/local.properties
 ios/Flutter/.last_build_id
 *.jks
 *.keystore
-google-services.json
 google-services*.json
 GoogleService-Info.plist
 firebase_options.dart
 
-# Agent / local tooling (Kilo)
-.kilo/
-
-# Frontend / React
-frontend/.env
-frontend/.env.local
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
-
-# Build artifacts
-frontend/build/
-frontend/out/
-
-# Test coverage
-frontend/coverage/
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-
-# parcel-bundler cache
-.cache
-.parcel-cache
-
-# next.js build output
-.next
-
-# nuxt.js build output
-.nuxt
-
-# vuepress build output
-.vuepress/dist
-
-# Serverless directories
-.serverless
-
-# FuseBox cache
-.fusebox/
-
-# DynamoDB Local files
-.dynamodb/
-
-# TernJS port file
-.tern-port
-
-# Python
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-.env
-.eggs/
-*.egg
-*.egg-info/
-dist/
-build/
-docs/_build/
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*,cover
-.hypothesis/
-.pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-media/
-staticfiles/
-
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Flutter
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-build/
-*.iml
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-desktop.ini
-
-# Temporary files
-*.tmp
-# Agent / local tooling (Kilo)
-.kilo/
-
-# Frontend / React
-frontend/.env
-frontend/.env.local
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
-
-# Build artifacts
-frontend/build/
-frontend/out/
-
-# Test coverage
-frontend/coverage/
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-
-# parcel-bundler cache
-.cache
-.parcel-cache
-
-# next.js build output
-.next
-
-# nuxt.js build output
-.nuxt
-
-# vuepress build output
-.vuepress/dist
-
-# Serverless directories
-.serverless
-
-# FuseBox cache
-.fusebox/
-
-# DynamoDB Local files
-.dynamodb/
-
-# TernJS port file
-.tern-port
-
-# Python
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-.env
-.eggs/
-*.egg
-*.egg-info/
-dist/
-build/
-docs/_build/
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*,cover
-.hypothesis/
-.pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-media/
-staticfiles/
-
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Flutter
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-build/
-*.iml
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-desktop.ini
-
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.swp
-*~
-
-# Generated PDF reports
+# ------------------------------------------------------------------------------
+# 10. Local Scratch Scripts & Generated Reports
+# ------------------------------------------------------------------------------
+cleanup_db.py
+recreate_user*.py
+test_api.py
 test.pdf
 test_out.pdf
-
-# Local scratch / one-off test scripts (not part of the project)
-test_api.py
+scratch/
+.kilo/
