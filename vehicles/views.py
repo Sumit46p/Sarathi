@@ -724,7 +724,7 @@ def driver_duty(request):
     return Response(DriverMeSerializer(data).data)
 
 
-ACTIVE_DISPATCH_STATUSES = ['assigned', 'accepted', 'en_route', 'arrived']
+ACTIVE_DISPATCH_STATUSES = ['assigned', 'dispatched', 'DISPATCHED', 'accepted', 'en_route', 'arrived', 'in_service', 'RESPONDING', 'IN_PROGRESS']
 
 # Statuses that mean a driver accepted the trip (used for acceptance-rate KPI).
 ACCEPTED_DISPATCH_STATUSES = ['accepted', 'en_route', 'arrived', 'completed']

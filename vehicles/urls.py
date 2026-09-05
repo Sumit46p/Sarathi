@@ -1,9 +1,20 @@
 from django.urls import path
 from . import views
+from . import dispatch_views
 
 app_name = 'vehicles'
 
 urlpatterns = [
+    # Operational Locations & Modern Rule-based Dispatch Engine
+    path('operational-locations/', dispatch_views.operational_locations, name='operational-locations'),
+    path('dispatch/preview/', dispatch_views.dispatch_preview, name='dispatch-preview'),
+    path('dispatch/confirm/', dispatch_views.dispatch_confirm, name='dispatch-confirm'),
+    path('dispatch/driver-breakdown/', dispatch_views.driver_report_breakdown, name='dispatch-driver-breakdown'),
+    path('dispatch/breakdown-requests/', dispatch_views.breakdown_requests_list, name='dispatch-breakdown-requests'),
+    path('dispatch/approve-recovery/', dispatch_views.approve_breakdown_recovery, name='dispatch-approve-recovery'),
+    path('dispatch/active-list/', dispatch_views.dispatch_active_list, name='dispatch-active-list'),
+    path('dispatch/<int:pk>/transition/', dispatch_views.dispatch_request_transition, name='dispatch-request-transition'),
+
     path('vehicles/', views.VehicleListCreateView.as_view(), name='vehicle-list'),
     path('vehicles/nearest/', views.nearest_vehicles, name='vehicle-nearest'),
     path('vehicles/<int:pk>/', views.VehicleDetailView.as_view(), name='vehicle-detail'),

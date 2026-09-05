@@ -1,9 +1,12 @@
 from rest_framework import serializers
 import json
 from django.contrib.gis.geos import Point
+from django.contrib.auth.models import User
+from accounts.models import Profile, get_organization_name
 from .models import (
     Vehicle, Driver, DispatchRequest, MaintenanceRecord, MaintenanceTemplate,
-    IssueReport, Notification, EmergencyRequest, FuelEntry, FuelLog, FuelPrice
+    IssueReport, Notification, EmergencyRequest, FuelEntry, FuelLog, FuelPrice,
+    OperationalLocation
 )
 
 class PointDictField(serializers.Field):
@@ -34,10 +37,67 @@ class PointDictField(serializers.Field):
 
 
 class DriverSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    user_username = serializers.CharField(source='user.username', read_only=True, default=None)
+
     class Meta:
         model = Driver
-        fields = ['id', 'name', 'phone_number', 'license_number', 'is_active', 'is_on_duty', 'user']
-        read_only_fields = ['id', 'user']
+        fields = [
+            'id', 'name', 'phone_number', 'license_number', 'is_active', 'is_on_duty',
+            'requires_password_change', 'user', 'username', 'password', 'user_username'
+        ]
+        read_only_fields = ['id', 'user', 'user_username']
+
+    def validate_username(self, value):
+        if value:
+            value = value.strip()
+            if self.instance and self.instance.user and self.instance.user.username == value:
+                return value
+            if User.objects.filter(username=value).exists():
+                raise serializers.ValidationError("A user with this username already exists.")
+        return value
+
+    def create(self, validated_data):
+        username = (validated_data.pop('username', None) or '').strip()
+        password = validated_data.pop('password', None)
+
+        user = None
+        if username and password:
+            user = User.objects.create_user(username=username, password=password)
+            org_name = self.context.get('organization_name') or get_organization_name()
+            profile, _ = Profile.objects.get_or_create(user=user)
+            profile.role = 'DRIVER'
+            profile.organization_name = org_name
+            profile.save()
+
+        validated_data['user'] = user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        username = (validated_data.pop('username', None) or '').strip()
+        password = validated_data.pop('password', None)
+
+        if instance.user:
+            if username and username != instance.user.username:
+                if User.objects.filter(username=username).exclude(id=instance.user.id).exists():
+                    raise serializers.ValidationError({"username": "A user with this username already exists."})
+                instance.user.username = username
+                instance.user.save()
+            if password:
+                instance.user.set_password(password)
+                instance.user.save()
+        elif username and password:
+            user = User.objects.create_user(username=username, password=password)
+            org_name = self.context.get('organization_name') or get_organization_name()
+            profile, _ = Profile.objects.get_or_create(user=user)
+            profile.role = 'DRIVER'
+            profile.organization_name = org_name
+            profile.save()
+            instance.user = user
+            instance.save()
+
+        return super().update(instance, validated_data)
 
 class VehicleSerializer(serializers.ModelSerializer):
     driver_name = serializers.SerializerMethodField()
@@ -81,14 +141,78 @@ class AssignDriverSerializer(serializers.Serializer):
     """Accepts {"driver_id": 5} or {"driver_id": null}."""
     driver_id = serializers.IntegerField(required=False, allow_null=True)
 
+class OperationalLocationSerializer(serializers.ModelSerializer):
+    lat = serializers.SerializerMethodField()
+    lng = serializers.SerializerMethodField()
+
+    def get_lat(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_lng(self, obj):
+        return obj.location.x if obj.location else None
+
+    class Meta:
+        model = OperationalLocation
+        fields = [
+            'id', 'name', 'category', 'address', 'lat', 'lng',
+            'contact_phone', 'is_active'
+        ]
+
+
 class DispatchRequestSerializer(serializers.ModelSerializer):
+    assigned_vehicle_name = serializers.SerializerMethodField()
+    assigned_vehicle_plate = serializers.SerializerMethodField()
+    assigned_driver_name = serializers.SerializerMethodField()
+    assigned_driver_phone = serializers.SerializerMethodField()
+    assigned_vehicle_photo = serializers.SerializerMethodField()
+    failed_vehicle_name = serializers.SerializerMethodField()
+    failed_vehicle_plate = serializers.SerializerMethodField()
+
+    def get_assigned_vehicle_name(self, obj):
+        return obj.assigned_vehicle.name if obj.assigned_vehicle else None
+
+    def get_assigned_vehicle_plate(self, obj):
+        return obj.assigned_vehicle.number_plate if obj.assigned_vehicle else None
+
+    def get_assigned_driver_name(self, obj):
+        if obj.assigned_vehicle and obj.assigned_vehicle.driver:
+            return obj.assigned_vehicle.driver.name
+        return None
+
+    def get_assigned_driver_phone(self, obj):
+        if obj.assigned_vehicle and obj.assigned_vehicle.driver:
+            return obj.assigned_vehicle.driver.phone_number
+        return None
+
+    def get_assigned_vehicle_photo(self, obj):
+        if obj.assigned_vehicle and obj.assigned_vehicle.photo:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.assigned_vehicle.photo.url)
+            return obj.assigned_vehicle.photo.url
+        return None
+
+    def get_failed_vehicle_name(self, obj):
+        return obj.failed_vehicle.name if obj.failed_vehicle else None
+
+    def get_failed_vehicle_plate(self, obj):
+        return obj.failed_vehicle.number_plate if obj.failed_vehicle else None
+
     class Meta:
         model = DispatchRequest
         fields = [
-            'id', 'request_lat', 'request_lng', 'vehicle_type',
-            'assigned_vehicle', 'status', 'distance_km', 'duration_min',
-            'used_osrm', 'created_at', 'assigned_at', 'accepted_at',
-            'en_route_at', 'arrived_at', 'completed_at'
+            'id', 'operation_type', 'request_type', 'priority', 'request_lat', 'request_lng',
+            'location_name', 'address', 'access_lat', 'access_lng',
+            'dest_lat', 'dest_lng', 'destination_name', 'destination_address',
+            'cargo_description', 'cargo_weight_kg',
+            'original_dispatch', 'failed_vehicle', 'failed_vehicle_name', 'failed_vehicle_plate',
+            'breakdown_reason',
+            'vehicle_type', 'assigned_vehicle', 'assigned_vehicle_name',
+            'assigned_vehicle_plate', 'assigned_driver_name', 'assigned_driver_phone',
+            'assigned_vehicle_photo', 'status', 'selection_reason',
+            'distance_km', 'duration_min', 'used_osrm',
+            'created_by', 'created_at', 'assigned_at', 'accepted_at',
+            'en_route_at', 'arrived_at', 'in_service_at', 'completed_at',
         ]
 
 class MaintenanceRecordSerializer(serializers.ModelSerializer):
@@ -162,7 +286,12 @@ class NotificationSerializer(serializers.ModelSerializer):
 class EmergencyRequestSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     driver_vehicle_name = serializers.SerializerMethodField()
+    driver_vehicle_id = serializers.SerializerMethodField()
+    driver_vehicle_plate = serializers.SerializerMethodField()
+    driver_name = serializers.SerializerMethodField()
+    driver_phone = serializers.SerializerMethodField()
     location = serializers.SerializerMethodField()
+    related_dispatch_details = serializers.SerializerMethodField()
 
     def get_image_url(self, obj):
         if obj.image and obj.image.name:
@@ -173,23 +302,101 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
         return None
 
     def get_driver_vehicle_name(self, obj):
-        try:
-            driver = Driver.objects.get(user=obj.user)
-            vehicle = driver.assigned_vehicles.first()
-            return vehicle.name if vehicle else None
-        except Driver.DoesNotExist:
-            return None
+        if obj.assigned_vehicle:
+            return obj.assigned_vehicle.name
+        if obj.user:
+            try:
+                driver = Driver.objects.filter(user=obj.user).first()
+                if driver:
+                    vehicle = driver.assigned_vehicles.first()
+                    return vehicle.name if vehicle else None
+            except Exception:
+                pass
+        return None
+
+    def get_driver_vehicle_id(self, obj):
+        if obj.assigned_vehicle:
+            return obj.assigned_vehicle.id
+        if obj.user:
+            try:
+                driver = Driver.objects.filter(user=obj.user).first()
+                if driver:
+                    vehicle = driver.assigned_vehicles.first()
+                    return vehicle.id if vehicle else None
+            except Exception:
+                pass
+        return None
+
+    def get_driver_vehicle_plate(self, obj):
+        if obj.assigned_vehicle:
+            return obj.assigned_vehicle.number_plate
+        if obj.user:
+            try:
+                driver = Driver.objects.filter(user=obj.user).first()
+                if driver:
+                    vehicle = driver.assigned_vehicles.first()
+                    return vehicle.number_plate if vehicle else None
+            except Exception:
+                pass
+        return None
+
+    def get_driver_name(self, obj):
+        if obj.assigned_vehicle and obj.assigned_vehicle.driver:
+            return obj.assigned_vehicle.driver.name
+        if obj.user:
+            try:
+                driver = Driver.objects.filter(user=obj.user).first()
+                if driver:
+                    return driver.name
+                return obj.user.get_full_name() or obj.user.username
+            except Exception:
+                return obj.user.username if hasattr(obj.user, 'username') else 'Unknown'
+        return 'Fleet Driver'
+
+    def get_driver_phone(self, obj):
+        if obj.assigned_vehicle and obj.assigned_vehicle.driver:
+            return obj.assigned_vehicle.driver.phone_number
+        if obj.user:
+            try:
+                driver = Driver.objects.filter(user=obj.user).first()
+                return driver.phone_number if driver else None
+            except Exception:
+                return None
+        return None
 
     def get_location(self, obj):
         if obj.location:
             return {'lat': obj.location.y, 'lng': obj.location.x}
         return None
+
+    def get_related_dispatch_details(self, obj):
+        if obj.related_dispatch:
+            disp = obj.related_dispatch
+            return {
+                'id': disp.id,
+                'location_name': disp.location_name,
+                'address': disp.address,
+                'pickup_lat': disp.request_lat,
+                'pickup_lng': disp.request_lng,
+                'destination_name': disp.destination_name,
+                'destination_address': disp.destination_address,
+                'dest_lat': disp.dest_lat,
+                'dest_lng': disp.dest_lng,
+                'cargo_description': disp.cargo_description,
+                'cargo_weight_kg': disp.cargo_weight_kg,
+                'status': disp.status,
+            }
+        return None
+
     class Meta:
         model = EmergencyRequest
         fields = [
             'id', 'user', 'emergency_type', 'description', 'location',
-            'image', 'image_url', 'driver_vehicle_name', 'status',
-            'assigned_vehicle', 'created_at', 'updated_at', 'resolved_at'
+            'image', 'image_url', 'driver_vehicle_name', 'driver_vehicle_id',
+            'driver_vehicle_plate', 'driver_name', 'driver_phone', 'status',
+            'assigned_vehicle', 'related_dispatch', 'replacement_dispatch',
+            'related_dispatch_details',
+            'created_at', 'updated_at', 'resolved_at'
         ]
 
 class FuelEntrySerializer(serializers.ModelSerializer):
@@ -268,10 +475,13 @@ class DriverAssignedVehicleSerializer(serializers.ModelSerializer):
 
 class DriverMeSerializer(serializers.ModelSerializer):
     assigned_vehicle = DriverAssignedVehicleSerializer(read_only=True)
-    
+
     class Meta:
         model = Driver
-        fields = ['id', 'name', 'phone_number', 'license_number', 'is_on_duty', 'assigned_vehicle']
+        fields = [
+            'id', 'name', 'phone_number', 'license_number', 'is_active',
+            'is_on_duty', 'requires_password_change', 'assigned_vehicle'
+        ]
 
 class EmergencyRequestCreateSerializer(serializers.ModelSerializer):
     class Meta:
