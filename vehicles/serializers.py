@@ -1,8 +1,37 @@
 from rest_framework import serializers
+import json
+from django.contrib.gis.geos import Point
 from .models import (
     Vehicle, Driver, DispatchRequest, MaintenanceRecord, MaintenanceTemplate,
     IssueReport, Notification, EmergencyRequest, FuelEntry, FuelLog, FuelPrice
 )
+
+class PointDictField(serializers.Field):
+    """
+    A custom field that serializes a GEOS Point to a dict {"lat": y, "lng": x}
+    and deserializes a dict or JSON string to a GEOS Point.
+    """
+    def to_representation(self, value):
+        if value:
+            return {'lat': value.y, 'lng': value.x}
+        return None
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                raise serializers.ValidationError("Invalid JSON format for location.")
+        if not isinstance(data, dict):
+            raise serializers.ValidationError("Location must be a dictionary or valid JSON string.")
+        
+        try:
+            lat = float(data.get('lat'))
+            lng = float(data.get('lng'))
+            return Point(lng, lat, srid=4326)
+        except (TypeError, ValueError, AttributeError):
+            raise serializers.ValidationError("Invalid location format. Expected {'lat': float, 'lng': float}")
+
 
 class DriverSerializer(serializers.ModelSerializer):
     class Meta:
@@ -12,27 +41,32 @@ class DriverSerializer(serializers.ModelSerializer):
 
 class VehicleSerializer(serializers.ModelSerializer):
     driver_name = serializers.SerializerMethodField()
-    location = serializers.SerializerMethodField()
+    location = PointDictField()
+    photo_url = serializers.SerializerMethodField()
     
     def get_driver_name(self, obj):
         return obj.driver.name if obj.driver else None
     
-    def get_location(self, obj):
-        if obj.location:
-            return {'lat': obj.location.y, 'lng': obj.location.x}
+    def get_photo_url(self, obj):
+        if obj.photo and obj.photo.name:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.photo.url)
+            return obj.photo.url
         return None
 
     class Meta:
         model = Vehicle
         fields = [
-            'id', 'name', 'vehicle_type', 'number_plate',
+            'id', 'name', 'vehicle_type', 'fuel_type', 'number_plate',
             'is_available', 'admin_blocked', 'location',
+            'photo', 'photo_url',
             'driver', 'driver_name', 'last_location_at',
             'total_distance_km',
             'has_active_dispatch', 'active_dispatch_status',
         ]
         read_only_fields = [
-            'id', 'driver_name', 'is_available',
+            'id', 'driver_name', 'is_available', 'photo_url',
             'has_active_dispatch', 'active_dispatch_status',
             'last_location_at', 'total_distance_km',
         ]

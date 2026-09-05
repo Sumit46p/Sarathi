@@ -456,7 +456,7 @@ def safe_route_info(vehicle, dispatch, deadline=3.0):
 
 
 
-def dispatch_live_payload(dispatch):
+def dispatch_live_payload(dispatch, request=None):
     """Serialize a dispatch request with live tracking data.
 
     Extends the plain serializer output with:
@@ -480,6 +480,15 @@ def dispatch_live_payload(dispatch):
         {'lat': vehicle.location.y, 'lng': vehicle.location.x}
         if vehicle and vehicle.location else None
     )
+    if vehicle:
+        photo_url = request.build_absolute_uri(vehicle.photo.url) if (request and vehicle.photo) else (vehicle.photo.url if vehicle.photo else None)
+        data['assigned_vehicle'] = {
+            'id': vehicle.id,
+            'name': vehicle.name,
+            'lat': vehicle.location.y if vehicle.location else None,
+            'lng': vehicle.location.x if vehicle.location else None,
+            'photo_url': photo_url
+        }
 
     route = safe_route_info(vehicle, dispatch) if vehicle else {
         'geometry': None, 'distance_km': None, 'duration_min': None,
@@ -520,7 +529,7 @@ def active_dispatch(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    return Response(dispatch_live_payload(dispatch))
+    return Response(dispatch_live_payload(dispatch, request))
 
 
 @api_view(['GET'])
@@ -755,7 +764,7 @@ def driver_dispatch(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    return Response(dispatch_live_payload(dispatch))
+    return Response(dispatch_live_payload(dispatch, request))
 
 
 @api_view(['POST'])
@@ -804,7 +813,7 @@ def driver_dispatch_transition(request):
     except ValueError as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    return Response(dispatch_live_payload(dispatch))
+    return Response(dispatch_live_payload(dispatch, request))
 
 
 @api_view(['GET'])
@@ -1176,6 +1185,7 @@ def dispatch_vehicle(request):
             'name': nearest.name,
             'lat': nearest.location.y,
             'lng': nearest.location.x,
+            'photo_url': request.build_absolute_uri(nearest.photo.url) if nearest.photo else None,
         },
         'distance_km': best['distance_km'],
         'duration_min': best['duration_min'],
@@ -2974,9 +2984,13 @@ def analytics_dashboard(request):
     )
     
     type_colors = {
-        'ambulance': '#dc2626',
-        'logistics': '#2563eb',
-        'municipal': '#059669',
+        'rental': '#7c3aed',
+        'government': '#dc2626',
+        'company': '#2563eb',
+        'personal': '#d97706',
+        'logistics': '#0891b2',
+        'public_transport': '#059669',
+        'commercial': '#9a3412',
     }
     
     vehicle_type_dist = [

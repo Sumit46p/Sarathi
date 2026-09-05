@@ -3,12 +3,28 @@ import { api } from './auth';
 export interface Vehicle {
   id: number;
   name: string;
-  vehicle_type: 'ambulance' | 'logistics' | 'municipal';
+  vehicle_type: 'rental' | 'government' | 'company' | 'personal' | 'logistics' | 'public_transport' | 'commercial';
+  fuel_type: 'petrol' | 'diesel' | 'ev' | null;
+  number_plate: string | null;
+  photo_url: string | null;
   is_available: boolean;
   location: {
     lat: number;
     lng: number;
   };
+}
+
+export interface VehicleLocationUpdate {
+  vehicle_id: number;
+  vehicle_name?: string;
+  vehicle_type?: string;
+  lat: number;
+  lng: number;
+  speed?: number;
+  speed_kmh?: number;
+  vehicle_status?: string;
+  driver_name?: string;
+  timestamp?: string;
 }
 
 export interface AnalyticsData {

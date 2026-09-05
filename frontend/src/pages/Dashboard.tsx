@@ -18,6 +18,7 @@ import AnalyticsDashboard from '../components/AnalyticsDashboard';
 import TripsTab from '../components/TripsTab';
 import SettingsTab from '../components/SettingsTab';
 import NotificationBell, { type NotificationItem } from '../components/NotificationBell';
+import LiveTracking from '../components/LiveTracking';
 import { useAdminNotifications } from '../hooks/useAdminNotifications';
 import { toast } from '../components/toast';
 import NEPAL_GEOJSON from '../data/nepalBorder';
@@ -46,6 +47,7 @@ interface Vehicle {
   is_available: boolean;
   admin_blocked: boolean;
   location: { lat: number; lng: number } | null;
+  photo_url?: string | null;
   driver?: number | null;
   driver_name?: string | null;
   has_active_dispatch: boolean;
@@ -64,7 +66,7 @@ interface IssueReport {
 }
 
 interface DispatchResult {
-  assigned_vehicle: { id: number; name: string; lat: number; lng: number };
+  assigned_vehicle: { id: number; name: string; lat: number; lng: number; photo_url?: string | null };
   assigned_vehicle_name?: string | null;
   assigned_vehicle_driver?: string | null;
   status: string;
@@ -75,13 +77,17 @@ interface DispatchResult {
   eta_min?: number | null;
   remaining_distance_km?: number | null;
 }
-type Tab = 'dashboard' | 'dispatch' | 'drivers' | 'settings' | 'maintenance' | 'issues' | 'emergency' | 'fuel' | 'analytics' | 'trips';
+type Tab = 'dashboard' | 'dispatch' | 'live_tracking' | 'drivers' | 'settings' | 'maintenance' | 'issues' | 'emergency' | 'fuel' | 'analytics' | 'trips';
 type StatusFilter = 'all' | 'available' | 'unavailable';
 
 const VEHICLE_TYPES = [
-  { value: 'ambulance', label: 'Ambulance' },
+  { value: 'rental', label: 'Rental Vehicle' },
+  { value: 'government', label: 'Government Vehicle' },
+  { value: 'company', label: 'Company Vehicle' },
+  { value: 'personal', label: 'Personal Vehicle' },
   { value: 'logistics', label: 'Logistics' },
-  { value: 'municipal', label: 'Municipal' },
+  { value: 'public_transport', label: 'Public Transport' },
+  { value: 'commercial', label: 'Commercial / Construction' },
 ];
 const NEPAL_CENTER: [number, number] = [28.2, 84.0];
 const NEPAL_BOUNDS = L.latLngBounds([26.347, 80.058], [30.447, 88.201]);
@@ -157,7 +163,9 @@ function formatLocation(location: unknown): string {
     }
   }
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'Not provided';
-  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  const safeLat = lat as number;
+  const safeLng = lng as number;
+  return `${safeLat.toFixed(4)}, ${safeLng.toFixed(4)}`;
 }
 
 const DISPATCH_STATUS_LABELS: Record<string, string> = {
@@ -264,9 +272,11 @@ export default function Dashboard() {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [newVehicle, setNewVehicle] = useState({
-    name: '', vehicle_type: 'ambulance', number_plate: '', is_available: true,
+    name: '', vehicle_type: 'rental', fuel_type: 'petrol', number_plate: '', is_available: true,
     location: null as { lat: number; lng: number } | null,
   });
+  const [vehiclePhoto, setVehiclePhoto] = useState<File | null>(null);
+  const [vehiclePhotoPreview, setVehiclePhotoPreview] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
   const [vehicleFormError, setVehicleFormError] = useState<string | null>(null);
 
@@ -276,7 +286,7 @@ export default function Dashboard() {
   const [driverFormError, setDriverFormError] = useState<string | null>(null);
 
   const [requestMarker, setRequestMarker] = useState<{ lat: number; lng: number } | null>(null);
-  const [dispatchType, setDispatchType] = useState('ambulance');
+  const [dispatchType, setDispatchType] = useState('rental');
   const [dispatchResult, setDispatchResult] = useState<DispatchResult | null>(null);
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
@@ -532,15 +542,19 @@ export default function Dashboard() {
     setAddLoading(true);
     setVehicleFormError(null);
     try {
-      await api.post('/vehicles/', {
-        name: newVehicle.name,
-        vehicle_type: newVehicle.vehicle_type,
-        number_plate: newVehicle.number_plate || null,
-        is_available: newVehicle.is_available,
-        location: newVehicle.location,
-      });
+      const formData = new FormData();
+      formData.append('name', newVehicle.name);
+      formData.append('vehicle_type', newVehicle.vehicle_type);
+      formData.append('fuel_type', newVehicle.fuel_type);
+      if (newVehicle.number_plate) formData.append('number_plate', newVehicle.number_plate);
+      formData.append('is_available', String(newVehicle.is_available));
+      formData.append('location', JSON.stringify(newVehicle.location));
+      if (vehiclePhoto) formData.append('photo', vehiclePhoto);
+      await api.post('/vehicles/', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setShowAddModal(false);
-      setNewVehicle({ name: '', vehicle_type: 'ambulance', number_plate: '', is_available: true, location: null });
+      setNewVehicle({ name: '', vehicle_type: 'rental', fuel_type: 'petrol', number_plate: '', is_available: true, location: null });
+      setVehiclePhoto(null);
+      setVehiclePhotoPreview(null);
       await fetchVehicles();
       toast.success('Vehicle added');
     } catch (error: unknown) {
@@ -679,21 +693,34 @@ export default function Dashboard() {
     return ids;
   }, [issues]);
 
-  const createVehicleIcon = useCallback((available: boolean) => L.divIcon({
-    className: 'fleet-marker-wrap',
-    html: `<span class="fleet-marker ${available ? 'is-available' : 'is-unavailable'}"><span></span></span>`,
-    iconSize: [28, 28], iconAnchor: [14, 14],
-  }), []);
   const requestIcon = useMemo(() => L.divIcon({
     className: 'fleet-marker-wrap', html: '<span class="request-marker"><span></span></span>', iconSize: [32, 32], iconAnchor: [16, 16],
   }), []);
   const activeTripIcon = useMemo(() => L.divIcon({
     className: 'fleet-marker-wrap', html: '<span class="active-trip-marker"><span></span></span>', iconSize: [40, 40], iconAnchor: [20, 20],
   }), []);
+  const getVehicleIcon = useCallback((vehicle: Vehicle, isActive: boolean = false) => {
+    if (isActive) return activeTripIcon;
+    if (vehicle.photo_url) {
+      const borderColor = vehicle.is_available ? '#22c55e' : '#f59e0b';
+      return L.divIcon({
+        className: 'fleet-marker-wrap',
+        html: `<div style="width:28px;height:28px;border-radius:50%;border:2px solid ${borderColor};overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.4);"><img src="${vehicle.photo_url}" style="width:100%;height:100%;object-fit:cover;" /></div>`,
+        iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -14],
+      });
+    }
+    return L.divIcon({
+      className: 'fleet-marker-wrap',
+      html: `<span class="fleet-marker ${vehicle.is_available ? 'is-available' : 'is-unavailable'}"><span></span></span>`,
+      iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -14],
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const pageMeta: Record<Tab, { title: string; eyebrow: string }> = {
     dashboard: { title: 'Fleet overview', eyebrow: 'Operations' },
     dispatch: { title: 'Dispatch center', eyebrow: 'Live response' },
+    live_tracking: { title: 'Live tracking', eyebrow: 'Fleet positions' },
     drivers: { title: 'Driver management', eyebrow: 'Workforce' },
     maintenance: { title: 'Vehicle maintenance', eyebrow: 'Service' },
     settings: { title: 'Workspace settings', eyebrow: 'Configuration' },
@@ -716,6 +743,7 @@ export default function Dashboard() {
           <p className="nav-label">Workspace</p>
           <button id="nav-overview" className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => switchTab('dashboard')}><LayoutDashboard size={17} /><span>Overview</span></button>
           <button id="nav-dispatch" className={`nav-item ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => switchTab('dispatch')}><Radio size={17} /><span>Dispatch</span><span className="nav-live-dot" /></button>
+          <button id="nav-live-tracking" className={`nav-item ${activeTab === 'live_tracking' ? 'active' : ''}`} onClick={() => switchTab('live_tracking')}><Navigation size={17} /><span>Live Tracking</span><span className="nav-live-dot" /></button>
           <button id="nav-drivers" className={`nav-item ${activeTab === 'drivers' ? 'active' : ''}`} onClick={() => switchTab('drivers')}><Users size={17} /><span>Drivers</span></button>
           <button id="nav-maintenance" className={`nav-item ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => { setActiveTab('maintenance'); setUnreadMaintenanceCount(0); }}>
             <Wrench size={17} /><span>Maintenance</span>
@@ -752,7 +780,7 @@ export default function Dashboard() {
 
         {dataError && <div className="global-alert" role="alert"><AlertCircle size={16} /><span>{dataError}</span><button onClick={() => setDataError(null)} aria-label="Dismiss alert"><X size={15} /></button></div>}
 
-        <div className={`content-area ${activeTab === 'dispatch' ? 'dispatch-content' : ''}`}>
+        <div className={`content-area ${(activeTab === 'dispatch' || activeTab === 'live_tracking') ? 'dispatch-content' : ''}`}>
           {activeTab === 'dashboard' && <section className="tab-content" aria-labelledby="overview-heading">
             <div className="page-heading"><div><h2 id="overview-heading">Fleet readiness</h2><p>Live operational status across your Nepal fleet.</p></div><button id="add-vehicle-button" className="button button-primary" onClick={() => { setVehicleFormError(null); setShowAddModal(true); }}><Plus size={16} />Add vehicle</button></div>
             <div className="metrics-grid stagger">
@@ -768,7 +796,7 @@ export default function Dashboard() {
               <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Vehicle</th><th>Type</th><th>Driver</th><th>Status</th><th>Location</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredVehicles.map(vehicle => {
                 const statusInfo = getVehicleStatusInfo(vehicle);
                 return <tr key={vehicle.id} className="clickable-row" onClick={() => { setSelectedVehicleId(vehicle.id); setShowVehiclePanel(true); }}>
-                  <td><div className="primary-cell"><div className="entity-icon"><Truck size={17} /></div><div><strong>{vehicle.name}</strong>{vehicle.driver && openIssueDriverIds.has(vehicle.driver as number) && <span className="issue-warning-badge" title="Open driver issue"><AlertTriangle size={13} /></span>}<span className="mono">{vehicle.number_plate || 'No registration'}</span></div></div></td>
+                  <td><div className="primary-cell"><div className="entity-icon">{vehicle.photo_url ? <img src={vehicle.photo_url} alt={vehicle.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Truck size={17} />}</div><div><strong>{vehicle.name}</strong>{vehicle.driver && openIssueDriverIds.has(vehicle.driver as number) && <span className="issue-warning-badge" title="Open driver issue"><AlertTriangle size={13} /></span>}<span className="mono">{vehicle.number_plate || 'No registration'}</span></div></div></td>
                   <td><span className="type-label">{formatType(vehicle.vehicle_type)}</span></td>
                   <td><select className="table-select" value={vehicle.driver || ''} onChange={event => handleAssignDriver(vehicle.id, event.target.value)} aria-label={`Assign driver to ${vehicle.name}`}><option value="">Unassigned</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></td>
                   <td><span className={`status-badge ${statusInfo.className}`}><span />{statusInfo.label}</span></td>
@@ -784,10 +812,10 @@ export default function Dashboard() {
               <div className="dispatch-step"><span className={`step-number ${requestMarker ? 'complete' : ''}`}>{requestMarker ? <CheckCircle2 size={16} /> : '1'}</span><div><strong>Set incident location</strong><p>{requestMarker ? `${requestMarker.lat.toFixed(5)}, ${requestMarker.lng.toFixed(5)}` : 'Select a point inside Nepal on the map.'}</p></div></div>
               <div className="dispatch-step"><span className={`step-number ${requestMarker ? 'active' : ''}`}>2</span><div className="step-content"><strong>Choose response unit</strong><label htmlFor="dispatch-type">Vehicle type</label><select id="dispatch-type" className="input-field" value={dispatchType} onChange={event => setDispatchType(event.target.value)}>{VEHICLE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div></div>
               <button id="dispatch-nearest-button" className="button button-primary dispatch-button" onClick={handleDispatch} disabled={!requestMarker || dispatchLoading}>{dispatchLoading ? <><RefreshCw className="spin" size={16} />Finding nearest unit</> : <><Navigation size={16} />Dispatch nearest vehicle</>}</button>
-              {dispatchResult && <div className="dispatch-result" role="status"><div className="result-title"><CheckCircle2 size={18} /><div><strong>Vehicle dispatched</strong><span>Route confirmed</span></div></div><div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Assigned unit</span><strong>{dispatchResult.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div><div className="result-metrics"><div><span>Distance</span><strong>{dispatchResult.distance_km} km</strong></div><div><span>ETA</span><strong>{dispatchResult.duration_min ? `${Math.round(dispatchResult.duration_min)} min` : 'Route set'}</strong></div></div>{dispatchResult.status === 'assigned' && <button className="button button-primary" style={{ marginTop: 12, width: '100%' }} onClick={handleAcceptDispatch}>Accept dispatch</button>}</div>}
+              {dispatchResult && <div className="dispatch-result" role="status"><div className="result-title"><CheckCircle2 size={18} /><div><strong>Vehicle dispatched</strong><span>Route confirmed</span></div></div><div className="result-vehicle"><div className="entity-icon success">{dispatchResult.assigned_vehicle.photo_url ? <img src={dispatchResult.assigned_vehicle.photo_url} alt={dispatchResult.assigned_vehicle.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Truck size={18} />}</div><div><span>Assigned unit</span><strong>{dispatchResult.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div><div className="result-metrics"><div><span>Distance</span><strong>{dispatchResult.distance_km} km</strong></div><div><span>ETA</span><strong>{dispatchResult.duration_min ? `${Math.round(dispatchResult.duration_min)} min` : 'Route set'}</strong></div></div>{dispatchResult.status === 'assigned' && <button className="button button-primary" style={{ marginTop: 12, width: '100%' }} onClick={handleAcceptDispatch}>Accept dispatch</button>}</div>}
               {activeDispatch && <div className="dispatch-result live-tracking" role="status">
                 <div className="result-title"><Navigation size={18} /><div><strong>Live trip tracking</strong><span>{DISPATCH_STATUS_LABELS[activeDispatch.status] || activeDispatch.status}{activeDispatch.assigned_vehicle_driver ? ` · ${activeDispatch.assigned_vehicle_driver}` : ''}</span></div></div>
-                <div className="result-vehicle"><div className="entity-icon success"><Truck size={18} /></div><div><span>Vehicle en route</span><strong>{activeDispatch.assigned_vehicle_name || activeDispatch.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div>
+                <div className="result-vehicle"><div className="entity-icon success">{activeDispatch.assigned_vehicle.photo_url ? <img src={activeDispatch.assigned_vehicle.photo_url} alt={activeDispatch.assigned_vehicle_name || activeDispatch.assigned_vehicle.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Truck size={18} />}</div><div><span>Vehicle en route</span><strong>{activeDispatch.assigned_vehicle_name || activeDispatch.assigned_vehicle.name}</strong></div><ChevronRight size={16} /></div>
                 <DispatchStepper status={activeDispatch.status} />
                 <div className="progress-block">
                   <div className="progress-head"><span>Progress</span><strong>{activeDispatch.progress_percent != null ? `${activeDispatch.progress_percent}%` : 'Calculating…'}</strong></div>
@@ -817,7 +845,7 @@ export default function Dashboard() {
                   const statusInfo = getVehicleStatusInfo(vehicle);
                   const popupTextClass = vehicle.is_available ? 'available-text' : (vehicle.has_active_dispatch ? 'on-trip-text' : 'unavailable-text');
                   const isActiveUnit = activeDispatch?.assigned_vehicle?.id === vehicle.id;
-                  return vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={isActiveUnit ? activeTripIcon : createVehicleIcon(vehicle.is_available)}><Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={popupTextClass}>{statusInfo.label}</span>{isActiveUnit && activeDispatch?.assigned_vehicle_driver ? <span className="on-trip-text">Driver: {activeDispatch.assigned_vehicle_driver}</span> : null}</div></Popup></Marker>;
+                  return vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={getVehicleIcon(vehicle, isActiveUnit)}><Popup><div className="map-popup">{vehicle.photo_url && <img src={vehicle.photo_url} alt={vehicle.name} style={{ width: 80, height: 56, objectFit: 'cover', borderRadius: 6, marginBottom: 6 }} />}<strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={popupTextClass}>{statusInfo.label}</span>{isActiveUnit && activeDispatch?.assigned_vehicle_driver ? <span className="on-trip-text">Driver: {activeDispatch.assigned_vehicle_driver}</span> : null}</div></Popup></Marker>;
                 })}
                 {requestMarker && <Marker position={[requestMarker.lat, requestMarker.lng]} icon={requestIcon}><Popup><div className="map-popup"><strong>Dispatch request</strong><span>{requestMarker.lat.toFixed(5)}, {requestMarker.lng.toFixed(5)}</span></div></Popup></Marker>}
                 {activeDispatch?.geometry?.length ? <Polyline positions={activeDispatch.geometry} pathOptions={{ color: '#059669', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} /> : null}
@@ -909,10 +937,11 @@ export default function Dashboard() {
           </section>}
           {activeTab === 'trips' && <TripsTab />}
           {activeTab === 'analytics' && <AnalyticsDashboard />}
+          {activeTab === 'live_tracking' && <LiveTracking />}
         </div>
       </main>
 
-      {showAddModal && <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowAddModal(false); }}><div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="vehicle-modal-title"><div className="modal-header"><div><span>Fleet inventory</span><h2 id="vehicle-modal-title">Add vehicle</h2></div><button className="icon-button" onClick={() => setShowAddModal(false)} aria-label="Close vehicle form"><X size={17} /></button></div><div className="modal-body"><div className="form-grid"><div className="form-group"><label htmlFor="vehicle-name">Vehicle name</label><input id="vehicle-name" className="input-field" value={newVehicle.name} onChange={event => setNewVehicle({ ...newVehicle, name: event.target.value })} placeholder="Ambulance 07" autoFocus /></div><div className="form-group"><label htmlFor="vehicle-plate">Number plate</label><input id="vehicle-plate" className="input-field" value={newVehicle.number_plate} onChange={event => setNewVehicle({ ...newVehicle, number_plate: event.target.value })} placeholder="BA 1 PA 1234" /></div></div><div className="form-grid"><div className="form-group"><label htmlFor="vehicle-type">Vehicle type</label><select id="vehicle-type" className="input-field" value={newVehicle.vehicle_type} onChange={event => setNewVehicle({ ...newVehicle, vehicle_type: event.target.value })}>{VEHICLE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div><div className="form-group"><label>Initial status</label><label className="availability-control"><input type="checkbox" checked={newVehicle.is_available} onChange={event => setNewVehicle({ ...newVehicle, is_available: event.target.checked })} /><span className="toggle-switch"><span className="toggle-slider" /></span><span>{newVehicle.is_available ? 'Available' : 'Unavailable'}</span></label></div></div><div className="form-group"><div className="label-row"><label>Operating location</label><span>Select a point within Nepal</span></div><div className="mini-map"><MapContainer center={NEPAL_CENTER} zoom={7} {...MAP_OPTIONS} style={{ width: '100%', height: '100%' }}><TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='&copy; <a href="https://www.esri.com/en-us/home">Esri</a> &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community' /><GeoJSON data={NEPAL_GEOJSON as GeoJSON.GeoJsonObject} style={() => NEPAL_BORDER_STYLE} /><MapClickHandler onMapClick={(lat, lng) => setNewVehicle(previous => ({ ...previous, location: { lat, lng } }))} />{newVehicle.location && <Marker position={[newVehicle.location.lat, newVehicle.location.lng]} />}</MapContainer></div>{newVehicle.location ? <p className="location-confirm"><CheckCircle2 size={14} />Location set: <span className="mono">{newVehicle.location.lat.toFixed(5)}, {newVehicle.location.lng.toFixed(5)}</span></p> : <p className="field-hint"><MapPin size={14} />A location is required before adding the vehicle.</p>}</div>{vehicleFormError && <div className="inline-alert error"><AlertCircle size={16} />{vehicleFormError}</div>}</div><div className="modal-footer"><button className="button button-secondary" onClick={() => setShowAddModal(false)}>Cancel</button><button id="submit-vehicle-button" className="button button-primary" onClick={handleAddVehicle} disabled={!newVehicle.name || !newVehicle.location || addLoading}>{addLoading ? <><RefreshCw className="spin" size={15} />Adding vehicle</> : 'Add vehicle'}</button></div></div></div>}
+      {showAddModal && <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowAddModal(false); }}><div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="vehicle-modal-title"><div className="modal-header"><div><span>Fleet inventory</span><h2 id="vehicle-modal-title">Add vehicle</h2></div><button className="icon-button" onClick={() => setShowAddModal(false)} aria-label="Close vehicle form"><X size={17} /></button></div><div className="modal-body"><div className="form-grid"><div className="form-group"><label htmlFor="vehicle-name">Vehicle name</label><input id="vehicle-name" className="input-field" value={newVehicle.name} onChange={event => setNewVehicle({ ...newVehicle, name: event.target.value })} placeholder="e.g. Truck 07" autoFocus /></div><div className="form-group"><label htmlFor="vehicle-plate">Number plate</label><input id="vehicle-plate" className="input-field" value={newVehicle.number_plate} onChange={event => setNewVehicle({ ...newVehicle, number_plate: event.target.value })} placeholder="BA 1 PA 1234" /></div></div><div className="form-grid"><div className="form-group"><label htmlFor="vehicle-type">Vehicle type</label><select id="vehicle-type" className="input-field" value={newVehicle.vehicle_type} onChange={event => setNewVehicle({ ...newVehicle, vehicle_type: event.target.value })}>{VEHICLE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></div><div className="form-group"><label htmlFor="vehicle-fuel-type">Fuel type</label><select id="vehicle-fuel-type" className="input-field" value={newVehicle.fuel_type} onChange={event => setNewVehicle({ ...newVehicle, fuel_type: event.target.value })}><option value="petrol">Petrol</option><option value="diesel">Diesel</option><option value="ev">EV (Electric)</option></select></div></div><div className="form-grid"><div className="form-group"><label>Initial status</label><label className="availability-control"><input type="checkbox" checked={newVehicle.is_available} onChange={event => setNewVehicle({ ...newVehicle, is_available: event.target.checked })} /><span className="toggle-switch"><span className="toggle-slider" /></span><span>{newVehicle.is_available ? 'Available' : 'Unavailable'}</span></label></div><div className="form-group"><label htmlFor="vehicle-photo">Vehicle photo</label><div className="photo-upload-area"><input id="vehicle-photo" type="file" accept="image/*" className="input-field" onChange={event => { const file = event.target.files?.[0] || null; setVehiclePhoto(file); if (file) { const reader = new FileReader(); reader.onload = e => setVehiclePhotoPreview(e.target?.result as string); reader.readAsDataURL(file); } else { setVehiclePhotoPreview(null); } }} />{vehiclePhotoPreview && <img src={vehiclePhotoPreview} alt="Vehicle preview" style={{ marginTop: 8, maxHeight: 80, borderRadius: 8, objectFit: 'cover' }} />}</div></div></div><div className="form-group"><div className="label-row"><label>Operating location</label><span>Select a point within Nepal</span></div><div className="mini-map"><MapContainer center={NEPAL_CENTER} zoom={7} {...MAP_OPTIONS} style={{ width: '100%', height: '100%' }}><TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='&copy; <a href="https://www.esri.com/en-us/home">Esri</a> &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community' /><GeoJSON data={NEPAL_GEOJSON as GeoJSON.GeoJsonObject} style={() => NEPAL_BORDER_STYLE} /><MapClickHandler onMapClick={(lat, lng) => setNewVehicle(previous => ({ ...previous, location: { lat, lng } }))} />{newVehicle.location && <Marker position={[newVehicle.location.lat, newVehicle.location.lng]} />}</MapContainer></div>{newVehicle.location ? <p className="location-confirm"><CheckCircle2 size={14} />Location set: <span className="mono">{newVehicle.location.lat.toFixed(5)}, {newVehicle.location.lng.toFixed(5)}</span></p> : <p className="field-hint"><MapPin size={14} />A location is required before adding the vehicle.</p>}</div>{vehicleFormError && <div className="inline-alert error"><AlertCircle size={16} />{vehicleFormError}</div>}</div><div className="modal-footer"><button className="button button-secondary" onClick={() => setShowAddModal(false)}>Cancel</button><button id="submit-vehicle-button" className="button button-primary" onClick={handleAddVehicle} disabled={!newVehicle.name || !newVehicle.location || addLoading}>{addLoading ? <><RefreshCw className="spin" size={15} />Adding vehicle</> : 'Add vehicle'}</button></div></div></div>}
 
       {showAddDriverModal && <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowAddDriverModal(false); }}><div className="modal-content modal-compact" role="dialog" aria-modal="true" aria-labelledby="driver-modal-title"><div className="modal-header"><div><span>Driver directory</span><h2 id="driver-modal-title">Add driver</h2></div><button className="icon-button" onClick={() => setShowAddDriverModal(false)} aria-label="Close driver form"><X size={17} /></button></div><div className="modal-body"><div className="form-group"><label htmlFor="driver-name">Full name</label><input id="driver-name" className="input-field" value={newDriver.name} onChange={event => setNewDriver({ ...newDriver, name: event.target.value })} placeholder="Full legal name" autoFocus /></div><div className="form-group"><label htmlFor="driver-phone">Phone number</label><input id="driver-phone" className="input-field" value={newDriver.phone_number} onChange={event => setNewDriver({ ...newDriver, phone_number: event.target.value })} placeholder="98XXXXXXXX" /></div><div className="form-group"><label htmlFor="driver-license">License number</label><input id="driver-license" className="input-field" value={newDriver.license_number} onChange={event => setNewDriver({ ...newDriver, license_number: event.target.value })} placeholder="01-02-003344" /></div><div className="form-group"><label htmlFor="driver-username">Login username</label><input id="driver-username" className="input-field" value={newDriver.username} onChange={event => setNewDriver({ ...newDriver, username: event.target.value })} placeholder="driver01" /></div><div className="form-group"><label htmlFor="driver-password">Login password</label><input id="driver-password" className="input-field" type="password" value={newDriver.password} onChange={event => setNewDriver({ ...newDriver, password: event.target.value })} placeholder="Min 8 characters" /></div>{driverFormError && <div className="inline-alert error"><AlertCircle size={16} />{driverFormError}</div>}</div><div className="modal-footer"><button className="button button-secondary" onClick={() => setShowAddDriverModal(false)}>Cancel</button><button id="submit-driver-button" className="button button-primary" onClick={handleAddDriver} disabled={!newDriver.name || !newDriver.license_number || !newDriver.username || !newDriver.password || addDriverLoading}>{addDriverLoading ? <><RefreshCw className="spin" size={15} />Adding driver</> : 'Add driver'}</button></div></div></div>}
       {showVehiclePanel && (() => {
@@ -939,7 +968,7 @@ export default function Dashboard() {
                 <div className="vehicle-live-map">
                   <MapContainer center={center} zoom={15} maxBounds={NEPAL_BOUNDS} maxBoundsViscosity={1} style={{ width: '100%', height: '100%' }}>
                     <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='&copy; <a href="https://www.esri.com/en-us/home">Esri</a>' />
-                    {v.location && <Marker position={[v.location.lat, v.location.lng]} icon={createVehicleIcon(v.is_available)}>
+                    {v.location && <Marker position={[v.location.lat, v.location.lng]} icon={getVehicleIcon(v)}>
                       <Popup><div className="map-popup"><strong>{v.name}</strong><span>{formatType(v.vehicle_type)}</span></div></Popup>
                     </Marker>}
                     <MapController center={v.location ? [v.location.lat, v.location.lng] : null} />
@@ -968,7 +997,7 @@ export default function Dashboard() {
                     <Popup><div className="map-popup"><strong>🚨 Emergency</strong><span>{emergencyMapModal.lat.toFixed(5)}, {emergencyMapModal.lng.toFixed(5)}</span></div></Popup>
                   </Marker>
                   {vehicles.map(vehicle => vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]) && (
-                    <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={createVehicleIcon(vehicle.is_available)}>
+                    <Marker key={vehicle.id} position={[vehicle.location.lat, vehicle.location.lng]} icon={getVehicleIcon(vehicle)}>
                       <Popup><div className="map-popup"><strong>{vehicle.name}</strong><span>{formatType(vehicle.vehicle_type)}</span><span className={vehicle.is_available ? 'available-text' : 'unavailable-text'}>{vehicle.is_available ? 'Available' : 'Unavailable'}</span></div></Popup>
                     </Marker>
                   ))}
