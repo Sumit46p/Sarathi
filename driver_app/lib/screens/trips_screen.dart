@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'dart:async';
 import '../theme.dart';
 import '../services/api_service.dart';
+import '../widgets/truck_loader.dart';
 
 /// Active-trip tracking screen for drivers.
 ///
@@ -659,11 +660,14 @@ class _TripsScreenState extends State<TripsScreen>
     final isCompleted = currentStatus == 'completed';
     final isCancelled = currentStatus == 'cancelled';
 
+    final isEmergency = _dispatch?['request_type'] == 'EMERGENCY' ||
+        _dispatch?['operation_type'] == 'EMERGENCY_REPLACEMENT';
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
         child: _loading
-            ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
+            ? const TruckLoaderCenter()
             : _errorMsg != null && _dispatch == null
                 ? _buildError()
                 : _dispatch == null
@@ -678,20 +682,23 @@ class _TripsScreenState extends State<TripsScreen>
                                 Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                                    color: (isEmergency ? AppTheme.errorColor : AppTheme.primaryColor).withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: const Icon(Icons.map_outlined,
-                                      color: AppTheme.primaryColor, size: 20),
+                                  child: Icon(
+                                    isEmergency ? Icons.warning_amber_rounded : Icons.map_outlined,
+                                    color: isEmergency ? AppTheme.errorColor : AppTheme.primaryColor,
+                                    size: 20,
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    'Active Trip',
+                                    isEmergency ? '🚨 Emergency Dispatch' : 'Active Trip',
                                     style: GoogleFonts.inter(
                                       fontSize: 20,
                                       fontWeight: FontWeight.w600,
-                                      color: AppTheme.onSurface,
+                                      color: isEmergency ? AppTheme.errorColor : AppTheme.onSurface,
                                     ),
                                   ),
                                 ),
@@ -703,8 +710,8 @@ class _TripsScreenState extends State<TripsScreen>
                                             ? AppTheme.successLight
                                             : isCancelled
                                                 ? AppTheme.errorLight
-                                                : AppTheme.primaryColor
-                                                    .withValues(alpha: 0.1)),
+                                                : (isEmergency ? AppTheme.errorColor : AppTheme.primaryColor)
+                                                    .withOpacity(0.1)),
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Row(
@@ -718,7 +725,7 @@ class _TripsScreenState extends State<TripsScreen>
                                               ? AppTheme.successColor
                                               : isCancelled
                                                   ? AppTheme.errorColor
-                                                  : AppTheme.primaryColor,
+                                                  : (isEmergency ? AppTheme.errorColor : AppTheme.primaryColor),
                                           shape: BoxShape.circle,
                                         ),
                                       ),
@@ -732,7 +739,7 @@ class _TripsScreenState extends State<TripsScreen>
                                               ? AppTheme.successColor
                                               : isCancelled
                                                   ? AppTheme.errorColor
-                                                  : AppTheme.primaryColor,
+                                                  : (isEmergency ? AppTheme.errorColor : AppTheme.primaryColor),
                                         ),
                                       ),
                                     ],
@@ -741,6 +748,49 @@ class _TripsScreenState extends State<TripsScreen>
                               ],
                             ),
                           ),
+
+                          if (isEmergency)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.errorColor.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: AppTheme.errorColor, width: 1.5),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.emergency_rounded, color: AppTheme.errorColor, size: 22),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'CRITICAL EMERGENCY RESPONSE',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w800,
+                                              color: AppTheme.errorColor,
+                                              letterSpacing: 0.5,
+                                            ),
+                                          ),
+                                          Text(
+                                            _dispatch?['cargo_description'] ?? _dispatch?['location_name'] ?? 'Respond immediately to emergency site',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppTheme.onSurface,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
 
                           // Map
                           Expanded(

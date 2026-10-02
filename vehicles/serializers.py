@@ -288,6 +288,10 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
     driver_vehicle_name = serializers.SerializerMethodField()
     driver_vehicle_id = serializers.SerializerMethodField()
     driver_vehicle_plate = serializers.SerializerMethodField()
+    sos_vehicle_id = serializers.SerializerMethodField()
+    sos_vehicle_ids = serializers.SerializerMethodField()
+    dispatched_vehicle_id = serializers.SerializerMethodField()
+    dispatched_vehicle_name = serializers.SerializerMethodField()
     driver_name = serializers.SerializerMethodField()
     driver_phone = serializers.SerializerMethodField()
     location = serializers.SerializerMethodField()
@@ -301,43 +305,65 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
             return obj.image.url
         return None
 
-    def get_driver_vehicle_name(self, obj):
-        if obj.assigned_vehicle:
-            return obj.assigned_vehicle.name
+    def _get_sos_vehicle(self, obj):
+        if obj.related_dispatch and obj.related_dispatch.failed_vehicle:
+            return obj.related_dispatch.failed_vehicle
         if obj.user:
             try:
                 driver = Driver.objects.filter(user=obj.user).first()
                 if driver:
-                    vehicle = driver.assigned_vehicles.first()
-                    return vehicle.name if vehicle else None
+                    v = driver.assigned_vehicles.first()
+                    if v:
+                        return v
             except Exception:
                 pass
+        if obj.assigned_vehicle and obj.status == 'pending':
+            return obj.assigned_vehicle
         return None
+
+    def get_driver_vehicle_name(self, obj):
+        v = self._get_sos_vehicle(obj)
+        return v.name if v else None
 
     def get_driver_vehicle_id(self, obj):
-        if obj.assigned_vehicle:
-            return obj.assigned_vehicle.id
-        if obj.user:
-            try:
-                driver = Driver.objects.filter(user=obj.user).first()
-                if driver:
-                    vehicle = driver.assigned_vehicles.first()
-                    return vehicle.id if vehicle else None
-            except Exception:
-                pass
-        return None
+        v = self._get_sos_vehicle(obj)
+        return v.id if v else None
 
     def get_driver_vehicle_plate(self, obj):
-        if obj.assigned_vehicle:
-            return obj.assigned_vehicle.number_plate
+        v = self._get_sos_vehicle(obj)
+        return v.number_plate if v else None
+
+    def get_sos_vehicle_id(self, obj):
+        return self.get_driver_vehicle_id(obj)
+
+    def get_sos_vehicle_ids(self, obj):
+        ids = set()
+        if obj.related_dispatch and obj.related_dispatch.failed_vehicle_id:
+            ids.add(obj.related_dispatch.failed_vehicle_id)
         if obj.user:
             try:
                 driver = Driver.objects.filter(user=obj.user).first()
                 if driver:
-                    vehicle = driver.assigned_vehicles.first()
-                    return vehicle.number_plate if vehicle else None
+                    for vid in driver.assigned_vehicles.values_list('id', flat=True):
+                        ids.add(vid)
             except Exception:
                 pass
+        if obj.assigned_vehicle and obj.status == 'pending':
+            ids.add(obj.assigned_vehicle_id)
+        return list(ids)
+
+    def get_dispatched_vehicle_id(self, obj):
+        if obj.replacement_dispatch and obj.replacement_dispatch.assigned_vehicle_id:
+            return obj.replacement_dispatch.assigned_vehicle_id
+        if obj.assigned_vehicle and obj.status in ('dispatched', 'resolved'):
+            return obj.assigned_vehicle.id
+        return None
+
+    def get_dispatched_vehicle_name(self, obj):
+        if obj.replacement_dispatch and obj.replacement_dispatch.assigned_vehicle:
+            return obj.replacement_dispatch.assigned_vehicle.name
+        if obj.assigned_vehicle and obj.status in ('dispatched', 'resolved'):
+            return obj.assigned_vehicle.name
         return None
 
     def get_driver_name(self, obj):
@@ -393,7 +419,9 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'emergency_type', 'description', 'location',
             'image', 'image_url', 'driver_vehicle_name', 'driver_vehicle_id',
-            'driver_vehicle_plate', 'driver_name', 'driver_phone', 'status',
+            'driver_vehicle_plate', 'sos_vehicle_id', 'sos_vehicle_ids',
+            'dispatched_vehicle_id', 'dispatched_vehicle_name',
+            'driver_name', 'driver_phone', 'status',
             'assigned_vehicle', 'related_dispatch', 'replacement_dispatch',
             'related_dispatch_details',
             'created_at', 'updated_at', 'resolved_at'
@@ -471,7 +499,7 @@ class DriverAssignedVehicleSerializer(serializers.ModelSerializer):
     """Simplified vehicle serializer for driver's assigned vehicle (no PostGIS fields)."""
     class Meta:
         model = Vehicle
-        fields = ['id', 'name', 'vehicle_type', 'number_plate', 'is_available']
+        fields = ['id', 'name', 'vehicle_type', 'fuel_type', 'number_plate', 'is_available']
 
 class DriverMeSerializer(serializers.ModelSerializer):
     assigned_vehicle = DriverAssignedVehicleSerializer(read_only=True)
@@ -492,6 +520,9 @@ class FuelLogCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = FuelLog
         fields = ['vehicle', 'fuel_type', 'liters', 'amount', 'cost_per_liter', 'odometer_reading', 'receipt_image', 'notes']
+        extra_kwargs = {
+            'vehicle': {'required': False},
+        }
 
 class ExpenseStatsSerializer(serializers.Serializer):
     """Aggregated expense statistics."""

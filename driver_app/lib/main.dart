@@ -6,6 +6,7 @@ import 'screens/splash_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/api_service.dart';
+import 'widgets/truck_loader.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -87,8 +88,8 @@ class _AuthGateState extends State<_AuthGate> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: AppTheme.primaryColor)),
+      return Scaffold(
+        body: const TruckLoaderCenter(),
       );
     }
     if (_hasToken) {

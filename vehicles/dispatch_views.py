@@ -191,6 +191,19 @@ def dispatch_confirm(request):
     distance_km = data.get('distance_km')
     eta_min = data.get('eta_min') or data.get('duration_min')
 
+    def _safe_float(val):
+        if val is None:
+            return None
+        try:
+            s = str(val).strip()
+            return float(s) if s else None
+        except (ValueError, TypeError):
+            return None
+
+    parsed_cargo_weight = _safe_float(cargo_weight_kg)
+    parsed_distance_km = _safe_float(distance_km)
+    parsed_eta_min = _safe_float(eta_min)
+
     try:
         with transaction.atomic():
             # 1. Update vehicle status to assigned/in_use
@@ -217,13 +230,13 @@ def dispatch_confirm(request):
                 destination_name=destination_name,
                 destination_address=destination_address,
                 cargo_description=cargo_description,
-                cargo_weight_kg=float(cargo_weight_kg) if cargo_weight_kg else None,
+                cargo_weight_kg=parsed_cargo_weight,
                 vehicle_type=vehicle.vehicle_type,
                 assigned_vehicle=vehicle,
                 status='assigned',
                 assigned_at=timezone.now(),
-                distance_km=float(distance_km) if distance_km is not None else None,
-                duration_min=float(eta_min) if eta_min is not None else None,
+                distance_km=parsed_distance_km,
+                duration_min=parsed_eta_min,
                 selection_reason=selection_reason,
                 created_by=request.user,
                 organization=vehicle.organization,
@@ -494,13 +507,25 @@ def approve_breakdown_recovery(request):
 def dispatch_active_list(request):
     """
     GET /api/dispatch/active/
-    Returns all active operations (Normal Deliveries and Recovery Operations).
+    Returns all live transit operations (Normal Logistics in Transit and Active Recovery Operations).
+    Excludes interrupted/broken-down vehicles (which are handled in the Recovery center).
     """
+    # Auto-resolve / complete any orphaned RECOVERY_IN_PROGRESS whose replacement is completed
+    stale_recovering = DispatchRequest.objects.filter(status='RECOVERY_IN_PROGRESS')
+    for stale_disp in stale_recovering:
+        completed_replacement = DispatchRequest.objects.filter(
+            original_dispatch=stale_disp,
+            status='completed'
+        ).exists()
+        if completed_replacement:
+            stale_disp.status = 'completed'
+            stale_disp.completed_at = timezone.now()
+            stale_disp.save(update_fields=['status', 'completed_at'])
+
     active_statuses = [
         'assigned', 'dispatched', 'DISPATCHED', 'accepted', 'en_route', 'arrived',
         'in_service', 'RESPONDING', 'IN_PROGRESS',
         'EN_ROUTE_TO_PICKUP', 'AT_PICKUP', 'IN_TRANSIT',
-        'VEHICLE_BREAKDOWN', 'RECOVERY_IN_PROGRESS',
         'EN_ROUTE_TO_BREAKDOWN', 'AT_BREAKDOWN_LOCATION',
         'GOODS_TRANSFERRED', 'IN_TRANSIT_TO_DESTINATION',
     ]

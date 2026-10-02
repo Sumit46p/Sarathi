@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.db.models import Q, ExpressionWrapper, DurationField, Count, Sum, Avg, F, Value, CharField
 from django.db.models.functions import TruncDate, Coalesce
 from django.utils import timezone
@@ -756,6 +757,7 @@ def driver_dispatch(request):
     dispatch = (
         DispatchRequest.objects
         .filter(assigned_vehicle=vehicle, status__in=ACTIVE_DISPATCH_STATUSES)
+        .order_by('-created_at')
         .first()
     )
     if dispatch is None:
@@ -793,6 +795,7 @@ def driver_dispatch_transition(request):
     dispatch = (
         DispatchRequest.objects
         .filter(assigned_vehicle=vehicle, status__in=ACTIVE_DISPATCH_STATUSES)
+        .order_by('-created_at')
         .first()
     )
     if dispatch is None:
@@ -812,6 +815,37 @@ def driver_dispatch_transition(request):
         dispatch.transition_to(new_status)
     except ValueError as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    # When emergency trip is completed, automatically resolve the linked emergency
+    if new_status == 'completed':
+        vehicle.is_available = True
+        vehicle.vehicle_status = 'available'
+        vehicle.save(update_fields=['is_available', 'vehicle_status'])
+
+        # Auto-resolve linked emergency if any
+        linked_emergency = (
+            EmergencyRequest.objects.filter(replacement_dispatch=dispatch).first()
+            or EmergencyRequest.objects.filter(assigned_vehicle=vehicle, status='dispatched').first()
+        )
+        if linked_emergency:
+            linked_emergency.status = 'resolved'
+            linked_emergency.resolved_at = timezone.now()
+            linked_emergency.save(update_fields=['status', 'resolved_at'])
+            if linked_emergency.related_dispatch and linked_emergency.related_dispatch.status != 'completed':
+                orig = linked_emergency.related_dispatch
+                orig.status = 'completed'
+                orig.completed_at = timezone.now()
+                orig.save(update_fields=['status', 'completed_at'])
+
+        if dispatch.original_dispatch and dispatch.original_dispatch.status != 'completed':
+            orig = dispatch.original_dispatch
+            orig.status = 'completed'
+            orig.completed_at = timezone.now()
+            orig.save(update_fields=['status', 'completed_at'])
+    elif new_status in ['cancelled', 'rejected']:
+        vehicle.is_available = True
+        vehicle.vehicle_status = 'available'
+        vehicle.save(update_fields=['is_available', 'vehicle_status'])
 
     return Response(dispatch_live_payload(dispatch, request))
 
@@ -1303,15 +1337,12 @@ def driver_maintenance_request(request):
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-@api_view(['POST'])
+@api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def report_issue(request):
     """
-    POST /api/drivers/me/report-issue/
-    Body (multipart/form-data):
-      - description (text, required)
-      - image (file, optional)
-    Creates an issue report for the driver linked to the current user.
+    GET  /api/drivers/me/report-issue/  — lists all issue reports for current driver
+    POST /api/drivers/me/report-issue/  — creates an issue report for current driver
     """
     try:
         driver = Driver.objects.get(user=request.user)
@@ -1320,6 +1351,11 @@ def report_issue(request):
             {'error': 'No driver profile is linked to this user account'},
             status=status.HTTP_404_NOT_FOUND,
         )
+
+    if request.method == 'GET':
+        reports = IssueReport.objects.filter(driver=driver).select_related('driver').order_by('-created_at')
+        serializer = IssueReportSerializer(reports, many=True, context={'request': request})
+        return Response(serializer.data)
 
     description = request.data.get('description', '').strip()
     if not description:
@@ -1347,6 +1383,7 @@ def report_issue(request):
 
     serializer = IssueReportSerializer(report, context={'request': request})
     return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 
 @api_view(['GET'])
@@ -1514,7 +1551,10 @@ def driver_trip_history(request):
     vehicles = driver.assigned_vehicles.all()
     dispatches = (
         DispatchRequest.objects
-        .filter(assigned_vehicle__in=vehicles, status__in=['completed', 'cancelled', 'rejected'])
+        .filter(
+            assigned_vehicle__in=vehicles,
+            status__in=['completed', 'cancelled', 'rejected', 'COMPLETED', 'CANCELLED', 'REJECTED', 'ARRIVED_AT_DESTINATION']
+        )
         .select_related('assigned_vehicle')
         .annotate(point_count=Count('location_records'))
         .order_by('-created_at')
@@ -1775,13 +1815,35 @@ def create_emergency_request(request):
         emergency.location = location
         emergency.save(update_fields=['location'])
     
-    # Create notification for all admins of the organization
-    from django.contrib.auth.models import User
-    from accounts.models import Profile
-    
-    # Get all admin users in the same organization
+    # Identify distressed driver and their assigned vehicle
     driver = Driver.objects.filter(user=request.user).first()
+    driver_name = f"User {request.user.username}"
     if driver:
+        driver_name = f"Driver {driver.name}"
+        distressed_vehicle = driver.assigned_vehicles.first()
+        if distressed_vehicle:
+            driver_name = f"Vehicle {distressed_vehicle.name} ({distressed_vehicle.number_plate or 'No Plate'}) - Driver {driver.name}"
+            # Distress: mark reporting vehicle as unavailable and under maintenance
+            distressed_vehicle.is_available = False
+            distressed_vehicle.admin_blocked = True
+            distressed_vehicle.vehicle_status = 'maintenance'
+            distressed_vehicle.save(update_fields=['is_available', 'admin_blocked', 'vehicle_status'])
+
+            # Check if this vehicle had an active dispatch to record breakdown
+            active_disp = DispatchRequest.objects.filter(
+                assigned_vehicle=distressed_vehicle,
+                status__in=ACTIVE_DISPATCH_STATUSES
+            ).order_by('-created_at').first()
+            if active_disp:
+                active_disp.status = 'VEHICLE_BREAKDOWN'
+                active_disp.breakdown_reason = emergency.description or emergency.get_emergency_type_display()
+                active_disp.failed_vehicle = distressed_vehicle
+                active_disp.save(update_fields=['status', 'breakdown_reason', 'failed_vehicle'])
+                emergency.related_dispatch = active_disp
+                emergency.save(update_fields=['related_dispatch'])
+
+        # Notify admins
+        from accounts.models import Profile
         org_name = None
         try:
             profile = Profile.objects.get(user=request.user)
@@ -1794,18 +1856,11 @@ def create_emergency_request(request):
                 profile__organization_name=org_name,
                 is_staff=True,
             )
-            driver_name = f"User {request.user.username}"
-            if hasattr(request.user, 'driver'):
-                if request.user.driver.assigned_vehicle_id:
-                    driver_name = f"Vehicle #{request.user.driver.assigned_vehicle_id}"
-                else:
-                    driver_name = f"Driver {request.user.driver.name}"
-                    
             for admin in admin_users:
                 Notification.objects.create(
                     user=admin,
                     notification_type='admin',
-                    title=f'Emergency: {emergency.get_emergency_type_display()}',
+                    title=f'🚨 Emergency: {emergency.get_emergency_type_display()}',
                     message=f'Emergency request from {driver_name}: {emergency.description or "No description"}',
                 )
     
@@ -1825,15 +1880,20 @@ def emergency_request_list(request):
     
     # Get all drivers belonging to the same org as the requesting admin
     org_ids = get_org_user_ids(request.user)
-    drivers = Driver.objects.filter(owner__in=org_ids).select_related('user')
-    driver_user_ids = [d.user.id for d in drivers if d.user_id is not None]
-
-    # Get emergency requests from those driver users
-    status_filter = request.query_params.get('status')
-    queryset = EmergencyRequest.objects.filter(
-        user__in=driver_user_ids
-    ).select_related('user', 'assigned_vehicle')
+    # If driver user, return their own emergency requests
+    try:
+        driver = Driver.objects.get(user=request.user)
+        queryset = EmergencyRequest.objects.filter(user=request.user).select_related('user', 'assigned_vehicle')
+    except Driver.DoesNotExist:
+        # Get all drivers belonging to the same org as the requesting admin
+        org_ids = get_org_user_ids(request.user)
+        drivers = Driver.objects.filter(owner__in=org_ids).select_related('user')
+        driver_user_ids = [d.user.id for d in drivers if d.user_id is not None]
+        queryset = EmergencyRequest.objects.filter(
+            user__in=driver_user_ids
+        ).select_related('user', 'assigned_vehicle')
     
+    status_filter = request.query_params.get('status')
     if status_filter:
         queryset = queryset.filter(status=status_filter)
     
@@ -1849,7 +1909,8 @@ def emergency_request_dispatch(request, pk):
     """
     POST /api/emergency/requests/<id>/dispatch/
     Body: {"vehicle_id": 123}
-    Dispatches the nearest available vehicle to the emergency request.
+    Dispatches an available rescue vehicle to the emergency request, creating a real
+    DispatchRequest so the rescue driver receives the live trip in the Driver App.
     """
     try:
         emergency = EmergencyRequest.objects.get(pk=pk)
@@ -1873,32 +1934,132 @@ def emergency_request_dispatch(request, pk):
         )
     
     try:
-        vehicle = Vehicle.objects.get(pk=vehicle_id, is_available=True)
+        vehicle = Vehicle.objects.select_related('driver', 'driver__user', 'organization').get(pk=vehicle_id)
     except Vehicle.DoesNotExist:
         return Response(
-            {'error': 'Vehicle not found or not available'},
+            {'error': 'Vehicle not found'},
             status=status.HTTP_404_NOT_FOUND,
         )
-    
-    # Update emergency request
-    emergency.status = 'dispatched'
-    emergency.assigned_vehicle = vehicle
-    emergency.save(update_fields=['status', 'assigned_vehicle', 'updated_at'])
-    
-    # Mark vehicle as unavailable
-    vehicle.is_available = False
-    vehicle.save(update_fields=['is_available'])
-    
-    # Create notification for the user who requested help
-    Notification.objects.create(
-        user=emergency.user,
-        notification_type='admin',
-        title='Emergency Help Dispatched',
-        message=f'Help is on the way! Vehicle {vehicle.name} ({vehicle.vehicle_type}) has been dispatched to your location.',
+
+    if not vehicle.is_available:
+        return Response(
+            {'error': f'Vehicle {vehicle.name} is currently not available for dispatch.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Prevent the SOS vehicle / distressed driver from being dispatched as the rescue vehicle
+    try:
+        sos_driver = Driver.objects.filter(user=emergency.user).first()
+        if sos_driver:
+            sos_vehicles = list(sos_driver.assigned_vehicles.values_list('id', flat=True))
+            if vehicle.id in sos_vehicles or (vehicle.driver_id and vehicle.driver_id == sos_driver.id):
+                return Response(
+                    {'error': 'Cannot dispatch the vehicle or driver that sent the SOS. Please select a different rescue vehicle.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+    except Exception:
+        pass
+
+    # Calculate real-road ETA and distance from rescue vehicle to emergency site via OSRM
+    em_lat = emergency.location.y if emergency.location else None
+    em_lng = emergency.location.x if emergency.location else None
+    dist_km = None
+    dur_min = None
+    used_osrm = False
+    if em_lat is not None and em_lng is not None and vehicle.location:
+        try:
+            dist_km, dur_min, _ = get_route_distance(
+                vehicle.location.y, vehicle.location.x,
+                em_lat, em_lng
+            )
+            if dist_km is not None:
+                used_osrm = True
+        except Exception:
+            pass
+
+    em_type_display = dict(
+        medical='Medical Emergency', accident='Accident',
+        breakdown='Vehicle Breakdown', other='Emergency'
+    ).get(emergency.emergency_type, emergency.emergency_type.title())
+
+    emergency_address = (
+        emergency.description
+        or (f"GPS: {em_lat:.5f}, {em_lng:.5f}" if em_lat and em_lng else "Emergency Location")
     )
-    
-    serializer = EmergencyRequestSerializer(emergency, context={'request': request})
-    return Response(serializer.data)
+
+    try:
+        with transaction.atomic():
+            # 1. Mark rescue vehicle as unavailable
+            vehicle.is_available = False
+            vehicle.vehicle_status = 'assigned'
+            vehicle.save(update_fields=['is_available', 'vehicle_status'])
+
+            # 2. Create the real DispatchRequest so Driver App receives the active trip
+            now = timezone.now()
+            driver_display = vehicle.driver.name if vehicle.driver else "Fleet Driver"
+            dispatch = DispatchRequest.objects.create(
+                operation_type='EMERGENCY_REPLACEMENT',
+                request_type='EMERGENCY',
+                priority='CRITICAL',
+                request_lat=em_lat,
+                request_lng=em_lng,
+                pickup_location=emergency.location,
+                location_name=f"🚨 SOS: {em_type_display}",
+                address=emergency_address,
+                cargo_description=f"Emergency Rescue: {em_type_display}",
+                vehicle_type=vehicle.vehicle_type,
+                assigned_vehicle=vehicle,
+                status='assigned',
+                assigned_at=now,
+                distance_km=dist_km,
+                duration_min=dur_min,
+                used_osrm=used_osrm,
+                selection_reason=f"Emergency rescue dispatch ({driver_display}) for {emergency.user.get_full_name() or emergency.user.username}",
+                created_by=request.user,
+                organization=vehicle.organization,
+            )
+
+            # 3. Update emergency request with assigned rescue vehicle and linked dispatch
+            emergency.status = 'dispatched'
+            emergency.assigned_vehicle = vehicle
+            emergency.replacement_dispatch = dispatch
+            emergency.save(update_fields=['status', 'assigned_vehicle', 'replacement_dispatch', 'updated_at'])
+
+            # 4. Notify rescue driver if they have a linked user account
+            if vehicle.driver and vehicle.driver.user:
+                Notification.objects.create(
+                    user=vehicle.driver.user,
+                    notification_type='trip',
+                    title=f'🚨 Emergency Dispatch: {em_type_display}',
+                    message=(
+                        f'URGENT: You have been dispatched to respond to an emergency ({em_type_display}). '
+                        f'Location: {emergency_address}. Respond immediately.'
+                    ),
+                    related_dispatch=dispatch,
+                )
+
+            # 5. Notify the distressed driver that rescue is on the way
+            if emergency.user:
+                Notification.objects.create(
+                    user=emergency.user,
+                    notification_type='admin',
+                    title='Emergency Help Dispatched',
+                    message=(
+                        f'Help is on the way! Vehicle {vehicle.name} ({vehicle.number_plate or vehicle.vehicle_type}) '
+                        f'with Driver {driver_display} has been dispatched to your location.'
+                    ),
+                )
+
+        serializer = EmergencyRequestSerializer(emergency, context={'request': request})
+        return Response(serializer.data)
+
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("Failed to dispatch emergency request")
+        return Response(
+            {'error': f'Failed to dispatch: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(['POST'])
@@ -1941,6 +2102,30 @@ def emergency_request_resolve(request, pk):
     
     serializer = EmergencyRequestSerializer(emergency, context={'request': request})
     return Response(serializer.data)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def emergency_request_delete(request, pk):
+    """
+    DELETE /api/emergency/requests/<id>/delete/
+    Permanently deletes an emergency request. Admin only.
+    """
+    try:
+        emergency = EmergencyRequest.objects.get(pk=pk)
+    except EmergencyRequest.DoesNotExist:
+        return Response(
+            {'error': 'Emergency request not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Free vehicle if it was assigned
+    if emergency.assigned_vehicle and emergency.status == 'dispatched':
+        emergency.assigned_vehicle.is_available = True
+        emergency.assigned_vehicle.save(update_fields=['is_available'])
+
+    emergency.delete()
+    return Response({'success': True}, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])

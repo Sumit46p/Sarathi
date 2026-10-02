@@ -54,6 +54,7 @@ urlpatterns = [
     path('emergency/requests/<int:pk>/', views.emergency_request_detail, name='emergency-request-detail'),
     path('emergency/requests/<int:pk>/dispatch/', views.emergency_request_dispatch, name='emergency-request-dispatch'),
     path('emergency/requests/<int:pk>/resolve/', views.emergency_request_resolve, name='emergency-request-resolve'),
+    path('emergency/requests/<int:pk>/delete/', views.emergency_request_delete, name='emergency-request-delete'),
     path('emergency/notifications/mark-read/', views.mark_emergency_notifications_read, name='emergency-notifications-mark-read'),
     path('emergency/notifications/unread-count/', views.unread_emergency_count, name='emergency-notifications-unread-count'),
     path('fuel/', views.fuel_entry_list_create, name='fuel-entry-list'),

@@ -142,8 +142,7 @@ CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            "hosts": [('127.0.0.1', 6379)],
-            "db": 2, # Use db 2 for websockets
+            "hosts": ["redis://127.0.0.1:6379/2"],
         },
     },
 }

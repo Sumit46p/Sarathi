@@ -303,6 +303,9 @@ export default function Dashboard() {
     image_url?: string;
     driver_vehicle_name?: string | null;
     driver_vehicle_id?: number | null;
+    driver_name?: string | null;
+    sos_vehicle_id?: number | null;
+    sos_vehicle_ids?: number[];
     status: string;
     assigned_vehicle: number | null;
     created_at: string;
@@ -606,6 +609,19 @@ export default function Dashboard() {
     }
   };
 
+  const handleDeleteEmergency = async (emergencyId: number) => {
+    if (!window.confirm('Permanently delete this emergency record? This cannot be undone.')) return;
+    try {
+      await api.delete(`/emergency/requests/${emergencyId}/delete/`);
+      await fetchEmergencies();
+      await fetchVehicles();
+      toast.success('Emergency record deleted');
+    } catch (error: unknown) {
+      const responseError = error as { response?: { data?: { error?: string } } };
+      toast.error(responseError.response?.data?.error || 'Failed to delete emergency');
+    }
+  };
+
   const handleDispatch = async () => {
     if (!requestMarker) return;
     setDispatchLoading(true); setDispatchError(null); setDispatchResult(null);
@@ -818,8 +834,15 @@ export default function Dashboard() {
             <div className="page-heading"><div><h2 id="drivers-heading">Driver directory</h2><p>Manage credentials and assignment-ready personnel.</p></div><button id="add-driver-button" className="button button-primary" onClick={() => { setDriverFormError(null); setShowAddDriverModal(true); }}><Plus size={16} />Add driver</button></div>
             <div className="section-toolbar"><div><h2>All drivers</h2><span>{filteredDrivers.length} records</span></div><div className="search-field"><Search size={15} /><input id="driver-search" value={driverQuery} onChange={event => setDriverQuery(event.target.value)} placeholder="Search drivers" aria-label="Search drivers" /></div></div>
             {initialLoading ? <div className="list-skeleton">{[1, 2, 3].map(item => <div className="skeleton-row" key={item} />)}</div> : filteredDrivers.length === 0 ? renderEmpty(drivers.length ? 'No matching drivers' : 'No drivers registered', drivers.length ? 'Try a different name, phone, or license number.' : 'Add a driver to begin assigning fleet units.') : <div className="driver-grid stagger">{filteredDrivers.map(driver => {
-              const assignmentCount = vehicles.filter(vehicle => vehicle.driver === driver.id).length;
-              return <article className="driver-card" key={driver.id}><div className="driver-card-head"><div className="avatar">{driver.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase()}</div><span className={`status-badge ${driver.is_active ? 'available' : 'neutral'}`}><span />{driver.is_active ? 'Active' : 'Inactive'}</span><button className="icon-button danger" onClick={() => handleDeleteDriver(driver.id)} title="Delete driver" aria-label={`Delete ${driver.name}`}><Trash2 size={15} /></button></div><h3>{driver.name}</h3><div className="driver-detail"><Phone size={14} /><span>{driver.phone_number || 'No phone number'}</span></div><div className="driver-detail"><ShieldCheck size={14} /><span className="mono">{driver.license_number}</span></div><div className="driver-card-foot"><span>{assignmentCount ? `${assignmentCount} assigned vehicle${assignmentCount > 1 ? 's' : ''}` : 'No vehicle assigned'}</span><UserRound size={15} /></div></article>;
+              const assignedVehicles = vehicles.filter(v => 
+                v.driver === driver.id || 
+                (typeof v.driver === 'object' && (v.driver as any)?.id === driver.id) ||
+                String(v.driver) === String(driver.id)
+              );
+              const vehicleLabel = assignedVehicles.length > 0 
+                ? assignedVehicles.map(v => `${v.name} (${v.number_plate || 'No plate'})`).join(', ')
+                : 'No vehicle assigned';
+              return <article className="driver-card" key={driver.id}><div className="driver-card-head"><div className="avatar">{driver.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase()}</div><span className={`status-badge ${driver.is_active ? 'available' : 'neutral'}`}><span />{driver.is_active ? 'Active' : 'Inactive'}</span><button className="icon-button danger" onClick={() => handleDeleteDriver(driver.id)} title="Delete driver" aria-label={`Delete ${driver.name}`}><Trash2 size={15} /></button></div><h3>{driver.name}</h3><div className="driver-detail"><Phone size={14} /><span>{driver.phone_number || 'No phone number'}</span></div><div className="driver-detail"><ShieldCheck size={14} /><span className="mono">{driver.license_number}</span></div><div className="driver-card-foot"><span title={vehicleLabel} style={{ fontWeight: assignedVehicles.length > 0 ? 600 : 400, color: assignedVehicles.length > 0 ? 'var(--primary)' : 'inherit' }}>{vehicleLabel}</span><Truck size={15} /></div></article>;
             })}</div>}
           </section>}
 
@@ -828,6 +851,31 @@ export default function Dashboard() {
 
           {activeTab === 'emergency' && <section className="tab-content" aria-labelledby="emergency-heading">
             <div className="page-heading"><div><h2 id="emergency-heading">Emergency requests</h2><p>Active SOS alerts requiring immediate response.</p></div></div>
+
+            {/* Stat cards matching Overview tab style */}
+            <div className="metrics-grid stagger">
+              <article className="metric-card" style={{ borderTop: '3px solid var(--primary)' }}>
+                <div className="metric-heading"><span>Total Alerts</span><AlertCircle size={17} /></div>
+                <strong><CountUp value={emergencies.length} /></strong>
+                <p>All emergency requests</p>
+              </article>
+              <article className="metric-card" style={{ borderTop: '3px solid #ef4444' }}>
+                <div className="metric-heading"><span>Pending</span><AlertTriangle size={17} /></div>
+                <strong><CountUp value={emergencies.filter(e => e.status === 'pending').length} /></strong>
+                <p><span className="trend-negative"><CircleDot size={12} />Awaiting dispatch</span></p>
+              </article>
+              <article className="metric-card" style={{ borderTop: '3px solid #f59e0b' }}>
+                <div className="metric-heading"><span>Dispatched</span><Radio size={17} /></div>
+                <strong><CountUp value={emergencies.filter(e => e.status === 'dispatched').length} /></strong>
+                <p>Response en route</p>
+              </article>
+              <article className="metric-card" style={{ borderTop: '3px solid #22c55e' }}>
+                <div className="metric-heading"><span>Resolved</span><CheckCircle2 size={17} /></div>
+                <strong><CountUp value={emergencies.filter(e => e.status === 'resolved').length} /></strong>
+                <p>Successfully closed</p>
+              </article>
+            </div>
+
             <div className="section-toolbar"><div><h2>All emergencies</h2><span>{emergencies.length} requests</span></div></div>
             {emergencies.length === 0 ? renderEmpty('No emergency requests', 'Emergency SOS alerts will appear here.') : (
               <div className="data-table-wrap">
@@ -863,9 +911,36 @@ export default function Dashboard() {
                               <MapPin size={13} />{locLat!.toFixed(4)}, {locLng!.toFixed(4)}
                             </button>
                           ) : <span className="muted">Not provided</span>}</td>
-                          <td><span className={`status-badge ${emergency.status === 'pending' ? 'unavailable' : emergency.status === 'dispatched' ? 'on-trip' : 'available'}`}><span />{formatType(emergency.status)}</span></td>
-                          <td>{emergency.assigned_vehicle ? <span>Vehicle #{emergency.assigned_vehicle}</span> : <span className="muted">Unassigned</span>}</td>
-                          <td>{emergency.created_at ? new Date(emergency.created_at).toLocaleString() : '—'}</td>
+                          <td>
+                            <span className={`status-badge ${emergency.status === 'pending' ? 'unavailable' : emergency.status === 'dispatched' ? 'on-trip' : 'available'}`}>
+                              <span />
+                              {formatType(emergency.status)}
+                            </span>
+                          </td>
+                          <td>
+                            {(emergency as any).dispatched_vehicle_name ? (
+                              <span style={{ color: 'var(--primary)', fontWeight: 600 }}>
+                                🚨 {(emergency as any).dispatched_vehicle_name}
+                              </span>
+                            ) : emergency.assigned_vehicle ? (
+                              <span>Vehicle #{emergency.assigned_vehicle}</span>
+                            ) : (
+                              <span className="muted">Unassigned</span>
+                            )}
+                          </td>
+                          <td>
+                            {emergency.created_at ? (
+                              <span style={{ fontSize: '.8rem', color: 'var(--text-muted)' }}>
+                                {new Date(emergency.created_at).toLocaleString([], {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                            ) : '—'}
+                          </td>
                           <td>
                             <div className="row-actions">
                               {emergency.status === 'pending' && (
@@ -878,6 +953,9 @@ export default function Dashboard() {
                                   <CheckCircle2 size={13} /> Resolve
                                 </button>
                               )}
+                              <button className="icon-button danger" title="Delete record" aria-label={`Delete emergency #${emergency.id}`} onClick={() => handleDeleteEmergency(emergency.id)}>
+                                <Trash2 size={14} />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -972,26 +1050,77 @@ export default function Dashboard() {
 
       {/* Emergency Dispatch Dialog */}
       {dispatchDialog !== null && (() => {
-        const available = vehicles.filter(v => v.is_available);
+        // Find the emergency that triggered this dialog
+        const activeEmergency = emergencies.find(e => e.id === dispatchDialog);
+        
+        // Collect all IDs of vehicles associated with the SOS / distressed driver to exclude them
+        const excludedIds = new Set<number>();
+        if (activeEmergency?.driver_vehicle_id != null) {
+          excludedIds.add(Number(activeEmergency.driver_vehicle_id));
+        }
+        if ((activeEmergency as any)?.sos_vehicle_id != null) {
+          excludedIds.add(Number((activeEmergency as any).sos_vehicle_id));
+        }
+        if (Array.isArray((activeEmergency as any)?.sos_vehicle_ids)) {
+          (activeEmergency as any).sos_vehicle_ids.forEach((id: any) => {
+            if (id != null) excludedIds.add(Number(id));
+          });
+        }
+
+        // Only show vehicles that:
+        // 1. Are marked is_available = true
+        // 2. Are not the vehicle that sent the SOS
+        // 3. Have an assigned driver ready to respond
+        // 4. Driver is not the same driver who sent the SOS
+        const available = vehicles.filter(v => {
+          if (!v.is_available) return false;
+          if (excludedIds.has(Number(v.id))) return false;
+          if (!v.driver || !v.driver_name) return false;
+          if (activeEmergency?.driver_name && v.driver_name.trim().toLowerCase() === activeEmergency.driver_name.trim().toLowerCase()) return false;
+          return true;
+        });
+
         return (
           <div className="modal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setDispatchDialog(null); }}>
             <div className="modal-content modal-compact" role="dialog" aria-modal="true" aria-labelledby="dispatch-dlg-title">
               <div className="modal-header">
-                <div><span>Emergency #{dispatchDialog}</span><h2 id="dispatch-dlg-title">Dispatch Vehicle</h2></div>
+                <div><span>Emergency #{dispatchDialog}</span><h2 id="dispatch-dlg-title">Dispatch Rescue Vehicle</h2></div>
                 <button className="icon-button" onClick={() => setDispatchDialog(null)} aria-label="Close"><X size={17} /></button>
               </div>
               <div className="modal-body">
-                <p style={{ marginBottom: 12, fontSize: '.85rem', color: 'var(--text-muted)' }}>Select an available vehicle:</p>
+                {/* SOS vehicle info banner */}
+                {activeEmergency?.driver_vehicle_name && (
+                  <div className="inline-alert" style={{ marginBottom: 12, borderColor: '#ef4444', background: 'rgba(239,68,68,0.08)' }}>
+                    <AlertCircle size={14} style={{ color: '#ef4444', flexShrink: 0 }} />
+                    <span style={{ fontSize: '.78rem' }}>
+                      Distressed SOS Unit: <strong>{activeEmergency.driver_vehicle_name}</strong> {activeEmergency.driver_name ? `(${activeEmergency.driver_name})` : ''} — excluded from dispatch.
+                    </span>
+                  </div>
+                )}
+                <p style={{ marginBottom: 12, fontSize: '.85rem', color: 'var(--text-muted)' }}>
+                  Select an available fleet vehicle with an assigned driver to dispatch to this emergency:
+                </p>
                 {available.length === 0 ? (
-                  <div className="inline-alert error"><AlertCircle size={16} />No available vehicles right now.</div>
+                  <div style={{ textAlign: 'center', padding: '28px 12px', background: 'rgba(245, 158, 11, 0.05)', borderRadius: 12, border: '1px dashed rgba(245, 158, 11, 0.3)' }}>
+                    <AlertTriangle size={36} style={{ color: '#f59e0b', marginBottom: 12 }} />
+                    <p style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>No Available Fleet Vehicles</p>
+                    <p style={{ fontSize: '.8rem', color: 'var(--text-muted)', maxWidth: 360, margin: '0 auto' }}>
+                      There are no other available vehicles with assigned drivers in your fleet ready for emergency response. All units are currently on trips, under maintenance, or uncrewed.
+                    </p>
+                  </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {available.map(v => (
-                      <button key={v.id} className="unit-row" style={{ width: '100%', textAlign: 'left' }}
+                      <button key={v.id} className="unit-row" style={{ width: '100%', textAlign: 'left', cursor: 'pointer' }}
                         onClick={() => handleDispatchEmergency(dispatchDialog, v.id)}>
                         <span className="unit-status available" />
-                        <div><strong>{v.name}</strong><span>{formatType(v.vehicle_type)} · {v.driver_name || 'No driver'}</span></div>
-                        <ChevronRight size={15} />
+                        <div style={{ flex: 1 }}>
+                          <strong style={{ fontSize: '.9rem' }}>{v.name}</strong>
+                          <span style={{ display: 'block', fontSize: '.78rem', color: 'var(--text-muted)' }}>
+                            {formatType(v.vehicle_type)}{v.number_plate ? ` · ${v.number_plate}` : ''} · <strong style={{ color: 'var(--primary)' }}>Driver: {v.driver_name}</strong>
+                          </span>
+                        </div>
+                        <Radio size={16} style={{ color: 'var(--primary)' }} />
                       </button>
                     ))}
                   </div>

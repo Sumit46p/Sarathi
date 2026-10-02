@@ -98,8 +98,8 @@ export default function FuelTab() {
     <section className="tab-content" aria-labelledby="fuel-heading">
       <div className="page-heading">
         <div>
-          <h2 id="fuel-heading">Fuel management</h2>
-          <p>Track fleet fuel consumption and costs with receipt proof.</p>
+          <h2 id="fuel-heading">Fuel & Energy management</h2>
+          <p>Track fleet fuel and EV charging costs with receipt proof.</p>
         </div>
         <button className="button button-primary" onClick={fetchData} disabled={loading}>
           {loading ? <RefreshCw size={15} className="spin" /> : <RefreshCw size={15} />}
@@ -112,7 +112,7 @@ export default function FuelTab() {
         <article className="metric-card">
           <div className="metric-heading"><span>Total entries</span><Fuel size={17} /></div>
           <strong>{logs.length}</strong>
-          <p>All fuel expenses logged</p>
+          <p>All fuel & charging expenses logged</p>
         </article>
         <article className="metric-card">
           <div className="metric-heading"><span>Total cost</span><Wallet size={17} /></div>
@@ -122,12 +122,12 @@ export default function FuelTab() {
         <article className="metric-card">
           <div className="metric-heading"><span>This month</span><CalendarClock size={17} /></div>
           <strong>{formatNPR(stats.monthCost)}</strong>
-          <p>Fuel cost in current month</p>
+          <p>Expense in current month</p>
         </article>
         <article className="metric-card">
           <div className="metric-heading"><span>Vehicles</span><Truck size={17} /></div>
           <strong>{stats.vehiclesCount}</strong>
-          <p>Distinct vehicles fuelled</p>
+          <p>Distinct vehicles serviced</p>
         </article>
       </div>
 
@@ -141,7 +141,7 @@ export default function FuelTab() {
       {/* Toolbar */}
       <div className="section-toolbar">
         <div>
-          <h2>Fuel records</h2>
+          <h2>Fuel & Charging records</h2>
           <span>{filteredLogs.length} of {logs.length} entries</span>
         </div>
         <div className="toolbar-controls">
@@ -182,7 +182,7 @@ export default function FuelTab() {
           <h3>{logs.length === 0 ? 'No fuel records yet' : 'No matching fuel records'}</h3>
           <p>
             {logs.length === 0
-              ? 'Fuel entries logged from the driver app will appear here with receipt proof.'
+              ? 'Fuel and EV charging entries logged from the driver app will appear here with receipt proof.'
               : 'Try adjusting your search or vehicle filter.'}
           </p>
         </div>
@@ -193,8 +193,8 @@ export default function FuelTab() {
               <tr>
                 <th>Vehicle</th>
                 <th>Driver</th>
-                <th>Fuel Type</th>
-                <th style={{ textAlign: 'right' }}>Liters</th>
+                <th>Type</th>
+                <th style={{ textAlign: 'right' }}>Quantity</th>
                 <th>Date & time</th>
                 <th style={{ textAlign: 'right' }}>Amount</th>
                 <th style={{ textAlign: 'right' }}>Odometer</th>
@@ -202,48 +202,67 @@ export default function FuelTab() {
               </tr>
             </thead>
             <tbody>
-              {filteredLogs.map((log) => (
-                <tr key={log.id}>
-                  <td>
-                    <div className="primary-cell">
-                      <div className="entity-icon"><Truck size={17} /></div>
-                      <div><strong>{log.vehicle_name}</strong></div>
-                    </div>
-                  </td>
-                  <td><span>{log.driver_name}</span></td>
-                  <td><span style={{ textTransform: 'capitalize' }}>{log.fuel_type || '—'}</span></td>
-                  <td>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', color: 'var(--text-muted)' }}>
-                      {log.liters ? `${log.liters}L` : '—'}
-                    </div>
-                  </td>
-                  <td><span>{formatDate(log.created_at)}</span></td>
-                  <td>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <span className="status-badge available"><span />{formatNPR(Number(log.amount || 0))}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', color: 'var(--text-muted)' }}>
-                      {log.odometer_reading != null ? `${log.odometer_reading} km` : '—'}
-                    </div>
-                  </td>
-                  <td>
-                    {log.receipt_image_url ? (
-                      <button
-                        className="issue-photo-thumb"
-                        onClick={() => setPreview({ url: log.receipt_image_url!, label: `${log.vehicle_name} receipt` })}
-                        title="View receipt"
-                        aria-label={`View receipt for ${log.vehicle_name}`}
+              {filteredLogs.map((log) => {
+                const isEv = log.fuel_type?.toLowerCase() === 'ev';
+                return (
+                  <tr key={log.id}>
+                    <td>
+                      <div className="primary-cell">
+                        <div className="entity-icon"><Truck size={17} /></div>
+                        <div><strong>{log.vehicle_name}</strong></div>
+                      </div>
+                    </td>
+                    <td><span>{log.driver_name}</span></td>
+                    <td>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontSize: '0.76rem',
+                          fontWeight: 600,
+                          padding: '2px 8px',
+                          borderRadius: 6,
+                          backgroundColor: isEv ? 'rgba(16, 185, 129, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+                          color: isEv ? '#10b981' : '#3b82f6',
+                        }}
                       >
-                        <img src={log.receipt_image_url} alt={`Receipt for ${log.vehicle_name}`} />
-                      </button>
-                    ) : (
-                      <span className="status-badge unavailable"><span />No receipt</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                        {isEv ? '⚡ EV' : log.fuel_type ? `⛽ ${log.fuel_type.charAt(0).toUpperCase() + log.fuel_type.slice(1)}` : '—'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', color: 'var(--text-muted)' }}>
+                        {log.liters ? (isEv ? `${log.liters} kWh` : `${log.liters} L`) : '—'}
+                      </div>
+                    </td>
+                    <td><span>{formatDate(log.created_at)}</span></td>
+                    <td>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <span className="status-badge available"><span />{formatNPR(Number(log.amount || 0))}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', color: 'var(--text-muted)' }}>
+                        {log.odometer_reading != null ? `${log.odometer_reading} km` : '—'}
+                      </div>
+                    </td>
+                    <td>
+                      {log.receipt_image_url ? (
+                        <button
+                          className="issue-photo-thumb"
+                          onClick={() => setPreview({ url: log.receipt_image_url!, label: `${log.vehicle_name} receipt` })}
+                          title="View receipt"
+                          aria-label={`View receipt for ${log.vehicle_name}`}
+                        >
+                          <img src={log.receipt_image_url} alt={`Receipt for ${log.vehicle_name}`} />
+                        </button>
+                      ) : (
+                        <span className="status-badge unavailable"><span />No receipt</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

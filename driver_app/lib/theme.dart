@@ -28,6 +28,7 @@ class AppTheme {
   static const Color surface           = Color(0xFFFFFFFF);
   static const Color surfaceVariant    = Color(0xFFF1F5F9);
   static const Color surfaceElevated   = Color(0xFFFFFFFF);
+  static const Color surfaceContainer  = Color(0xFFF1F5F9);
   static const Color surfaceLowest     = Color(0xFFF8FAFC); // For backward compatibility
   
   // ── Text colors ────────────────────────────────────────────────────────
