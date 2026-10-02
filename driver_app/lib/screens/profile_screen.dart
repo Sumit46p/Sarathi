@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
+import '../widgets/truck_loader.dart';
 import 'login_screen.dart';
 import 'trip_history_screen.dart';
 
@@ -63,7 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor));
+      return const TruckLoaderCenter();
     }
 
     if (_errorMsg != null || _driverData == null) {

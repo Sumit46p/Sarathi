@@ -771,43 +771,44 @@ class FuelEntry(models.Model):
 
 
 class FuelLog(models.Model):
-    """Tracks fuel expenses for a vehicle with receipt proof."""
+    """Tracks fuel / energy charging expenses for a vehicle with receipt proof."""
     FUEL_TYPE_CHOICES = [
         ('petrol', 'Petrol'),
         ('diesel', 'Diesel'),
+        ('ev', 'EV'),
     ]
     
     vehicle = models.ForeignKey(
         'Vehicle',
         on_delete=models.CASCADE,
         related_name='fuel_logs',
-        help_text='The vehicle that was refuelled.',
+        help_text='The vehicle that was refuelled / charged.',
     )
     driver = models.ForeignKey(
         'Driver',
         on_delete=models.CASCADE,
         related_name='fuel_logs',
-        help_text='The driver who logged the fuel expense.',
+        help_text='The driver who logged the fuel / charging expense.',
     )
     fuel_type = models.CharField(
         max_length=10,
         choices=FUEL_TYPE_CHOICES,
         default='petrol',
-        help_text='Type of fuel (Petrol or Diesel)',
+        help_text='Type of fuel (Petrol, Diesel, or EV)',
     )
     liters = models.DecimalField(
         max_digits=8, decimal_places=2,
         null=True, blank=True,
-        help_text='Volume of fuel in liters.',
+        help_text='Volume of fuel in liters or energy in kWh for EV.',
     )
     amount = models.DecimalField(
         max_digits=10, decimal_places=2,
-        help_text='Total fuel cost in NPR.',
+        help_text='Total fuel or charging cost in NPR.',
     )
     cost_per_liter = models.DecimalField(
         max_digits=8, decimal_places=2,
         null=True, blank=True,
-        help_text='Price per liter in NPR at time of entry.',
+        help_text='Price per liter or per kWh in NPR at time of entry.',
     )
     odometer_reading = models.DecimalField(
         max_digits=10, decimal_places=1,
@@ -931,21 +932,22 @@ class LocationRecord(models.Model):
 
 
 class FuelPrice(models.Model):
-    """Stores current fuel prices scraped from NOC (Nepal Oil Corporation)."""
+    """Stores current fuel and energy charging prices (NOC or manual rates)."""
     FUEL_TYPE_CHOICES = [
         ('petrol', 'Petrol'),
         ('diesel', 'Diesel'),
+        ('ev', 'EV'),
     ]
     
     fuel_type = models.CharField(
         max_length=10,
         choices=FUEL_TYPE_CHOICES,
         unique=True,
-        help_text='Type of fuel.',
+        help_text='Type of fuel or energy.',
     )
     price_per_liter = models.DecimalField(
         max_digits=8, decimal_places=2,
-        help_text='Current price per liter in NPR.',
+        help_text='Current price per liter (or per kWh for EV) in NPR.',
     )
     last_updated = models.DateTimeField(
         auto_now=True,
@@ -958,7 +960,8 @@ class FuelPrice(models.Model):
     )
 
     def __str__(self):
-        return f"{self.get_fuel_type_display()}: रु {self.price_per_liter}/L"
+        unit = '/kWh' if self.fuel_type == 'ev' else '/L'
+        return f"{self.get_fuel_type_display()}: रु {self.price_per_liter}{unit}"
 
     class Meta:
         verbose_name_plural = "Fuel Prices"

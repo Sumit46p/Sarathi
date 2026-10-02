@@ -47,87 +47,108 @@ def _recompute_on_dispatch_change(sender, instance, **kwargs):
         instance.assigned_vehicle.recompute_availability()
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 @receiver(post_save, sender=Notification)
 def _push_notification(sender, instance, created, **kwargs):
     """When a new notification is created, push it over WebSocket."""
     if not created:
         return
         
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        f'user_notifications_{instance.user_id}',
-        {
-            'type': 'send_notification',
-            'payload': {
-                'id': f'notification_{instance.id}',
-                'type': instance.notification_type,
-                'title': instance.title,
-                'message': instance.message,
-                'status': 'new',
-                'timestamp': instance.created_at.isoformat(),
-                'read': instance.is_read,
-                'dispatch_id': instance.related_dispatch_id,
-            }
-        }
-    )
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f'user_notifications_{instance.user_id}',
+                {
+                    'type': 'send_notification',
+                    'payload': {
+                        'id': f'notification_{instance.id}',
+                        'type': instance.notification_type,
+                        'title': instance.title,
+                        'message': instance.message,
+                        'status': 'new',
+                        'timestamp': instance.created_at.isoformat(),
+                        'read': instance.is_read,
+                        'dispatch_id': instance.related_dispatch_id,
+                    }
+                }
+            )
+    except Exception as e:
+        logger.warning(f"Failed to push notification over websocket: {e}")
 
 @receiver(post_save, sender=IssueReport)
 def _push_issue_report(sender, instance, created, **kwargs):
     """Push new or updated Issue Reports to the org admin channel."""
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        _get_org_group_name(),
-        {
-            'type': 'send_notification',
-            'payload': {
-                'id': f'issue_{instance.id}',
-                'type': 'issue',
-                'title': f'Issue: {instance.driver.assigned_vehicles.first().name if instance.driver.assigned_vehicles.exists() else "Unknown Vehicle"}',
-                'message': instance.description,
-                'status': instance.status,
-                'timestamp': instance.created_at.isoformat(),
-                'read': False,
-            }
-        }
-    )
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                _get_org_group_name(),
+                {
+                    'type': 'send_notification',
+                    'payload': {
+                        'id': f'issue_{instance.id}',
+                        'type': 'issue',
+                        'title': f'Issue: {instance.driver.assigned_vehicles.first().name if instance.driver.assigned_vehicles.exists() else "Unknown Vehicle"}',
+                        'message': instance.description,
+                        'status': instance.status,
+                        'timestamp': instance.created_at.isoformat(),
+                        'read': False,
+                    }
+                }
+            )
+    except Exception as e:
+        logger.warning(f"Failed to push issue report over websocket: {e}")
 
 @receiver(post_save, sender=EmergencyRequest)
 def _push_emergency_request(sender, instance, created, **kwargs):
     """Push Emergency SOS events to the org admin channel."""
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        _get_org_group_name(),
-        {
-            'type': 'send_notification',
-            'payload': {
-                'id': f'emergency_{instance.id}',
-                'type': 'emergency',
-                'title': f'Emergency: {instance.emergency_type}',
-                'message': instance.description or 'Emergency assistance requested',
-                'status': instance.status,
-                'timestamp': instance.created_at.isoformat(),
-                'read': False,
-            }
-        }
-    )
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                _get_org_group_name(),
+                {
+                    'type': 'send_notification',
+                    'payload': {
+                        'id': f'emergency_{instance.id}',
+                        'type': 'emergency',
+                        'title': f'Emergency: {instance.emergency_type}',
+                        'message': instance.description or 'Emergency assistance requested',
+                        'status': instance.status,
+                        'timestamp': instance.created_at.isoformat(),
+                        'read': False,
+                    }
+                }
+            )
+    except Exception as e:
+        logger.warning(f"Failed to push emergency request over websocket: {e}")
 
 @receiver(post_save, sender=MaintenanceRecord)
 def _push_maintenance_record(sender, instance, created, **kwargs):
     """Push Maintenance events to the org admin channel."""
     if not created: return
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        _get_org_group_name(),
-        {
-            'type': 'send_notification',
-            'payload': {
-                'id': f'maintenance_{instance.id}',
-                'type': 'admin',
-                'title': f'Maintenance: {instance.vehicle.name}',
-                'message': instance.maintenance_type,
-                'status': 'new',
-                'timestamp': getattr(instance, 'created_at', None) and instance.created_at.isoformat() or instance.due_date.isoformat(),
-                'read': False,
-            }
-        }
-    )
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                _get_org_group_name(),
+                {
+                    'type': 'send_notification',
+                    'payload': {
+                        'id': f'maintenance_{instance.id}',
+                        'type': 'admin',
+                        'title': f'Maintenance: {instance.vehicle.name}',
+                        'message': instance.maintenance_type,
+                        'status': 'new',
+                        'timestamp': getattr(instance, 'created_at', None) and instance.created_at.isoformat() or instance.due_date.isoformat(),
+                        'read': False,
+                    }
+                }
+            )
+    except Exception as e:
+        logger.warning(f"Failed to push maintenance record over websocket: {e}")

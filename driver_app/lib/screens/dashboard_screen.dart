@@ -8,6 +8,7 @@ import 'dart:async';
 import '../theme.dart';
 import '../services/api_service.dart';
 import '../utils/animations.dart';
+import '../widgets/truck_loader.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'trips_screen.dart';
@@ -27,6 +28,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
   Map<String, dynamic>? _driverData;
+  Map<String, dynamic>? _activeDispatch;
   bool _loading = true;
   String? _errorMsg;
   bool _isOnDuty = false;
@@ -51,7 +53,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _startNotificationPolling() {
-    _notificationTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+    _notificationTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
       try {
         final notifications = await ApiService.getNotifications();
         if (!mounted) return;
@@ -76,9 +78,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _beepedNotificationIds.addAll(newNotificationIds);
         }
         
-        setState(() {
-          _unreadNotifications = unread;
-        });
+        // Also periodically sync fresh driver and assigned vehicle data
+        final freshDriver = await ApiService.getDriverMe();
+        final freshDispatch = await ApiService.getMyDispatch();
+        if (mounted) {
+          if (freshDriver != null) {
+            final wasOnDuty = _isOnDuty;
+            final nowOnDuty = freshDriver['is_on_duty'] == true;
+            setState(() {
+              _unreadNotifications = unread;
+              _driverData = freshDriver;
+              _isOnDuty = nowOnDuty;
+              _activeDispatch = freshDispatch;
+            });
+            if (!wasOnDuty && nowOnDuty) {
+              _startLocationTracking();
+            }
+          } else {
+            setState(() {
+              _unreadNotifications = unread;
+              _activeDispatch = freshDispatch;
+            });
+          }
+        }
       } catch (e) {
         _notificationFailures++;
         if (_notificationFailures >= 3) {
@@ -89,14 +111,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  Future<void> _loadProfile() async {
-    setState(() {
-      _loading = true;
-      _errorMsg = null;
-    });
+  Future<void> _loadProfile({bool showLoading = true}) async {
+    if (showLoading) {
+      setState(() {
+        _loading = true;
+        _errorMsg = null;
+      });
+    }
 
     try {
       final data = await ApiService.getDriverMe();
+      final dispatch = await ApiService.getMyDispatch();
       if (!mounted) return;
 
       bool isOnDuty = false;
@@ -106,9 +131,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       setState(() {
         _driverData = data;
+        _activeDispatch = dispatch;
         _loading = false;
         _isOnDuty = isOnDuty;
-        if (data == null) {
+        if (data == null && showLoading) {
           _errorMsg = 'Failed to load profile. Please log in again.';
         }
       });
@@ -130,10 +156,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       } else {
         setState(() {
           _loading = false;
-          if (e.kind == ApiErrorKind.network) {
-            _errorMsg = 'Network error. Please check your connection and retry.';
-          } else {
-            _errorMsg = 'Failed to load profile: ${e.message}';
+          if (showLoading) {
+            if (e.kind == ApiErrorKind.network) {
+              _errorMsg = 'Network error. Please check your connection and retry.';
+            } else {
+              _errorMsg = 'Failed to load profile: ${e.message}';
+            }
           }
         });
       }
@@ -141,7 +169,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _errorMsg = 'An unexpected error occurred. Please retry.';
+        if (showLoading) {
+          _errorMsg = 'An unexpected error occurred. Please retry.';
+        }
       });
     }
   }
@@ -365,9 +395,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _sendLocationUpdate() async {
     if (!_isOnDuty) return;
 
-    final vehicle = _driverData?['assigned_vehicle'] as Map<String, dynamic>?;
-    final vehicleId = vehicle?['id'];
-    if (vehicleId == null) return;
+    Map<String, dynamic>? vehicle = _driverData?['assigned_vehicle'] as Map<String, dynamic>?;
+    dynamic vehicleId = vehicle?['id'];
+
+    if (vehicleId == null) {
+      try {
+        final fresh = await ApiService.getDriverMe();
+        if (fresh != null && mounted) {
+          final freshVehicle = fresh['assigned_vehicle'] as Map<String, dynamic>?;
+          setState(() {
+            _driverData = fresh;
+            _isOnDuty = fresh['is_on_duty'] == true;
+          });
+          vehicle = freshVehicle;
+          vehicleId = freshVehicle?['id'];
+        }
+      } catch (_) {}
+    }
+
+    if (vehicleId == null) {
+      if (mounted && _lastLocationStatus != 'No vehicle assigned — waiting for fleet manager') {
+        setState(() => _lastLocationStatus = 'No vehicle assigned — waiting for fleet manager');
+      }
+      return;
+    }
 
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -463,6 +514,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _onItemTapped(int index) {
     HapticFeedback.selectionClick();
     setState(() => _selectedIndex = index);
+    if (index == 0) {
+      _loadProfile(showLoading: false);
+    }
   }
 
   @override
@@ -481,7 +535,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildLoading() {
-    return const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor));
+    return const TruckLoaderCenter();
   }
 
   Widget _buildBottomNav() {
@@ -585,65 +639,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final plate = vehicle?['number_plate']?.toString() ?? '—';
 
     return SafeArea(
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10),
+      child: RefreshIndicator(
+        onRefresh: () => _loadProfile(showLoading: false),
+        color: AppTheme.primaryColor,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.dashboard_outlined, color: AppTheme.primaryColor, size: 20),
                       ),
-                      child: const Icon(Icons.dashboard_outlined, color: AppTheme.primaryColor, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Dashboard',
-                      style: GoogleFonts.inter(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.onSurface,
+                      const SizedBox(width: 12),
+                      Text(
+                        'Dashboard',
+                        style: GoogleFonts.inter(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.onSurface,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor,
-                    borderRadius: BorderRadius.circular(12),
+                    ],
                   ),
-                  child: const Icon(Icons.person, color: Colors.white, size: 20),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.person, color: Colors.white, size: 20),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
 
-            // Current Status Toggle
-            _buildStatusToggle(),
-            const SizedBox(height: 12),
+              // Current Status Toggle
+              _buildStatusToggle(),
+              const SizedBox(height: 12),
 
-            // GPS / location-sharing status
-            _buildLocationStatusCard(),
-            const SizedBox(height: 16),
+              // GPS / location-sharing status
+              _buildLocationStatusCard(),
+              const SizedBox(height: 16),
 
-            // Assigned Vehicle Card
-            _buildVehicleCard(vehicleName, vehicleType, plate),
-            const SizedBox(height: 24),
+              // Assigned Vehicle Card
+              _buildVehicleCard(vehicleName, vehicleType, plate),
+              const SizedBox(height: 24),
 
-            // Quick Actions
-            _buildQuickActions(),
-          ],
+              // Quick Actions
+              _buildQuickActions(),
+            ],
+          ),
         ),
       ),
     );
@@ -940,51 +998,157 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 24),
         
         
-        // No Active Trips Section
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(32),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceVariant.withOpacity(0.5),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
+        // Active Dispatch Banner (only shown when there is an active dispatch)
+        if (_activeDispatch != null) _buildActiveDispatchBanner(),
+      ],
+    );
+  }
+
+  Widget _buildActiveDispatchBanner() {
+    final isEmergency = _activeDispatch?['request_type'] == 'EMERGENCY' ||
+        _activeDispatch?['operation_type'] == 'EMERGENCY_REPLACEMENT';
+    final currentStatus = _activeDispatch?['status']?.toString().toUpperCase() ?? 'ASSIGNED';
+    final locationName = _activeDispatch?['location_name'] ?? (isEmergency ? 'Emergency Rescue' : 'Pickup Point');
+    final address = _activeDispatch?['address'] ?? '';
+    final eta = _activeDispatch?['eta_min'];
+    final distance = _activeDispatch?['distance_km'];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isEmergency ? AppTheme.errorColor.withOpacity(0.08) : AppTheme.primaryColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isEmergency ? AppTheme.errorColor : AppTheme.primaryColor.withOpacity(0.5),
+          width: isEmergency ? 2 : 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
               Container(
-                width: 64,
-                height: 64,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(16),
+                  color: isEmergency ? AppTheme.errorColor : AppTheme.primaryColor,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
-                  Icons.map_outlined,
-                  color: AppTheme.onSurfaceVariant,
-                  size: 32,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isEmergency ? Icons.warning_amber_rounded : Icons.local_shipping_outlined,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      isEmergency ? '🚨 EMERGENCY DISPATCH' : '📦 ACTIVE DELIVERY',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'No Active Trips',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.onSurface,
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isEmergency ? AppTheme.errorColor.withOpacity(0.15) : AppTheme.primaryColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Switch to On Duty to start receiving emergency dispatch requests.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: AppTheme.onSurfaceVariant,
+                child: Text(
+                  currentStatus,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isEmergency ? AppTheme.errorColor : AppTheme.primaryColor,
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: 14),
+          Text(
+            locationName,
+            style: GoogleFonts.inter(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.onSurface,
+            ),
+          ),
+          if (address.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              address,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppTheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (distance != null) ...[
+                Icon(Icons.straighten_rounded, size: 15, color: isEmergency ? AppTheme.errorColor : AppTheme.primaryColor),
+                const SizedBox(width: 4),
+                Text(
+                  '${(distance as num).toStringAsFixed(1)} km',
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.onSurface),
+                ),
+                const SizedBox(width: 16),
+              ],
+              if (eta != null) ...[
+                Icon(Icons.schedule_rounded, size: 15, color: isEmergency ? AppTheme.errorColor : AppTheme.primaryColor),
+                const SizedBox(width: 4),
+                Text(
+                  '${(eta as num).toStringAsFixed(0)} min ETA',
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.onSurface),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const TripsScreen()),
+                );
+              },
+              icon: Icon(
+                isEmergency ? Icons.emergency_rounded : Icons.navigation_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+              label: Text(
+                isEmergency ? 'Respond to Emergency' : 'View Trip Navigation',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: Colors.white,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isEmergency ? AppTheme.errorColor : AppTheme.primaryColor,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

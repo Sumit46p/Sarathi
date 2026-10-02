@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
+import '../widgets/truck_loader.dart';
 
 class FuelEntryScreen extends StatefulWidget {
   const FuelEntryScreen({super.key});
@@ -19,6 +20,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
   List<dynamic> _fuelEntries = [];
   String? _error;
   bool _isSubmitting = false;
+  String? _assignedVehicleFuelType;
 
   final _formKey = GlobalKey<FormState>();
   final _litersController = TextEditingController();
@@ -30,8 +32,6 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
   XFile? _receiptImage;
 
   String _selectedFuelType = 'petrol';
-  double? _costPerLiter;
-  Map<String, double> _fuelPrices = {};
 
   @override
   void initState() {
@@ -54,35 +54,16 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
       _error = null;
     });
 
-    // Load prices (independent of entries)
-    try {
-      final prices = await ApiService.getFuelPrices();
-      if (mounted) {
-        setState(() {
-          if (prices.isNotEmpty) {
-            _fuelPrices = prices;
-            _costPerLiter = prices[_selectedFuelType];
-            _costController.text = _costPerLiter?.toStringAsFixed(2) ?? '0.00';
-          } else {
-            _fuelPrices = {'petrol': 0.0, 'diesel': 0.0};
-            _costPerLiter = null;
-            _costController.text = '0.00';
-          }
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _fuelPrices = {'petrol': 0.0, 'diesel': 0.0};
-          _costPerLiter = null;
-          _costController.text = '0.00';
-        });
-      }
-    }
-
-    // Load entries
     try {
       final entries = await ApiService.getFuelEntries();
+      try {
+        final profile = await ApiService.getDriverMe();
+        final vehicle = profile?['assigned_vehicle'] as Map<String, dynamic>?;
+        if (vehicle != null && vehicle['fuel_type'] != null) {
+          _assignedVehicleFuelType = vehicle['fuel_type'].toString().toLowerCase();
+        }
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
           _fuelEntries = entries;
@@ -104,9 +85,27 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
   void _handleFuelTypeChange(String fuelType) {
     setState(() {
       _selectedFuelType = fuelType;
-      _costPerLiter = _fuelPrices[fuelType] ?? 0.0;
-      _costController.text = _costPerLiter?.toStringAsFixed(2) ?? '0.00';
+      // Clear price when switching type so user enters the correct price
+      _costController.clear();
     });
+  }
+
+  String _costUnitLabel() {
+    switch (_selectedFuelType) {
+      case 'ev':
+        return 'Cost per kWh (रु)';
+      default:
+        return 'Cost per Liter (रु)';
+    }
+  }
+
+  String _quantityLabel() {
+    switch (_selectedFuelType) {
+      case 'ev':
+        return 'Energy Charged (kWh)';
+      default:
+        return 'Liters';
+    }
   }
 
   Future<void> _pickReceipt() async {
@@ -142,7 +141,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
     if (_receiptImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please take a receipt photo.'),
+          content: Text('Please take a receipt / charging photo.'),
           backgroundColor: AppTheme.errorColor,
           behavior: SnackBarBehavior.floating,
         ),
@@ -151,16 +150,17 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
     }
     setState(() => _isSubmitting = true);
 
-    final liters = double.tryParse(_litersController.text) ?? 0;
+    final quantity = double.tryParse(_litersController.text) ?? 0;
+    final costPerUnit = double.tryParse(_costController.text) ?? 0;
     final odometer = double.tryParse(_odometerController.text);
     final notes = _notesController.text;
 
-    if (_costPerLiter == null || _costPerLiter! <= 0) {
+    if (costPerUnit <= 0) {
       if (mounted) {
         setState(() => _isSubmitting = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Invalid fuel price. Please try again.'),
+            content: Text('Please enter a valid price per unit.'),
             backgroundColor: AppTheme.errorColor,
             behavior: SnackBarBehavior.floating,
           ),
@@ -168,11 +168,12 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
       }
       return;
     }
+    final liters = quantity;
 
     final success = await ApiService.createFuelLog(
       fuelType: _selectedFuelType,
       liters: liters,
-      costPerLiter: _costPerLiter!,
+      costPerLiter: costPerUnit,
       odometerReading: odometer,
       notes: notes,
       receiptImagePath: _receiptImage!.path,
@@ -211,10 +212,15 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
     _litersController.clear();
     _odometerController.clear();
     _notesController.clear();
+    _costController.clear();
     _receiptImage = null;
-    _selectedFuelType = 'petrol';
-    _costPerLiter = _fuelPrices['petrol'];
-    _costController.text = (_fuelPrices['petrol'] ?? 0.0).toStringAsFixed(2);
+    if (_assignedVehicleFuelType == 'ev') {
+      _selectedFuelType = 'ev';
+    } else if (_assignedVehicleFuelType == 'diesel') {
+      _selectedFuelType = 'diesel';
+    } else {
+      _selectedFuelType = 'petrol';
+    }
 
     showModalBottomSheet(
       context: context,
@@ -255,7 +261,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'New Fuel Entry',
+                          _selectedFuelType == 'ev' ? 'New EV Charging Entry' : 'New Fuel Entry',
                           style: GoogleFonts.inter(
                             fontSize: 20,
                             fontWeight: FontWeight.w600,
@@ -270,9 +276,9 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Fuel Type
+                    // Fuel / Energy Type
                     Text(
-                      'Fuel Type',
+                      'Fuel / Energy Type',
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -283,23 +289,32 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: _buildFuelTypeChip('petrol', 'Petrol', setSheetState),
+                          child: _buildFuelTypeChip('petrol', 'Petrol ⛽', setSheetState),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                         Expanded(
-                          child: _buildFuelTypeChip('diesel', 'Diesel', setSheetState),
+                          child: _buildFuelTypeChip('diesel', 'Diesel ⛽', setSheetState),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildFuelTypeChip('ev', 'EV ⚡', setSheetState),
                         ),
                       ],
                     ),
                     const SizedBox(height: 20),
 
-                    // Liters
+                    // Quantity (Liters or kWh)
                     TextFormField(
                       controller: _litersController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setSheetState(() {}),
                       decoration: InputDecoration(
-                        labelText: 'Liters',
-                        prefixIcon: const Icon(Icons.water_drop_outlined),
+                        labelText: _quantityLabel(),
+                        prefixIcon: Icon(
+                          _selectedFuelType == 'ev'
+                              ? Icons.bolt_outlined
+                              : Icons.water_drop_outlined,
+                        ),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       validator: (val) {
@@ -311,19 +326,33 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Cost per Liter
+                    // Cost per unit (manual entry)
                     TextFormField(
                       controller: _costController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      readOnly: true,
+                      onChanged: (_) => setSheetState(() {}),
                       decoration: InputDecoration(
-                        labelText: 'Cost per Liter (रु)',
+                        labelText: _costUnitLabel(),
                         prefixText: 'रु ',
+                        prefixIcon: Icon(
+                          _selectedFuelType == 'ev'
+                              ? Icons.electric_bolt
+                              : Icons.local_gas_station_outlined,
+                          color: _selectedFuelType == 'ev'
+                              ? Colors.amber
+                              : AppTheme.primaryColor,
+                        ),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        helperText: 'Auto-filled from NOC prices',
-                        filled: true,
-                        fillColor: AppTheme.surfaceVariant,
+                        helperText: _selectedFuelType == 'ev'
+                            ? 'Enter charging price per kWh'
+                            : 'Enter current fuel price per litre',
                       ),
+                      validator: (val) {
+                        if (val == null || val.isEmpty) return 'Required';
+                        final v = double.tryParse(val);
+                        if (v == null || v <= 0) return 'Enter a valid price';
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 16),
 
@@ -338,7 +367,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Total Amount',
+                            _selectedFuelType == 'ev' ? 'Total Charging Cost' : 'Total Fuel Cost',
                             style: GoogleFonts.inter(
                               fontSize: 14,
                               color: AppTheme.onSurfaceVariant,
@@ -349,7 +378,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                             style: GoogleFonts.inter(
                               fontSize: 20,
                               fontWeight: FontWeight.w700,
-                              color: AppTheme.primaryColor,
+                              color: _selectedFuelType == 'ev' ? Colors.amber.shade700 : AppTheme.primaryColor,
                             ),
                           ),
                         ],
@@ -381,9 +410,9 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // Receipt photo
+                    // Receipt / Charging photo
                     Text(
-                      'Receipt Photo *',
+                      _selectedFuelType == 'ev' ? 'Charging Receipt Photo *' : 'Fuel Receipt Photo *',
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -509,6 +538,14 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
 
   Widget _buildFuelTypeChip(String value, String label, StateSetter setSheetState) {
     final isSelected = _selectedFuelType == value;
+    Color selectedColor;
+    switch (value) {
+      case 'ev':
+        selectedColor = Colors.green.shade600;
+        break;
+      default:
+        selectedColor = AppTheme.primaryColor;
+    }
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
@@ -519,14 +556,14 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primaryColor : AppTheme.surfaceVariant,
+          color: isSelected ? selectedColor : AppTheme.surfaceVariant,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
           label,
           textAlign: TextAlign.center,
           style: GoogleFonts.inter(
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
             color: isSelected ? Colors.white : AppTheme.onSurface,
           ),
@@ -541,7 +578,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: Text(
-          'Fuel Entries',
+          'Fuel & Energy Entries',
           style: GoogleFonts.inter(fontWeight: FontWeight.w600),
         ),
         backgroundColor: AppTheme.surface,
@@ -552,7 +589,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
+          ? const TruckLoaderCenter()
           : _error != null
               ? _buildErrorState()
               : _fuelEntries.isEmpty
@@ -562,7 +599,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
         onPressed: _showAddEntrySheet,
         backgroundColor: AppTheme.primaryColor,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: Text('Add Fuel', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+        label: Text('Add Entry', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
       ),
     );
   }
@@ -608,7 +645,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
           ),
           const SizedBox(height: 24),
           Text(
-            'No fuel entries yet',
+            'No fuel or energy entries yet',
             style: GoogleFonts.inter(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -637,6 +674,7 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
         itemCount: _fuelEntries.length,
         itemBuilder: (context, index) {
           final entry = _fuelEntries[index];
+          final isEv = entry['fuel_type'] == 'ev';
           final date = DateTime.tryParse(entry['created_at'] ?? '');
           final formattedDate = date != null ? DateFormat('MMM d, y • h:mm a').format(date.toLocal()) : 'Unknown Date';
           final receiptUrl = entry['receipt_image_url'] as String?;
@@ -666,14 +704,14 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryColor.withOpacity(0.1),
+                        color: isEv ? Colors.green.withOpacity(0.12) : AppTheme.primaryColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
                         'रु ${entry['amount']}',
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.w600,
-                          color: AppTheme.primaryColor,
+                          color: isEv ? Colors.green.shade700 : AppTheme.primaryColor,
                         ),
                       ),
                     ),
@@ -688,8 +726,10 @@ class _FuelEntryScreenState extends State<FuelEntryScreen> {
                   const SizedBox(height: 12),
                 ],
                 _buildInfoRow(
-                  Icons.water_drop_outlined,
-                  '${entry['liters']} L • ${entry['fuel_type']}',
+                  isEv ? Icons.electric_bolt : Icons.water_drop_outlined,
+                  isEv
+                      ? '${entry['liters']} kWh • EV Charging'
+                      : '${entry['liters']} L • ${entry['fuel_type'] ?? 'Fuel'}',
                 ),
                 if (receiptUrl != null && receiptUrl.isNotEmpty) ...[
                   const SizedBox(height: 12),

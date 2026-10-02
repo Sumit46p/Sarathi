@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Search, MapPin, Navigation, AlertTriangle, CheckCircle2,
   Clock, Shield, Phone, User, Radio, ChevronDown, ChevronUp,
@@ -347,6 +347,17 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
   // Active Operations List
   const [activeOperations, setActiveOperations] = useState<ActiveDispatch[]>([]);
 
+  // Filter active operations to strictly live in-transit/active operations (excluding halted/broken down or finished)
+  const liveOperations = useMemo(() => {
+    return activeOperations.filter(
+      (op) =>
+        op.status !== 'VEHICLE_BREAKDOWN' &&
+        op.status !== 'RECOVERY_IN_PROGRESS' &&
+        op.status !== 'completed' &&
+        op.status !== 'cancelled'
+    );
+  }, [activeOperations]);
+
   // Close search dropdown on click outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -645,6 +656,22 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
     }
   };
 
+  // Cancel / Terminate an active operation
+  const handleCancelOperation = async (dispatchId: number) => {
+    if (!window.confirm('Are you sure you want to cancel this dispatch operation?')) {
+      return;
+    }
+    try {
+      await api.post(`/dispatch/${dispatchId}/transition/`, { status: 'cancelled' });
+      toast.success('Dispatch operation cancelled.');
+      refreshOperations();
+      if (onRefreshVehicles) onRefreshVehicles();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to cancel operation.';
+      toast.error(msg);
+    }
+  };
+
   return (
     <div className="dispatch-super-workspace">
       {/* Left Control Rail */}
@@ -681,7 +708,7 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
             title="Live fleet operations"
           >
             <Radio size={15} />
-            <span>Active ({activeOperations.length})</span>
+            <span>Active ({liveOperations.length})</span>
           </button>
         </div>
 
@@ -1091,14 +1118,14 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
             <div className="command-card">
               <div className="step-tag">
                 <Radio size={15} />
-                <span>Live Fleet Operations ({activeOperations.length})</span>
+                <span>Live Fleet Operations ({liveOperations.length})</span>
               </div>
 
-              {activeOperations.length === 0 ? (
+              {liveOperations.length === 0 ? (
                 <p className="placeholder-text">No logistics deliveries currently in transit.</p>
               ) : (
                 <div className="active-ops-list">
-                  {activeOperations.map((op) => (
+                  {liveOperations.map((op) => (
                     <div key={op.id} className="active-op-card">
                       <div className="op-card-header">
                         <div>
@@ -1184,6 +1211,17 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
                             <span>Report Breakdown</span>
                           </button>
                         )}
+
+                        {/* Cancel / Terminate Action */}
+                        <button
+                          type="button"
+                          className="stage-btn cancel-btn"
+                          title="Cancel this dispatch operation"
+                          onClick={() => handleCancelOperation(op.id)}
+                        >
+                          <X size={12} />
+                          <span>Cancel Trip</span>
+                        </button>
                       </div>
                     </div>
                   ))}

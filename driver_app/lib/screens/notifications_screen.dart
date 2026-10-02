@@ -5,6 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
 import '../utils/animations.dart';
+import '../widgets/truck_loader.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -99,7 +100,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         children: [
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
+                ? const TruckLoaderCenter()
                 : _errorMsg != null
                     ? Center(
                         child: Padding(

@@ -1,135 +1,165 @@
-# 🚑 Sarthi — Intelligent Vehicle Dispatch & Fleet Management Platform
+# 🚛 Sarathi — Intelligent Fleet Management & Dispatch Platform
 
-Sarthi is an enterprise-grade, location-aware vehicle dispatch and fleet intelligence platform built for emergency response, municipal services, enterprise logistics, public transit, and commercial vehicle rentals. It combines real-time geospatial tracking, automated multi-factor dispatch ranking, rules-based alert evaluation, live route playback, and rental workflows. The platform is powered by a high-performance Django + PostGIS backend with OSRM real-road routing, a Redis-backed real-time WebSocket messaging layer, a React + TypeScript dispatcher workspace, and a cross-platform Flutter driver mobile app.
+> **Enterprise-grade, location-aware fleet intelligence** for emergency response, municipal services, logistics, public transit, and commercial rentals.
+
+Sarathi is a full-stack mono-repo combining:
+- 🐍 **Django + PostGIS** backend with OSRM real-road routing
+- ⚡ **Redis** for caching, session storage, and WebSocket messaging
+- ⚛️ **React 19 + TypeScript + Vite** dispatcher workspace
+- 📱 **Flutter** cross-platform driver mobile app
 
 ---
 
-## ✅ Current Status
+## 📐 Architecture Overview
 
-### Core Platform
-- [x] Django project scaffolded (`sarthi_backend`)
-- [x] PostGIS database running via Docker
-- [x] Vehicle model with GPS PointField + admin map picker
-- [x] JWT Authentication & Accounts app (`rest_framework_simplejwt`)
+```
+sarathi/
+├── sarthi_backend/          # Django project settings & ASGI config
+├── vehicles/                # Core fleet models, dispatch engine, rules engine
+├── accounts/                # JWT auth, organization, driver profiles
+├── frontend/                # React + TypeScript + Vite dispatcher dashboard
+│   └── src/
+│       ├── components/      # Dashboard tabs, maps, dispatch workspace
+│       └── hooks/           # WebSocket, polling, auth hooks
+├── driver_app/              # Flutter driver mobile app
+│   └── lib/
+│       ├── screens/         # All app screens (dashboard, trips, fuel, etc.)
+│       ├── widgets/         # Reusable widgets (truck loader animation, etc.)
+│       ├── services/        # API service layer
+│       └── theme.dart       # Design system / color tokens
+├── docker-compose.redis.yml # Redis 7 with AOF persistence
+├── requirements.txt         # Python dependencies
+└── manage.py
+```
+
+---
+
+## ✅ Feature Checklist
+
+### 🔐 Authentication & Multi-Tenancy
+- [x] JWT authentication (`djangorestframework-simplejwt`)
 - [x] Login accepts **username or email**
-- [x] Frontend auth pages (Login & Signup)
-- [x] React Router with Protected Routes
-- [x] Organization scoping (per-admin/org data isolation)
+- [x] Organization scoping — each admin sees only their own fleet/drivers
+- [x] Role-based profiles: `admin`, `dispatcher`, `viewer`, `driver`
+- [x] Auth rate limiting: login (30/min), register (10/hr), password reset (5/hr)
+- [x] Case-insensitive organization name matching
+- [x] First-login forced password change flow (`requires_password_change` flag)
+- [x] JWT session jitter (±5 min) to prevent thundering-herd on mass token expiry
 
-### Fleet & Dispatch
-- [x] Vehicle CRUD (API + dashboard UI)
-- [x] Vehicle number plates
-- [x] Driver management via `vehicles.Driver` model + `accounts` JWT auth
-- [x] **Admin-created driver logins**: admin creates a driver with `username` + `password` (Django `User` linked to the `Driver` profile)
-- [x] **Two-way availability sync**: `Driver.is_on_duty` + `Vehicle.admin_blocked` derive `Vehicle.is_available` (driver toggle drives availability; admin block overrides it)
-- [x] Nearest-vehicle dispatch (PostGIS distance, OSRM-ranked)
-- [x] Dispatch UI (map click → assign → route line)
-- [x] **Dispatch lifecycle** (`assigned → accepted → en_route → arrived → completed`, plus `cancelled`) — dispatcher **or** driver can accept (first wins)
-- [x] Location simulator (stands in for the Flutter app)
+### 🚗 Fleet & Vehicle Management
+- [x] Vehicle CRUD (REST API + dashboard UI)
+- [x] Vehicle number plates, fuel types (Petrol / Diesel / EV)
+- [x] Extended categories: Rental, Government, Company, Personal, Logistics, Public Transport, Commercial
+- [x] Custom vehicle photo upload (rendered on map markers and cards)
+- [x] **Derived availability**: `is_available = driver.is_on_duty AND NOT admin_blocked`
+- [x] Two-way availability sync — driver toggle drives availability; admin block overrides
+- [x] Vehicle telemetry overlay: speed, heading, battery/fuel level
+
+### 👨‍✈️ Driver Management
+- [x] Admin-created driver logins (Django `User` linked to `Driver` profile)
+- [x] Driver assigned to a vehicle; driver on-duty toggle drives vehicle availability
+- [x] Driver safety score: `GET /api/drivers/<id>/score/` — 0–100 based on harsh driving events (last 30 days)
+- [x] Harsh driving event detection: server-side heuristic (`harsh_accel` / `harsh_brake` / `harsh_turn`)
+
+### 📍 Dispatch & Routing
+- [x] **Universal Dispatch Engine** (`vehicles/dispatch_engine.py`) — multi-factor candidate ranking: driver status, road travel time, distance, vehicle suitability, battery/fuel level, emergency priority
+- [x] Nearest-vehicle dispatch with PostGIS distance + OSRM-ranked travel time
+- [x] **Interactive Dispatch Workspace** — auto-recommendation, one-click manual/automated assignment, live candidate list
+- [x] Full dispatch lifecycle: `assigned → accepted → en_route → arrived → completed` (+ `cancelled`)
+- [x] Dispatcher **and** driver can accept (first-wins race)
+- [x] OSRM real-road routing — route geometry returned to dashboard and driver app
+- [x] Live ETA + route progress (`progress_percent`, `remaining_distance_km`, `eta_min`)
+- [x] Dispatch CSV export: `GET /api/dispatch/export/`
+
+### 🗺️ Real-Time Tracking
+- [x] GPS breadcrumb recording (`LocationRecord` model)
 - [x] Live vehicle map (Leaflet, 5s polling)
-- [x] **Clickable fleet rows → live vehicle map panel** (see a vehicle's real-time position on demand)
-- [x] OSRM real-road routing (route geometry returned to both dashboard and driver app)
-- [x] Token refresh flow
-....................................
-### Driver Mobile App (Flutter) — built
-- [x] JWT login (username/email + password + organization_name)
-- [x] **On Duty toggle** → sets `Driver.is_on_duty` (requests location permission, sends immediate GPS fix + 5s polling)
-- [x] Driver's assigned vehicle shown from `/api/drivers/me/`
-- [x] **Trips tab**: live dispatch route on a map + status transitions (Accept / En Route / Arrived / Complete)
-- [x] **First-login password change** (forced when `requires_password_change` is true)
-- [x] **Report Issue** screen: submit descriptions + optional photo via `POST /api/drivers/me/report-issue/`
-- [x] **Emergency SOS** screen: send emergency requests with location, description, and photo via `POST /api/emergency/requests/create/`
-- [x] **Maintenance Request** screen: request maintenance with description and image via `POST /api/drivers/me/maintenance-request/`
-- [x] Profile, Alerts, SOS placeholders
+- [x] **Live Fleet Telemetry tab** — full-screen map with status filter pills (all, on duty, en route, idle, offline)
+- [x] Clickable fleet rows → live vehicle map panel
+- [x] **Rules & Alerts Engine** (`vehicles/rules_engine.py`) — geofencing, speed limits, max idling, service boundaries
 
-### Implemented (completed in this cycle)
-- [x] Maintenance monitoring + scheduled service alerts (CRUD, overdue flagging, dashboard UI)
-- [x] Maintenance tab in frontend (vehicle-filtered table, status badges, mark-complete, delete)
-- [x] Removed Firebase/`drivers` app — standardized on Django REST + JWT (no separate `drivers` app)
-- [x] Active dispatch endpoint (`GET /api/dispatch/active/`) — returns owner's latest active dispatch with live OSRM route geometry
-- [x] Dashboard polls active dispatch every 5s and renders the live route as a green polyline on the map
-- [x] Fixed vehicle availability bug: `has_active_dispatch` method call in `is_available` derivation
-- [x] **Driver password change flow**: `requires_password_change` flag forces first-login password reset (`PATCH /api/drivers/me/change-password/`)
-- [x] **Driver Report Issue feature**: backend `IssueReport` model + `POST /api/drivers/me/report-issue/` (multipart, optional photo); Flutter `ReportIssueScreen` with description, camera/gallery upload, submit confirmation
-- [x] **Flutter UI enhancements**: custom animations (`SmoothPageRoute`, `AnimatedListItem`), splash screen animation, haptic feedback, staggered list animations, improved bottom nav, polished cards/buttons
-- [x] **Admin-facing issue report view**: backend `IssueReport` now uses `status` workflow (`open` → `acknowledged` → `resolved`); admin endpoints `GET /api/issues/` (owner-scoped list) and `PATCH /api/issues/<id>/` (status update); frontend `IssuesTab` with photo thumbnails, status badges, Acknowledge/Resolve actions, and open-count badge on sidebar nav; fleet table shows warning indicator on vehicles with open driver issues
-- [x] **Maintenance completion tracking**: `MaintenanceRecord` model now includes `proof_image`, `completed_by` (Driver FK), and `completion_notes` fields for driver-submitted completion evidence
-- [x] **FuelLog model**: New model for tracking fuel expenses with vehicle, driver, amount, odometer reading, receipt image, and automatic timestamp
-- [x] **FuelEntry model**: Alternative fuel tracking with detailed metrics (liters, cost_per_liter, total_cost, odometer_km, notes)
-- [x] **Driver maintenance endpoints**: `GET /api/drivers/me/maintenance/` (list assigned vehicle maintenance) and `POST /api/drivers/me/maintenance/<id>/complete/` (mark complete with proof image and notes)
-- [x] **Driver fuel log endpoints**: `POST /api/drivers/me/fuel-logs/` (submit fuel log with receipt) and `GET /api/fuel-logs/` (admin view all fuel logs)
-- [x] **Automatic maintenance recurrence**: `_auto_create_next_record()` helper automatically creates next recurring maintenance record when one is completed (supports both time-based and km-based recurrence)
-- [x] **MaintenanceRecordDetailView enhancement**: `perform_update` now calls recurrence helper when status changes to 'completed'
+### 📜 Trip History & Route Playback
+- [x] Trip history API: `GET /api/trips/`
+- [x] Route playback API: `GET /api/trips/<id>/playback/` — time-ordered GPS breadcrumbs
+- [x] Frontend Trip History tab — animated route playback with play/pause, speed control, scrubber
+- [x] Flutter trip history screen — high-contrast cards with status pills and pull-to-refresh
 
-### Robustness & Polish Pass
-- [x] **Backend**: Case-insensitive organization name matching across login, password reset, and identity verification flows
-- [x] **Backend**: Fixed DriverMeSerializer KeyError by including `requires_password_change` in duty endpoint response
-- [x] **React Dashboard**: Loading skeletons on all data-fetching components
-- [x] **React Dashboard**: Empty states with clear messaging
-- [x] **React Dashboard**: Error banners with dismiss & retry buttons on all CRUD operations
-- [x] **React Dashboard**: Success/error toast notifications on create/update/delete actions
-- [x] **Flutter Driver App**: Location permission denied shows in-app dialog with "Open Settings" button
-- [x] **Flutter Driver App**: Network loss during location polling retries quietly every 5s
-- [x] **Flutter Driver App**: Trips screen distinguishes "No active trip" (empty state) from network error (retry button)
-- [x] All error handling maintains API contracts — no breaking changes to endpoints or responses
+### ⛽ Fuel Management & Expense Tracking
+- [x] `FuelEntry` model — liters, cost_per_liter, total_cost, odometer, notes, receipt image
+- [x] Driver fuel log endpoints: `POST /api/drivers/me/fuel-logs/`, `GET /api/fuel-logs/`
+- [x] NOC (Nepal Oil Corporation) fuel price integration — daily scrape + 24hr cache
+- [x] Fuel price API: `GET /api/fuel-prices/`
+- [x] Fuel summary metrics: total entries, total cost, this-month cost, distinct vehicles
+- [x] Vehicle filter + search in fuel tab
+- [x] Receipt preview modal (click thumbnail → full-size)
+- [x] Fuel history list in Flutter driver app (pull-to-refresh, status cards)
 
-### Fuel Management & Expense Tracking
-- [x] **NOC fuel price integration**: Automatic scraping of petrol/diesel prices from Nepal Oil Corporation (updated daily)
-- [x] **Fuel price API**: `GET /api/fuel-prices/` returns current fuel prices with 24-hour caching
-- [x] **FuelTab redesign**: Rebuilt with dashboard design system
-- [x] **Fuel summary metrics**: Total entries, total cost, this-month cost, distinct vehicles fuelled
-- [x] **Vehicle filter + search**: Filter fuel records by vehicle, search by vehicle/driver name
-- [x] **Receipt preview modal**: Click receipt thumbnail to view full-size image in modal
+### 🔧 Maintenance
+- [x] `MaintenanceRecord` model with `proof_image`, `completed_by` (Driver FK), `completion_notes`
+- [x] Driver maintenance endpoints: `GET /api/drivers/me/maintenance/`, `POST /api/drivers/me/maintenance/<id>/complete/`
+- [x] Maintenance CRUD in admin dashboard — overdue flagging, status badges, mark-complete
+- [x] Automatic recurrence — `_auto_create_next_record()` creates the next recurring record on completion (time-based and km-based)
+- [x] Maintenance history list in Flutter driver app (green FAB, high-contrast cards)
 
-### Exports, Security & Analytics
-- [x] **Auth rate limiting**: DRF throttles on login (30/min), register (10/hour), password reset (5/hour), and identity verification (20/hour) per IP
-- [x] **Dispatch CSV export**: `GET /api/dispatch/export/` downloads org-scoped dispatch history with optional filters
-- [x] **Expense PDF report**: `GET /api/expenses/report/pdf/` generates an expense summary PDF (fuel + maintenance, per-vehicle breakdown)
-- [x] **Analytics: fuel efficiency**: `analytics_dashboard` now reports `km_per_liter` per vehicle
-- [x] **Analytics: driver performance**: Per-driver trip totals, acceptance rate, completion counts, and color-coded safety score
-- [x] **Driver safety score**: `GET /api/drivers/<id>/score/` — 0–100 score based on harsh driving events over last 30 days
-- [x] **Harsh driving event detection**: Server-side heuristic detects `harsh_accel` / `harsh_brake` / `harsh_turn` from consecutive GPS breadcrumbs
+### 🆘 Emergency SOS
+- [x] `EmergencyRequest` model with location, description, photo
+- [x] Driver endpoint: `POST /api/emergency/requests/create/`
+- [x] Admin endpoint: `GET /api/emergency/requests/` (org-scoped), drivers see their own
+- [x] Emergency history list in Flutter driver app (red accent, FAB, pull-to-refresh)
+- [x] Admin dashboard emergency tab with status workflow
 
-### Trip History & Route Playback
-- [x] **Live ETA + route progress**: Active dispatch returns `progress_percent`, `remaining_distance_km`, and `eta_min`
-- [x] **GPS breadcrumb recording**: Every location fix is stored in `LocationRecord` model
-- [x] **Trip history API**: `GET /api/trips/` lists finished dispatches
-- [x] **Route playback API**: `GET /api/trips/<id>/playback/` returns time-ordered GPS breadcrumbs
-- [x] **Frontend Trip History tab**: Animated route playback with play/pause, speed control, scrubber
+### 🐛 Issue Reporting
+- [x] `IssueReport` model with status workflow: `open → acknowledged → resolved`
+- [x] Driver endpoint: `POST /api/drivers/me/report-issue/` (multipart, optional photo)
+- [x] Admin endpoints: `GET /api/issues/`, `PATCH /api/issues/<id>/`
+- [x] Frontend Issues tab — photo thumbnails, status badges, Acknowledge/Resolve actions
+- [x] Fleet table warning indicator on vehicles with open issues
+- [x] Issue history list in Flutter driver app (high-contrast cards, FAB)
 
-### 🆕 Redis Caching & Real-Time WebSocket Notifications
-- [x] **Redis infrastructure**: `docker-compose.redis.yml` with Redis 7 Alpine + AOF persistence enabled
-- [x] **Django Redis cache backend**: `django-redis` configured for CACHES (db=1) with `IGNORE_EXCEPTIONS=True` (graceful fallback to in-memory on Redis failure)
-- [x] **Redis session store**: Sessions stored in Redis (db=1) with **12-hour TTL**
-- [x] **JWT session jitter**: Each login response includes `expires_in` with ±5-minute random jitter to prevent thundering-herd stampedes on mass token expiry
-- [x] **Cache jitter utility** (`vehicles/cache_utils.py`): `jittered_ttl(base, jitter)` applied to all `cache.set()` calls — OSRM routes (20–40s), GPS breadcrumbs (30–90s)
-- [x] **DRF throttle cache**: Rate-limiting (login, register, etc.) now persists across server restarts via Redis
-- [x] **Django Channels**: Upgraded ASGI to `ProtocolTypeRouter` with a JWT-authenticated `NotificationConsumer`
-- [x] **WebSocket channel groups**: Each user joins `user_notifications_<id>` (personal) and `org_notifications_<org>` (organization-wide) groups on connect
-- [x] **Real-time push signals**: `post_save` signals on `IssueReport`, `EmergencyRequest`, `MaintenanceRecord`, and `Notification` instantly push JSON payloads to the org admin group via Redis channel layer
-- [x] **Frontend WebSocket hook** (`useAdminNotifications.ts`): Connects via `ws://localhost:8000/ws/notifications/?token=<jwt>`, reconnects automatically on disconnect
-- [x] **Smart polling fallback**: Dashboard 5-second polling loop skips `issues`, `emergencies`, and `maintenance` endpoints while WebSocket is healthy; falls back to polling immediately on disconnect
-- [x] **Instant targeted refetch**: WebSocket events trigger immediate refetch of only the affected data type (no full dashboard refresh)
-- [x] **NotificationBell integration**: Bell icon wired to the hook with live `markAsRead` and `deleteNotification` actions
+### 📊 Analytics & Reporting
+- [x] Analytics dashboard — `km_per_liter` per vehicle, per-driver trip totals
+- [x] Driver performance metrics: acceptance rate, completion counts, safety score
+- [x] Expense PDF report: `GET /api/expenses/report/pdf/` (fuel + maintenance, per-vehicle)
 
-### 🚀 Operations & Dispatch Intelligence Suite
-- [x] **Universal Dispatch Engine** (`vehicles/dispatch_engine.py`): Multi-factor candidate ranking algorithm that calculates match scores based on driver status, road travel time, distance, vehicle suitability, battery/fuel levels, and emergency priority.
-- [x] **Interactive Dispatch Workspace** (`frontend/src/components/DispatchWorkspace.tsx`): Real-time dispatcher console supporting candidate auto-recommendation, one-click manual or automated assignment, destination routing, and instant driver notification.
-- [x] **Rules & Alerts Engine** (`vehicles/rules_engine.py`): Automated policy evaluation for geofencing, speed limits, maximum idling, and service boundaries with instant alerts (`Alert` and `Rule` models).
-- [x] **Live Fleet Telemetry & Tracking Tab** (`frontend/src/components/LiveTrackingTab.tsx`, `LiveTracking.tsx`): Full-screen real-time telemetry map with status filter pills (all, on duty, en route, idle, offline), vehicle telemetry overlay, speed gauges, and camera centering.
-- [x] **Fixed Routes & Stops Management** (`frontend/src/components/RoutesTab.tsx`): Define fixed routes with sequenced waypoints/stops, vehicle route assignments, and schedule tracking.
-- [x] **Commercial Rental Management** (`frontend/src/components/RentalsTab.tsx`): End-to-end commercial vehicle rental tracking including customer details, rental start/end dates, rates, and active vehicle assignment.
-- [x] **Enhanced Vehicle Profiles & Media**: Custom vehicle photo upload (rendered on map markers and cards), fuel types (Petrol, Diesel, EV), and expanded categories (Rental, Government, Company, Personal, Logistics, Public Transport, Commercial).
-- [x] **Multi-Tenant Organization & Fleet Scoping**: First-class `Organization` and `Fleet` data models with role-based profile permissions (`admin`, `dispatcher`, `viewer`, `driver`).
+### 🔔 Real-Time WebSocket Notifications
+- [x] **Redis channel layer** (Django Channels) — `ProtocolTypeRouter` + JWT-authenticated `NotificationConsumer`
+- [x] Channel groups: `user_notifications_<id>` (personal) + `org_notifications_<org>` (org-wide)
+- [x] `post_save` signals on `IssueReport`, `EmergencyRequest`, `MaintenanceRecord`, `Notification` → instant push
+- [x] Frontend `useAdminNotifications.ts` hook — auto-reconnects on disconnect
+- [x] Smart polling fallback — skips issues/emergencies/maintenance while WebSocket is healthy
+- [x] Instant targeted refetch — only affected data type refreshed per event
+- [x] `NotificationBell` with live `markAsRead` + `deleteNotification`
 
-### Not Yet Started / Partial
+### 🛣️ Fixed Routes & Rentals
+- [x] Fixed Routes tab — sequenced waypoints/stops, vehicle assignment, schedule tracking
+- [x] Commercial Rental tab — customer details, rental start/end dates, rates, active vehicle assignment
+
+### 📱 Flutter Driver App — Full Feature List
+- [x] JWT login (username/email + password + organization name)
+- [x] On-Duty toggle → sets `Driver.is_on_duty`, requests location permission, sends GPS at 5s interval
+- [x] Assigned vehicle shown from `/api/drivers/me/`
+- [x] **Dashboard** — status overview, weather-style cards
+- [x] **Trips tab** — live dispatch route on Leaflet map, status transitions (Accept / En Route / Arrived / Complete)
+- [x] **Fuel Entry tab** — submit fuel logs with receipt, history list with pull-to-refresh
+- [x] **Maintenance tab** — history list, mark-complete with proof photo, green FAB
+- [x] **Report Issue tab** — description + optional photo, history list with status pills
+- [x] **Emergency SOS tab** — location auto-fill, description + optional photo, history list
+- [x] **Trip History tab** — completed trip cards with status, pull-to-refresh
+- [x] **Notifications tab** — real-time alert cards
+- [x] **Profile tab** — driver info, duty toggle, logout
+- [x] **Custom truck loading animation** — animated truck drives across a road track (replaces `CircularProgressIndicator` app-wide)
+- [x] Custom animations: `SmoothPageRoute`, `AnimatedListItem`, staggered list animations
+- [x] Haptic feedback on key interactions
+- [x] Location permission denied → in-app dialog with "Open Settings"
+- [x] Network loss during GPS polling → quiet 5s retry
+- [x] Trips screen: distinguishes "No active trip" (empty) from network error (retry)
+
+### 🚧 Not Yet Started / Planned
 - [ ] Firebase Cloud Messaging push notifications (mobile)
 - [ ] Docker Compose full-stack deployment (Nginx + Gunicorn + Daphne)
 - [ ] Automated integration test suite
-- [ ] User Acceptance Testing (UAT) with a partner organization
+- [ ] User Acceptance Testing (UAT)
 - [ ] Performance benchmarking (sub-2s dispatch @ 50 concurrent updates/sec)
-
-> **Architecture Note:** Vehicles and drivers are scoped per-admin/organization. An admin only sees and manages vehicles/drivers belonging to their own organization (Ambulance, Logistics, or Municipal). A `Driver` is linked to a Django `User` (for mobile login) and optionally assigned to a `Vehicle`. Vehicle availability is **derived**: `is_available = driver.is_on_duty AND NOT admin_blocked`.
 
 ---
 
@@ -137,126 +167,89 @@ Sarthi is an enterprise-grade, location-aware vehicle dispatch and fleet intelli
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Python | 3.11+ | Tested with 3.x on Windows |
-| Node.js | 18+ | For the React frontend (Vite) |
-| Flutter | 3.x | For the driver mobile app (`driver_app/`) |
+| Python | 3.11+ | Tested on Windows with 3.x |
+| Node.js | 18+ | For the React/Vite frontend |
+| Flutter | 3.x (SDK ^3.11.5) | For the driver mobile app |
 | Docker | Latest | For PostGIS + Redis containers |
 | GDAL/GEOS | via OSGeo4W | Required for GeoDjango spatial fields |
-| Git | Latest | For version control |
+| Git | Latest | |
 
 ---
 
-## 🚀 Setup Instructions
-
-Follow these steps **exactly** to get the project running on your machine.
+## 🚀 Quick Start
 
 ### 1. Clone the repo
 
 ```bash
 git clone https://github.com/Sumit46p/Sarathi.git
-cd Sarathi
+cd Sarathi/sarathi
 ```
 
-### 2. Start the PostGIS database (Docker)
+### 2. Start PostGIS (Docker)
 
 ```bash
-docker run -d --name sarthi-db \
+docker run -d --name sarathi-db \
   -e POSTGRES_PASSWORD=devpass \
   -p 5433:5432 \
   postgis/postgis:16-3.4
 ```
 
-> **Note:** We use port **5433** on the host to avoid conflicts with any locally
-> installed PostgreSQL. The container internally uses 5432.
-
-Wait ~10 seconds for the database to initialize before proceeding.
+> Port **5433** on host → 5432 inside the container (avoids conflicts with local PostgreSQL). Wait ~10 s for the database to initialise.
 
 ### 3. Start Redis (Docker Compose)
-
-Redis is required for caching, session storage, and WebSocket channel messaging.
 
 ```bash
 docker-compose -f docker-compose.redis.yml up -d
 ```
 
-This starts Redis 7 Alpine with AOF (Append-Only File) persistence on port **6379**.
+Starts Redis 7 Alpine with AOF persistence on port **6379**.
 
-To verify Redis is healthy:
 ```bash
+# Verify Redis is healthy
 docker exec sarathi_redis redis-cli ping
-# Expected output: PONG
+# → PONG
 ```
 
-### 4. Install GDAL / GEOS system libraries
-
-GDAL and GEOS are **C libraries** required by GeoDjango for spatial operations.
+### 4. Install GDAL / GEOS
 
 #### Windows (OSGeo4W)
-1. Download the installer: https://download.osgeo.org/osgeo4w/v2/osgeo4w-setup.exe
-2. Run it → **Express Install** → check **GDAL**
-3. Default install path: `C:\Users\<you>\AppData\Local\Programs\OSGeo4W`
-4. Update `OSGEO4W` path in `sarthi_backend/settings.py` if your install path differs
-5. Also verify the GDAL DLL filename matches (e.g., `gdal313.dll`) — check your
-   `OSGeo4W\bin\` folder and update `GDAL_LIBRARY_PATH` in settings if needed
+1. Download: https://download.osgeo.org/osgeo4w/v2/osgeo4w-setup.exe
+2. **Express Install** → check **GDAL**
+3. Default install: `C:\Users\<you>\AppData\Local\Programs\OSGeo4W`
+4. Update `OSGEO4W` path in `sarthi_backend/settings.py` if different
+5. Verify the GDAL DLL name (e.g., `gdal313.dll`) matches `GDAL_LIBRARY_PATH` in settings
 
-#### macOS (Homebrew)
+#### Linux / macOS
 ```bash
-brew install gdal geos
+sudo apt-get install gdal-bin libgdal-dev   # Debian/Ubuntu
+brew install gdal                            # macOS
 ```
 
-#### Ubuntu / Debian
-```bash
-sudo apt-get install gdal-bin libgdal-dev libgeos-dev
-```
-
-### 5. Create and activate virtual environment
+### 5. Python backend
 
 ```bash
+# Create & activate virtual environment
 python -m venv venv
+.\venv\Scripts\activate          # Windows
+source venv/bin/activate         # Linux/macOS
 
-# Windows (PowerShell)
-.\venv\Scripts\Activate.ps1
-
-# macOS / Linux
-source venv/bin/activate
-```
-
-### 6. Install Python dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-Key packages now included: `channels`, `channels-redis`, `daphne`, `redis`, `django-redis`.
-
-### 7. Run database migrations
-
-```bash
+# Apply migrations
 python manage.py migrate
-```
 
-### 8. Create a superuser
-
-```bash
+# Create a superuser (first admin)
 python manage.py createsuperuser
+
+# Run development server
+python manage.py runserver 0.0.0.0:8000
 ```
 
-Enter a username, email, and password when prompted.
+Backend available at: **http://localhost:8000**  
+Admin panel: **http://localhost:8000/admin**
 
-### 9. Run the development server
-
-> **⚠️ Important:** The server must be started via **Daphne** (or `manage.py runserver` which auto-detects Django Channels) to support WebSocket connections.
-
-```bash
-python manage.py runserver
-```
-
-Visit:
-- **http://localhost:8000/admin/** — Django admin (log in with your superuser)
-- **http://localhost:8000/api/vehicles/** — Browsable API (DRF)
-- Add test vehicles using the **map picker** in admin, or via the API
-
-### 10. Set up the React frontend
+### 6. React frontend
 
 ```bash
 cd frontend
@@ -264,12 +257,9 @@ npm install
 npm run dev
 ```
 
-Visit **http://localhost:5173** to see the live vehicle map and dispatch console.
+Frontend available at: **http://localhost:5173**
 
-### 11. Run the Flutter driver app
-
-The Flutter driver app runs on Android emulators, physical Android devices, or iOS devices.
-Ensure the Django backend is running on `http://localhost:8000` before starting the app.
+### 7. Flutter driver app
 
 ```bash
 cd driver_app
@@ -277,295 +267,229 @@ flutter pub get
 flutter run
 ```
 
-Log in with a **driver account** created from the dashboard (Admin → Drivers → Add driver, with username + password). The driver's On Duty toggle and Trips tab connect to the same backend.
-
-#### Common Issues & Network Configuration
-
-**Error: "No internet connection" or "Can't reach 127.0.0.1:8000"**
-
-The Flutter app uses `http://127.0.0.1:8000` to connect to the backend. Depending on your setup, you may need to configure the network tunnel:
-
-##### **Android Emulator**
-```bash
-adb reverse tcp:8000 tcp:8000
-```
-
-##### **Physical Android Device** (USB connected)
-1. Connect your device via USB
-2. Enable USB debugging in Developer Options
-3. Run this **every time you connect**:
-   ```bash
-   adb reverse tcp:8000 tcp:8000
-   ```
-
-##### **iOS Device/Simulator**
-Edit `driver_app/lib/services/api_service.dart` and replace `127.0.0.1` with your local IP address.
+Make sure a device/emulator is connected. The app connects to `http://<your-local-ip>:8000/api/`.
 
 ---
 
-## 🗺️ Running the Full Stack
+## 🗄️ Key API Endpoints
 
-To see everything working together, you need **3 terminals** running simultaneously:
-
-### Terminal 1 — Redis
-```bash
-docker-compose -f docker-compose.redis.yml up -d
-```
-
-### Terminal 2 — Django API server (with WebSocket support)
-```bash
-cd Sarathi
-.\venv\Scripts\Activate.ps1      # Windows
-python manage.py runserver
-```
-
-### Terminal 3 — React frontend (Vite dev server)
-```bash
-cd Sarathi/frontend
-npm run dev
-```
-
-### Terminal 4 — Vehicle simulator (optional, or use the Flutter driver app)
-```bash
-cd Sarathi
-.\venv\Scripts\Activate.ps1      # Windows
-python scripts/simulate_vehicle.py 1
-```
-
-Then open **http://localhost:5173**. Open the browser devtools console — you should see `Admin WebSocket connected`. When a new emergency, issue, or maintenance event occurs, a notification appears **instantly** in the bell without waiting for the polling interval.
-
----
-
-## ⚡ Real-Time Architecture
-
-```
-Driver App / Admin Action
-        ↓
-Django Model Save (IssueReport / EmergencyRequest / MaintenanceRecord)
-        ↓
-post_save Signal (vehicles/signals.py)
-        ↓
-channel_layer.group_send → Redis Channel Layer (db=2)
-        ↓
-NotificationConsumer (vehicles/consumers.py)
-        ↓
-WebSocket → Browser (useAdminNotifications hook)
-        ↓
-NotificationBell update + targeted data refetch
-```
-
-**Fallback behavior:** If the WebSocket disconnects (Redis restart, network blip), the frontend automatically falls back to 5-second polling for issues, emergencies, and maintenance. On reconnect, it immediately re-syncs all data.
-
----
-
-## 🔌 WebSocket Endpoint
-
-| URL | Auth | Description |
-|-----|------|-------------|
-| `ws://localhost:8000/ws/notifications/?token=<jwt>` | JWT query param | Real-time notification stream for the logged-in user |
-
-### Channel Groups
-
-| Group Name | Members | Events Received |
-|-----------|---------|----------------|
-| `user_notifications_<user_id>` | Individual user | Personal notifications (`Notification` model) |
-| `org_notifications_<org_name>` | All admins in same org | Issues, Emergencies, Maintenance records |
-
----
-
-## 🔌 API Endpoints
-
-All endpoints are under the project root (`sarthi_backend/urls.py` → app routers).
-Auth: `Authorization: Bearer <access_token>`.
-
-### Auth (`/api/auth/`)
+### Auth
 | Method | URL | Description |
 |--------|-----|-------------|
-| POST | `/api/auth/login/` | Obtain JWT (accepts `username` **or** `email` + `password`). Response includes `expires_in` (seconds, with ±5m jitter) |
-| POST | `/api/auth/login/refresh/` | Refresh access token |
-| POST | `/api/auth/register/` | Register a new admin/user (username, email, password, organization_name) |
-| GET | `/api/auth/me/` | Current user + organization name |
+| `POST` | `/api/auth/login/` | Login (username or email) |
+| `POST` | `/api/auth/token/refresh/` | Refresh JWT |
+| `POST` | `/api/auth/register/` | Register new admin |
+| `PATCH` | `/api/drivers/me/change-password/` | Driver password change |
 
-### Vehicles (`/api/`)
+### Fleet
 | Method | URL | Description |
 |--------|-----|-------------|
-| GET | `/api/vehicles/` | List vehicles for current org |
-| POST | `/api/vehicles/` | Create a vehicle |
-| GET | `/api/vehicles/<id>/` | Vehicle detail |
-| PATCH | `/api/vehicles/<id>/` | Update (incl. `admin_blocked`) |
-| DELETE | `/api/vehicles/<id>/` | Remove a vehicle |
-| POST | `/api/vehicles/<id>/update-location/` | Update GPS location `{"lat":.,"lng":..}` |
-| POST | `/api/vehicles/<id>/assign-driver/` | Assign a driver `{"driver_id": <id>}` |
-| POST | `/api/vehicles/<id>/dispatch/transition/` | **Admin** advances the active dispatch |
+| `GET/POST` | `/api/vehicles/` | List / create vehicles |
+| `GET/PUT/DELETE` | `/api/vehicles/<id>/` | Vehicle detail |
+| `GET/POST` | `/api/drivers/` | List / create drivers |
+| `GET` | `/api/drivers/me/` | Current driver profile |
 
 ### Dispatch
 | Method | URL | Description |
 |--------|-----|-------------|
-| POST | `/api/dispatch/` | Dispatch nearest available vehicle `{"lat":.,"lng":.,"vehicle_type":..}` |
-| GET | `/api/dispatch/active/` | Owner's latest active dispatch with live route geometry |
-| GET | `/api/dispatch/stats/` | Dispatch counts by status + daily breakdown (last 30 days) |
-| GET | `/api/dispatch/export/` | CSV download of dispatch history (`?status=&start_date=&end_date=`) |
+| `POST` | `/api/dispatch/` | Create a dispatch |
+| `GET` | `/api/dispatch/active/` | Current driver's active dispatch |
+| `PATCH` | `/api/dispatch/<id>/` | Update dispatch status |
+| `GET` | `/api/dispatch/export/` | CSV export |
 
-### Drivers (`/api/`)
+### Trips & Tracking
 | Method | URL | Description |
 |--------|-----|-------------|
-| GET | `/api/drivers/` | List drivers for current org |
-| POST | `/api/drivers/` | Create a driver **with login credentials** |
-| GET | `/api/drivers/me/` | Current driver's profile + assigned vehicle + `is_on_duty` |
-| PATCH | `/api/drivers/me/duty/` | Set `{"is_on_duty": true\|false}` |
-| PATCH | `/api/drivers/me/change-password/` | First-login password change |
-| POST | `/api/drivers/me/report-issue/` | Submit an issue report with optional photo |
-| POST | `/api/drivers/me/maintenance-request/` | Submit a maintenance request |
-| GET | `/api/drivers/me/dispatch/` | Active dispatch for the driver's vehicle |
-| POST | `/api/drivers/me/dispatch/transition/` | **Driver** advances the dispatch |
-| GET | `/api/drivers/<id>/score/` | Driver safety score (0–100 over last 30 days) |
-| GET | `/api/drivers/me/trip-history/` | Driver's finished trips |
+| `GET` | `/api/trips/` | Trip history |
+| `GET` | `/api/trips/<id>/playback/` | GPS breadcrumbs for playback |
+| `POST` | `/api/location/` | Submit GPS location |
 
-### Trips (`/api/trips/`)
+### Driver Actions
 | Method | URL | Description |
 |--------|-----|-------------|
-| GET | `/api/trips/` | Finished dispatches (completed/cancelled/rejected), org-scoped |
-| GET | `/api/trips/<id>/playback/` | Time-ordered GPS breadcrumbs for route replay |
+| `POST` | `/api/drivers/me/report-issue/` | Submit issue report |
+| `POST` | `/api/emergency/requests/create/` | Emergency SOS |
+| `GET/POST` | `/api/drivers/me/fuel-logs/` | Fuel log |
+| `GET` | `/api/drivers/me/maintenance/` | Assigned maintenance |
+| `POST` | `/api/drivers/me/maintenance/<id>/complete/` | Mark maintenance complete |
 
-### Maintenance (`/api/`)
+### Analytics & Reports
 | Method | URL | Description |
 |--------|-----|-------------|
-| GET | `/api/maintenance/` | List maintenance records |
-| POST | `/api/maintenance/` | Create a record |
-| PATCH | `/api/maintenance/<id>/` | Update (mark completed) |
-| DELETE | `/api/maintenance/<id>/` | Remove |
-| GET | `/api/maintenance/upcoming/` | Due in next 30 days |
-
-### Emergency (`/api/emergency/`)
-| Method | URL | Description |
-|--------|-----|-------------|
-| POST | `/api/emergency/requests/create/` | Driver submits emergency SOS |
-| GET | `/api/emergency/requests/` | Admin lists all emergency requests |
-| POST | `/api/emergency/requests/<id>/dispatch/` | Admin dispatches vehicle to emergency |
-| POST | `/api/emergency/requests/<id>/resolve/` | Admin marks emergency resolved |
-| GET | `/api/emergency/notifications/unread-count/` | Count of unread emergency notifications |
-
-### Reports & Exports (`/api/`)
-| Method | URL | Description |
-|--------|-----|-------------|
-| GET | `/api/expenses/summary/` | Aggregated expense stats |
-| GET | `/api/expenses/report/pdf/` | PDF download of expense summary |
-| GET | `/api/dispatch/export/` | CSV download of dispatch history |
-
----
-
-## 🚗 Location Simulator
-
-The simulator script performs a **random walk** near Jhapa, Nepal, calling the
-`update-location` endpoint every 4 seconds to simulate a vehicle moving in
-real time.
-
-```bash
-python scripts/simulate_vehicle.py 1
-# Optional: faster updates
-python scripts/simulate_vehicle.py 1 --interval 2
-```
+| `GET` | `/api/analytics/` | Fleet analytics dashboard |
+| `GET` | `/api/drivers/<id>/score/` | Driver safety score |
+| `GET` | `/api/fuel-prices/` | Current NOC fuel prices |
+| `GET` | `/api/expenses/report/pdf/` | Expense PDF report |
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | Django 5.2 + Django REST Framework |
-| Auth | `djangorestframework-simplejwt` (JWT) |
-| Geospatial | GeoDjango + PostGIS + GDAL/GEOS |
-| Database | PostgreSQL 16 + PostGIS 3.4 (Docker) |
-| Cache & Sessions | Redis 7 (Docker) + `django-redis` |
-| WebSockets | Django Channels 4 + `channels-redis` + Daphne |
-| Routing | OSRM (real-road distance + geometry) |
-| Simulator | Python + requests (random walk) |
-| Frontend | React + TypeScript + Vite + Leaflet |
-| Mobile | Flutter (driver app) |
+### Backend
+| Package | Version | Purpose |
+|---------|---------|---------|
+| Django | 5.2 | Web framework |
+| djangorestframework | 3.17 | REST API |
+| djangorestframework-simplejwt | 5.3 | JWT auth |
+| django-channels | — | WebSocket / ASGI |
+| django-cors-headers | 4.9 | CORS |
+| psycopg2-binary | 2.9 | PostgreSQL / PostGIS driver |
+| redis | 5.0 | Redis client |
+| django-redis | 5.4 | Redis cache backend |
+| reportlab | 4.2 | PDF generation |
+| beautifulsoup4 | 4.12 | NOC fuel price scraping |
+
+### Frontend
+| Package | Version | Purpose |
+|---------|---------|---------|
+| React | 19 | UI framework |
+| TypeScript | 6 | Type safety |
+| Vite | 8 | Build tool / dev server |
+| react-router-dom | 7 | Client-side routing |
+| axios | 1.18 | HTTP client |
+| leaflet + react-leaflet | 1.9 / 5 | Interactive maps |
+| recharts | 3 | Analytics charts |
+| lucide-react | 1.24 | Icons |
+
+### Flutter Driver App
+| Package | Version | Purpose |
+|---------|---------|---------|
+| flutter_map | 8.3 | Leaflet maps in Flutter |
+| geolocator | 14 | GPS location |
+| google_fonts | 8.1 | Inter / custom typography |
+| image_picker | 1.2 | Camera / gallery |
+| flutter_secure_storage | 10.3 | Secure JWT storage |
+| permission_handler | 12 | Runtime permissions |
+| audioplayers | 6.1 | Notification sounds |
+| http | 1.2 | HTTP API client |
+| intl | 0.20 | Date / number formatting |
 
 ---
 
-## 📁 Project Structure
+## 🎨 Design System (Flutter)
+
+The driver app uses a centralized `AppTheme` (`lib/theme.dart`):
+
+- **Primary**: Green (`#2E7D32`) — actions, FABs, status "active"
+- **Error**: Red (`#C62828`) — emergency, alerts
+- **Surface**: High-contrast white cards with shadows
+- **Typography**: Inter (Google Fonts) throughout
+- **Loading**: Custom `TruckLoader` animation — animated truck driving across a road track, replaces all `CircularProgressIndicator` page-level loaders
+
+---
+
+## 🔧 Development Notes
+
+### Environment variables
+
+Create a `.env` file (not committed) with:
+
+```env
+SECRET_KEY=your-django-secret-key
+DEBUG=True
+DB_HOST=localhost
+DB_PORT=5433
+DB_NAME=postgres
+DB_USER=postgres
+DB_PASSWORD=devpass
+REDIS_URL=redis://localhost:6379/1
+```
+
+### Running OSRM (optional, for real routing)
+
+By default the app falls back to straight-line distance if OSRM is unavailable. To run OSRM locally:
+
+```bash
+docker run -t -v $(pwd)/osrm-data:/data osrm/osrm-backend osrm-routed \
+  --algorithm mld /data/your-region.osrm
+```
+
+Update `OSRM_BASE_URL` in `sarthi_backend/settings.py`.
+
+### Running the WebSocket server
+
+Django Channels requires an ASGI server (Daphne or Uvicorn):
+
+```bash
+daphne -b 0.0.0.0 -p 8000 sarthi_backend.asgi:application
+# or
+uvicorn sarthi_backend.asgi:application --host 0.0.0.0 --port 8000
+```
+
+---
+
+## 📁 Project Structure (detail)
 
 ```
-Sarathi/
-├── manage.py
-├── requirements.txt
-├── docker-compose.redis.yml        # Redis 7 Alpine with AOF persistence
-├── scripts/
-│   └── simulate_vehicle.py        # Location simulator (random walk)
-├── sarthi_backend/                 # Django project config
-│   ├── settings.py                 # DB, GDAL, Redis, CORS, Channels, installed apps
-│   ├── urls.py                     # Root routes
-│   ├── asgi.py                     # ASGI: ProtocolTypeRouter for HTTP + WebSocket
-│   ├── routing.py                  # WebSocket URL patterns (ws/notifications/)
-│   └── wsgi.py
-├── vehicles/                       # Vehicle tracking + dispatch + drivers
-│   ├── models.py                   # Vehicle, DispatchRequest, Driver, IssueReport,
-│   │                               #   MaintenanceRecord, Notification, EmergencyRequest,
-│   │                               #   LocationRecord, DrivingEvent, Route, Rental, Alert, Rule
+sarathi/
+├── accounts/
+│   ├── models.py            # Organization, UserProfile
 │   ├── serializers.py
-│   ├── views.py                    # CRUD, nearest, dispatch, driver_me, signals, etc.
-│   ├── dispatch_views.py           # Universal dispatch endpoints (candidates, confirm)
-│   ├── dispatch_engine.py          # Intelligent multi-factor dispatch matching engine
-│   ├── rules_engine.py             # Policy & geofence automated rule evaluation engine
+│   └── views.py             # Login, register, password reset, rate limiting
+├── vehicles/
+│   ├── models.py            # Vehicle, Driver, Dispatch, LocationRecord,
+│   │                        #   MaintenanceRecord, FuelEntry, IssueReport,
+│   │                        #   EmergencyRequest, Alert, Rule, Route, Rental
+│   ├── views.py             # All REST endpoints + WebSocket consumers
+│   ├── dispatch_engine.py   # Multi-factor dispatch ranking
+│   ├── rules_engine.py      # Geofencing / speed / alert policies
+│   ├── cache_utils.py       # Jittered TTL helper
+│   └── osrm.py              # OSRM routing client
+├── sarthi_backend/
+│   ├── settings.py          # Django config (PostGIS, Redis, Channels, JWT)
 │   ├── urls.py
-│   ├── osrm.py                     # OSRM real-road routing helper (with cache jitter)
-│   ├── consumers.py                # WebSocket NotificationConsumer + JWTAuthMiddleware
-│   ├── signals.py                  # post_save signals → WebSocket push for all alert models
-│   ├── cache_utils.py              # jittered_ttl() utility for thundering-herd prevention
-│   └── migrations/
-├── accounts/                       # JWT auth + multi-tenant user profiles
-│   ├── models.py                   # Profile (organization, role, is_online), Organization
-│   ├── serializers.py
-│   ├── views.py                    # LoginView (with expires_in jitter), RegisterView
-│   └── urls.py
-├── driver_app/                     # Flutter mobile app (drivers)
-│   ├── lib/
-│   │   ├── services/api_service.dart
-│   │   ├── screens/
-│   │   │   ├── dashboard_screen.dart
-│   │   │   ├── trips_screen.dart
-│   │   │   ├── report_issue_screen.dart
-│   │   │   ├── emergency_screen.dart
-│   │   │   ├── maintenance_screen.dart
-│   │   │   ├── trip_history_screen.dart
-│   │   │   └── profile_screen.dart
-│   │   ├── theme.dart
-│   │   └── main.dart
-│   └── pubspec.yaml
-├── frontend/                       # React + TypeScript + Vite (dispatcher console)
-│   ├── src/
-│   │   ├── api/auth.ts
-│   │   ├── api/vehicles.ts
-│   │   ├── components/
-│   │   │   ├── NotificationBell.tsx  # Real-time notification bell
-│   │   │   ├── DispatchWorkspace.tsx # Interactive dispatch console
-│   │   │   ├── LiveTrackingTab.tsx   # Fleet telemetry & live map view
-│   │   │   ├── RoutesTab.tsx         # Fixed routes & stops management
-│   │   │   ├── RentalsTab.tsx        # Commercial rental contracts management
-│   │   │   ├── MaintenanceTab.tsx
-│   │   │   ├── IssuesTab.tsx
-│   │   │   ├── FuelTab.tsx
-│   │   │   ├── TripsTab.tsx
-│   │   │   ├── AnalyticsDashboard.tsx
-│   │   │   └── ThemeToggle.tsx
-│   │   ├── hooks/
-│   │   │   ├── useAdminNotifications.ts  # WebSocket hook + polling fallback
-│   │   │   └── useNotifications.ts       # Driver-side WS notifications
-│   │   ├── pages/
-│   │   │   ├── Dashboard.tsx             # Fleet + Dispatch + Drivers + all tabs
-│   │   │   ├── Login.tsx
-│   │   │   └── Signup.tsx
-│   │   ├── App.tsx
-│   │   └── main.tsx
-│   ├── package.json
-│   └── vite.config.ts
-└── ...
+│   ├── asgi.py              # Channels ASGI config
+│   └── wsgi.py
+├── frontend/src/
+│   ├── components/
+│   │   ├── DispatchWorkspace.tsx
+│   │   ├── LiveTrackingTab.tsx
+│   │   ├── FuelTab.tsx
+│   │   ├── MaintenanceTab.tsx
+│   │   ├── IssuesTab.tsx
+│   │   ├── RoutesTab.tsx
+│   │   ├── RentalsTab.tsx
+│   │   └── NotificationBell.tsx
+│   └── hooks/
+│       └── useAdminNotifications.ts
+└── driver_app/lib/
+    ├── screens/
+    │   ├── dashboard_screen.dart
+    │   ├── trips_screen.dart
+    │   ├── trip_history_screen.dart
+    │   ├── fuel_entry_screen.dart
+    │   ├── maintenance_screen.dart
+    │   ├── report_issue_screen.dart
+    │   ├── emergency_screen.dart
+    │   ├── notifications_screen.dart
+    │   └── profile_screen.dart
+    ├── widgets/
+    │   ├── truck_loader.dart     # Custom animated truck loading widget
+    │   ├── custom_buttons.dart
+    │   └── stat_card.dart
+    ├── services/
+    │   └── api_service.dart      # All HTTP + JWT logic
+    ├── utils/
+    │   └── animations.dart       # SmoothPageRoute, AnimatedListItem
+    └── theme.dart                # AppTheme color tokens + text styles
 ```
 
 ---
 
-## 👥 Team
+## 🤝 Contributing
 
-Built by a team of 4 students. See GitHub contributors for details.
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Commit your changes: `git commit -m 'feat: add your feature'`
+4. Push to the branch: `git push origin feature/your-feature`
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is private. All rights reserved.
+
+---
+
+*Built with ❤️ for smarter fleet operations.*

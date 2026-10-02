@@ -645,6 +645,27 @@ class ApiService {
     }
   }
 
+  static Future<List<dynamic>> getIssueReports() async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.get(
+          Uri.parse('$_baseUrl/api/drivers/me/report-issue/'),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      }
+      return [];
+    } on ApiException catch (e) {
+      _log('getIssueReports failed: $e');
+      rethrow;
+    } catch (e) {
+      _log('getIssueReports exception: $e');
+      return [];
+    }
+  }
+
   static Future<bool> submitMaintenanceRequest({
     required String description,
     String? imagePath,
@@ -754,7 +775,7 @@ class ApiService {
            await request.send().timeout(const Duration(seconds: 30));
        final response = await http.Response.fromStream(streamed);
 
-       _log('createFuelLog status: ${response.statusCode}');
+       _log('createFuelLog status: ${response.statusCode}, body: ${response.body}');
        return response.statusCode == 201 || response.statusCode == 200;
      } catch (e) {
        _log('createFuelLog exception: $e');

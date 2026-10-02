@@ -773,6 +773,14 @@ select.input-field {
   font-weight: 600
 }
 
+.trend-negative {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #ef4444;
+  font-weight: 600
+}
+
 .section-toolbar {
   min-height: 55px;
   display: flex;
@@ -4735,6 +4743,21 @@ select.input-field {
 .breakdown-trigger-btn:hover {
   background: var(--danger) !important;
   color: #ffffff !important;
+}
+
+.stage-btn.cancel-btn {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--surface-border));
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stage-btn.cancel-btn:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
 }
 
 /* Map Shell & Viewport */

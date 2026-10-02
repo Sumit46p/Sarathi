@@ -7,6 +7,7 @@ import 'dart:async';
 import '../theme.dart';
 import '../services/api_service.dart';
 import '../utils/animations.dart';
+import '../widgets/truck_loader.dart';
 
 class TripHistoryScreen extends StatefulWidget {
   const TripHistoryScreen({super.key});
@@ -108,11 +109,18 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceLowest,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _statusColor(status).withValues(alpha: 0.2)),
+        border: Border.all(color: AppTheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -122,73 +130,82 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(_statusIcon(status), color: _statusColor(status), size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      status.toUpperCase(),
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: _statusColor(status),
-                        letterSpacing: 0.5,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: _statusColor(status).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(_statusIcon(status), color: _statusColor(status), size: 15),
+                      const SizedBox(width: 6),
+                      Text(
+                        status.toUpperCase(),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: _statusColor(status),
+                          letterSpacing: 0.4,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 if (trip['distance_km'] != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withValues(alpha: 0.08),
+                      color: AppTheme.primaryColor.withOpacity(0.09),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       '${(trip['distance_km'] as num).toStringAsFixed(1)} km',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
                         color: AppTheme.primaryColor,
                       ),
                     ),
                   ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Row(
               children: [
-                const Icon(Icons.directions_car_rounded, size: 16, color: AppTheme.outline),
+                const Icon(Icons.directions_car_rounded, size: 18, color: AppTheme.primaryColor),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     vehicleName,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
                       color: AppTheme.onSurface,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.pin_drop_rounded, size: 16, color: AppTheme.outline),
+                const Icon(Icons.pin_drop_outlined, size: 16, color: AppTheme.onSurfaceVariant),
                 const SizedBox(width: 8),
-                  Text(
-                    plate,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      color: AppTheme.outline,
-                    ),
+                Text(
+                  plate,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.onSurfaceVariant,
                   ),
+                ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             const Divider(height: 1, color: AppTheme.outlineVariant),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
@@ -197,18 +214,18 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                     children: [
                       Text(
                         'Assigned',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 10,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: AppTheme.outline,
+                          color: AppTheme.onSurfaceVariant,
                           letterSpacing: 0.3,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         assignedTime,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.onSurface,
                         ),
@@ -218,50 +235,51 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                 ),
                 Container(
                   width: 1,
-                  height: 32,
+                  height: 36,
                   color: AppTheme.outlineVariant,
                 ),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.only(left: 12),
+                    padding: const EdgeInsets.only(left: 14),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          status == 'completed' ? 'Completed' : (status == 'cancelled' ? 'Cancelled' : 'Rejected'),
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.outline,
-                            letterSpacing: 0.3,
-                          ),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        status == 'completed' ? 'Completed' : (status == 'cancelled' ? 'Cancelled' : 'Rejected'),
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.onSurfaceVariant,
+                          letterSpacing: 0.3,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          completedTime,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.onSurface,
-                          ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        completedTime,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.onSurface,
                         ),
-                      ],
+                      ),
+                    ],
                     ),
                   ),
                 ),
               ],
             ),
             if (durationText != '—') ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               Row(
                 children: [
-                  const Icon(Icons.timer_rounded, size: 14, color: AppTheme.outline),
+                  const Icon(Icons.timer_outlined, size: 15, color: AppTheme.onSurfaceVariant),
                   const SizedBox(width: 6),
                   Text(
                     'Trip duration: $durationText',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      color: AppTheme.outline,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -329,7 +347,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
         children: [
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
+                ? const TruckLoaderCenter()
                 : _errorMsg != null
                     ? Center(
                         child: Padding(
@@ -351,69 +369,77 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                           ),
                         ),
                       )
-                    : _trips.isEmpty
-                        ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  TweenAnimationBuilder<double>(
-                                    tween: Tween(begin: 0.0, end: 1.0),
-                                    duration: const Duration(milliseconds: 800),
-                                    curve: Curves.elasticOut,
-                                    builder: (context, value, child) {
-                                      return Transform.scale(
-                                        scale: value,
-                                        child: Transform.rotate(
-                                          angle: (1 - value) * 0.2,
-                                          child: child,
+                    : RefreshIndicator(
+                        onRefresh: _loadTripHistory,
+                        color: AppTheme.primaryColor,
+                        child: _trips.isEmpty
+                            ? SingleChildScrollView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                child: Container(
+                                  height: MediaQuery.of(context).size.height * 0.7,
+                                  alignment: Alignment.center,
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      TweenAnimationBuilder<double>(
+                                        tween: Tween(begin: 0.0, end: 1.0),
+                                        duration: const Duration(milliseconds: 800),
+                                        curve: Curves.elasticOut,
+                                        builder: (context, value, child) {
+                                          return Transform.scale(
+                                            scale: value,
+                                            child: Transform.rotate(
+                                              angle: (1 - value) * 0.2,
+                                              child: child,
+                                            ),
+                                          );
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(20),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primaryColor.withValues(alpha: 0.08),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(Icons.history_rounded, size: 48, color: AppTheme.primaryColor),
                                         ),
-                                      );
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.all(20),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.primaryColor.withValues(alpha: 0.08),
-                                        shape: BoxShape.circle,
                                       ),
-                                      child: const Icon(Icons.history_rounded, size: 48, color: AppTheme.primaryColor),
-                                    ),
+                                      const SizedBox(height: 24),
+                                      Text(
+                                        'No trips yet',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppTheme.onSurface,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Completed and cancelled trips will appear here.',
+                                        textAlign: TextAlign.center,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          color: AppTheme.onSurfaceVariant,
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 24),
-                                  Text(
-                                    'No trips yet',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppTheme.onSurface,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Completed and rejected trips will appear here.',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 13,
-                                      color: AppTheme.outline,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ],
+                                ),
+                              )
+                            : ListView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.all(16),
+                                itemCount: _trips.length,
+                                itemBuilder: (context, index) {
+                                  return AnimatedListItem(
+                                    index: index,
+                                    delay: const Duration(milliseconds: 60),
+                                    child: _buildTripCard(_trips[index]),
+                                  );
+                                },
                               ),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(20),
-                            itemCount: _trips.length,
-                            itemBuilder: (context, index) {
-                              return AnimatedListItem(
-                                index: index,
-                                delay: const Duration(milliseconds: 60),
-                                child: _buildTripCard(_trips[index]),
-                              );
-                            },
-                           ),
+                      ),
           ),
         ],
       ),
@@ -738,7 +764,7 @@ class _TripPlaybackSheetState extends State<_TripPlaybackSheet>
             const Divider(height: 1, color: AppTheme.outlineVariant),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
+                  ? const TruckLoaderCenter()
                   : _errorMsg != null
                       ? Center(
                           child: Padding(
