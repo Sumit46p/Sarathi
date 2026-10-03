@@ -194,6 +194,9 @@ docker run -d --name sarathi-db \
   postgis/postgis:16-3.4
 ```
 
+for windows:
+docker run -d --name sarathi-db -e POSTGRES_PASSWORD=devpass -p 5433:5432 postgis/postgis:16-3.4
+
 > Port **5433** on host → 5432 inside the container (avoids conflicts with local PostgreSQL). Wait ~10 s for the database to initialise.
 
 ### 3. Start Redis (Docker Compose)
