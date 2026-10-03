@@ -10,7 +10,7 @@ from django.db.models import Q, ExpressionWrapper, DurationField, Count, Sum, Av
 from django.db.models.functions import TruncDate, Coalesce
 from django.utils import timezone
 from django.core.cache import cache
-from .osrm import get_route_distance
+from .osrm import get_route_distance, get_route_through_waypoints
 from .cache_utils import jittered_ttl
 import threading
 import math
@@ -422,12 +422,26 @@ def safe_route_geometry(vehicle, dispatch, deadline=3.0):
     return safe_route_info(vehicle, dispatch, deadline)['geometry']
 
 
-def safe_route_info(vehicle, dispatch, deadline=3.0):
-    """Best-effort live route info (geometry, road distance, ETA) from the
-    vehicle's current location to the dispatch request.
+# Dispatch statuses that indicate the vehicle has passed the pickup point
+# and is now heading to the destination.
+_POST_PICKUP_STATUSES = {
+    'in_service', 'IN_TRANSIT', 'IN_TRANSIT_TO_DESTINATION',
+    'ARRIVED_AT_DESTINATION', 'completed',
+    'GOODS_TRANSFERRED',
+}
 
-    Like :func:`safe_route_geometry`, OSRM runs in a separate thread with a
-    hard deadline so an unreachable router can never block the API response.
+
+def safe_route_info(vehicle, dispatch, deadline=5.0):
+    """Best-effort live route info (geometry, road distance, ETA) from the
+    vehicle's current location through pickup to destination.
+
+    Builds a multi-waypoint route based on dispatch status:
+      - Before pickup: Vehicle → Pickup → Destination (if dest exists)
+      - After pickup:  Vehicle → Destination
+      - No destination: Vehicle → Pickup (original behaviour)
+
+    OSRM runs in a separate thread with a hard deadline so an unreachable
+    router can never block the API response.
     Returns None for each field on any failure or timeout.
     """
     if vehicle.location is None:
@@ -437,10 +451,28 @@ def safe_route_info(vehicle, dispatch, deadline=3.0):
 
     def _compute():
         try:
-            distance_km, duration_min, geometry = get_route_distance(
-                vehicle.location.y, vehicle.location.x,
-                dispatch.request_lat, dispatch.request_lng,
+            vehicle_pos = (vehicle.location.y, vehicle.location.x)
+            pickup_pos = (dispatch.request_lat, dispatch.request_lng)
+            has_dest = (
+                dispatch.dest_lat is not None
+                and dispatch.dest_lng is not None
             )
+            dest_pos = (dispatch.dest_lat, dispatch.dest_lng) if has_dest else None
+
+            past_pickup = dispatch.status in _POST_PICKUP_STATUSES
+
+            # Build the list of waypoints
+            if past_pickup and dest_pos:
+                # Already picked up — route directly to destination
+                waypoints = [vehicle_pos, dest_pos]
+            elif dest_pos:
+                # Before pickup — full route: Vehicle → Pickup → Destination
+                waypoints = [vehicle_pos, pickup_pos, dest_pos]
+            else:
+                # No destination — just route to pickup
+                waypoints = [vehicle_pos, pickup_pos]
+
+            distance_km, duration_min, geometry = get_route_through_waypoints(waypoints)
             result['distance_km'] = distance_km
             result['duration_min'] = duration_min
             result['geometry'] = geometry
@@ -3096,7 +3128,7 @@ def analytics_dashboard(request):
     dispatches = DispatchRequest.objects.filter(assigned_vehicle__owner__in=org_ids)
     emergencies = EmergencyRequest.objects.filter(user__in=org_ids)
     issues = IssueReport.objects.filter(driver__owner__in=org_ids)
-    fuel_entries = FuelEntry.objects.filter(driver__owner__in=org_ids)
+    fuel_logs = FuelLog.objects.filter(driver__owner__in=org_ids)
     
     # ── 1. Fleet Status Pie Data ──────────────────────────────────────────
     total_vehicles = vehicles.count()
@@ -3233,12 +3265,12 @@ def analytics_dashboard(request):
     
     # ── 7. Fuel Cost Trends (last 7 days) ────────────────────────────────
     daily_fuel_cost = (
-        fuel_entries
-        .filter(fueled_at__date__gte=seven_days_ago)
-        .annotate(date=TruncDate('fueled_at'))
+        fuel_logs
+        .filter(created_at__date__gte=seven_days_ago)
+        .annotate(date=TruncDate('created_at'))
         .values('date')
         .annotate(
-            total_cost=Sum('total_cost'),
+            total_cost=Sum('amount'),
             total_liters=Sum('liters'),
         )
         .order_by('date')
@@ -3278,7 +3310,6 @@ def analytics_dashboard(request):
         avg_response_time = round(avg_seconds / 60, 1)  # in minutes
 
     # ── 9. Fuel Efficiency (km/L per vehicle) ────────────────────────────
-    fuel_logs = FuelLog.objects.filter(driver__owner__in=org_ids)
     vehicle_distances = {v.id: v.total_distance_km for v in vehicles.all()}
     vehicle_eff_rows = (
         fuel_logs.values('vehicle__id')
@@ -3370,6 +3401,6 @@ def analytics_dashboard(request):
             'pending_emergencies': emergencies.filter(status='pending').count(),
             'open_issues': issues.filter(status='open').count(),
             'avg_response_time_min': avg_response_time,
-            'total_fuel_cost': float(fuel_entries.aggregate(total=Sum('total_cost'))['total'] or 0),
+            'total_fuel_cost': float(fuel_logs.aggregate(total=Sum('amount'))['total'] or 0),
         }
     })

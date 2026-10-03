@@ -3,7 +3,7 @@ import {
   AlertCircle, Car, MapPin, Navigation, RefreshCw, Search, SlidersHorizontal, X,
 } from 'lucide-react';
 import {
-  CircleMarker, GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap,
+  CircleMarker, GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, Polyline,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -284,6 +284,27 @@ export default function LiveTracking() {
           />
           <GeoJSON data={NEPAL_GEOJSON as GeoJSON.GeoJsonObject} style={() => BORDER_STYLE} />
           <FocusFly target={focusTarget} />
+
+          {/* Active Dispatch Routes */}
+          {mapVehicles.map(v => {
+            if (!v.active_dispatch_geometry || v.active_dispatch_geometry.length < 2) return null;
+            const color = TYPE_COLORS[v.vehicle_type] ?? '#64748b';
+            const isSelected = v.id === selectedId;
+            // Dashed line if heading to pickup, solid if in service (already picked up goods)
+            const dashArray = v.active_dispatch_status === 'in_service' || v.active_dispatch_status === 'IN_TRANSIT' ? undefined : '5, 8';
+            return (
+              <Polyline
+                key={`route-${v.id}`}
+                positions={v.active_dispatch_geometry}
+                pathOptions={{ 
+                  color: color, 
+                  weight: isSelected ? 5 : 4, 
+                  opacity: isSelected ? 0.9 : 0.6,
+                  dashArray: dashArray,
+                }}
+              />
+            );
+          })}
 
           {mapVehicles.map(v => {
             const color = TYPE_COLORS[v.vehicle_type] ?? '#64748b';

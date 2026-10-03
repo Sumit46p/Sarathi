@@ -24,6 +24,7 @@ from .serializers import (
 )
 from .dispatch_engine import DispatchEngine
 from .views import get_org_user_ids, ACTIVE_DISPATCH_STATUSES
+from .osrm import get_route_distance
 
 
 @api_view(['GET'])
@@ -86,6 +87,17 @@ def dispatch_preview(request):
     except (TypeError, ValueError):
         return Response({'error': 'Invalid coordinates provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    dest_lat = data.get('dest_lat')
+    dest_lng = data.get('dest_lng')
+    pickup_to_dest_geometry = None
+    if dest_lat is not None and dest_lng is not None:
+        try:
+            dest_lat = float(dest_lat)
+            dest_lng = float(dest_lng)
+            _, _, pickup_to_dest_geometry = get_route_distance(lat, lng, dest_lat, dest_lng)
+        except (TypeError, ValueError):
+            pass
+
     op_type = data.get('operation_type', 'NORMAL_LOGISTICS')
     is_emergency = (op_type == 'EMERGENCY_REPLACEMENT')
     request_type = 'EMERGENCY' if is_emergency else 'NORMAL'
@@ -129,6 +141,7 @@ def dispatch_preview(request):
             'vehicle_type': vehicle_type,
             'operation_type': op_type,
             'total_evaluated': (1 if recommended else 0) + len(candidates),
+            'pickup_to_dest_geometry': pickup_to_dest_geometry,
         }
     })
 

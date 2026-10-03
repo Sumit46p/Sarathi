@@ -12,6 +12,9 @@ export interface Vehicle {
     lat: number;
     lng: number;
   };
+  has_active_dispatch?: boolean;
+  active_dispatch_status?: string | null;
+  active_dispatch_geometry?: Array<[number, number]> | null;
 }
 
 export interface VehicleLocationUpdate {
