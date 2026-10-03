@@ -34,19 +34,23 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'User profile not found. Please contact support.'
             )
 
-        # Validate against the canonical org name (the admin's), not the
-        # user's own profile value — which may still hold the default placeholder.
-        expected_org = get_organization_name()
+        # Validate against the user's own profile organization name
+        expected_org = user.profile.organization_name
+        
+        # If profile has 'Default Org' but a canonical org exists, we can sync it, 
+        # but for true multi-tenancy, it's better to just check against their profile.
+        # However, to maintain backward compatibility with the 'Default Org' placeholder:
+        if expected_org == 'Default Org':
+            canonical_org = get_organization_name()
+            if canonical_org != 'Default Org':
+                expected_org = canonical_org
+                user.profile.organization_name = expected_org
+                user.profile.save(update_fields=['organization_name'])
+
         if expected_org.lower() != organization_name.lower():
             raise serializers.ValidationError(
                 f'Invalid organization name. Expected: {expected_org}'
             )
-
-        # Keep the user's profile in sync with the canonical org name so the
-        # dashboard and other per-user displays show the real org, not the default.
-        if user.profile.organization_name != expected_org:
-            user.profile.organization_name = expected_org
-            user.profile.save(update_fields=['organization_name'])
 
         if not user.is_active:
             raise serializers.ValidationError(
@@ -105,8 +109,9 @@ class RegisterSerializer(serializers.ModelSerializer):
             user=user,
             defaults={'organization_name': org_name}
         )
-        # Update org name if profile was created by signal with default
-        if not created and profile.organization_name == 'Default Org':
+        # Always update the org name to what the user explicitly registered with.
+        # The post_save signal assigns the canonical org name, but we want to honor the registration payload.
+        if not created and profile.organization_name != org_name:
             profile.organization_name = org_name
             profile.save()
         return user

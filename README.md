@@ -43,6 +43,7 @@ sarathi/
 - [x] Role-based profiles: `admin`, `dispatcher`, `viewer`, `driver`
 - [x] Auth rate limiting: login (30/min), register (10/hr), password reset (5/hr)
 - [x] Case-insensitive organization name matching
+- [x] Driver and Admin organization profile validation enforced on login and registration
 - [x] First-login forced password change flow (`requires_password_change` flag)
 - [x] JWT session jitter (±5 min) to prevent thundering-herd on mass token expiry
 
@@ -67,13 +68,14 @@ sarathi/
 - [x] **Interactive Dispatch Workspace** — auto-recommendation, one-click manual/automated assignment, live candidate list
 - [x] Full dispatch lifecycle: `assigned → accepted → en_route → arrived → completed` (+ `cancelled`)
 - [x] Dispatcher **and** driver can accept (first-wins race)
-- [x] OSRM real-road routing — route geometry returned to dashboard and driver app
+- [x] **Optimized OSRM Routing** — multi-waypoint routes (Vehicle → Pickup → Destination) with `continue_straight` to avoid unnecessary detours.
+- [x] **Douglas-Peucker route simplification** — reduces GPS zigzag noise for smooth map drawing.
 - [x] Live ETA + route progress (`progress_percent`, `remaining_distance_km`, `eta_min`)
 - [x] Dispatch CSV export: `GET /api/dispatch/export/`
 
 ### 🗺️ Real-Time Tracking
 - [x] GPS breadcrumb recording (`LocationRecord` model)
-- [x] Live vehicle map (Leaflet, 5s polling)
+- [x] Live vehicle map (Leaflet, 5s polling) with active multi-waypoint route overlays
 - [x] **Live Fleet Telemetry tab** — full-screen map with status filter pills (all, on duty, en route, idle, offline)
 - [x] Clickable fleet rows → live vehicle map panel
 - [x] **Rules & Alerts Engine** (`vehicles/rules_engine.py`) — geofencing, speed limits, max idling, service boundaries
@@ -85,12 +87,11 @@ sarathi/
 - [x] Flutter trip history screen — high-contrast cards with status pills and pull-to-refresh
 
 ### ⛽ Fuel Management & Expense Tracking
-- [x] `FuelEntry` model — liters, cost_per_liter, total_cost, odometer, notes, receipt image
+- [x] **New `FuelLog` model** — tracks liters/kWh, amount, odometer, notes, and **receipt image uploads** for petrol/diesel/EV.
 - [x] Driver fuel log endpoints: `POST /api/drivers/me/fuel-logs/`, `GET /api/fuel-logs/`
 - [x] NOC (Nepal Oil Corporation) fuel price integration — daily scrape + 24hr cache
 - [x] Fuel price API: `GET /api/fuel-prices/`
-- [x] Fuel summary metrics: total entries, total cost, this-month cost, distinct vehicles
-- [x] Vehicle filter + search in fuel tab
+- [x] **Analytics Dashboard Integration** — fuel cost trends and total fuel cost KPIs query the new `FuelLog` tables.
 - [x] Receipt preview modal (click thumbnail → full-size)
 - [x] Fuel history list in Flutter driver app (pull-to-refresh, status cards)
 
@@ -264,13 +265,34 @@ Frontend available at: **http://localhost:5173**
 
 ### 7. Flutter driver app
 
+If using a physical Android device or emulator connected via USB/ADB, forward port 8000 so the app can talk to `localhost:8000`:
+
+```bash
+adb reverse tcp:8000 tcp:8000
+```
+
 ```bash
 cd driver_app
 flutter pub get
 flutter run
 ```
 
-Make sure a device/emulator is connected. The app connects to `http://<your-local-ip>:8000/api/`.
+Make sure a device/emulator is connected. The app connects to `http://127.0.0.1:8000/api/` (with `adb reverse`) or `http://<your-local-ip>:8000/api/`.
+
+---
+
+## 🎮 How to Operate the System
+
+1. **System Startup:** Ensure PostGIS (port 5433) and Redis (port 6379) are running in Docker. Then start the Django backend (`python manage.py runserver`), the Vite frontend (`npm run dev`), and the Flutter app (`flutter run`).
+2. **Admin/Dispatcher Dashboard:** Open `http://localhost:5173`. Log in with your admin/dispatcher credentials.
+3. **Driver Workflow:** Open the Flutter app. Log in as a driver. Toggle **"On Duty"**. This updates the `is_available` status on the backend, provided you are not admin-blocked.
+4. **Dispatching:**
+   - In the React frontend, go to **Dispatch Workspace**. 
+   - Enter a pickup location and destination. The system will use OSRM to preview the route, simplify the geometry for a clean map overlay, and evaluate candidates based on ETA and availability.
+   - Click "Dispatch" on a recommended vehicle.
+5. **Real-time Tracking:** Once dispatched, the driver receives an instant notification (via WebSockets/polling). As the driver moves, the app sends GPS points. The React dashboard updates the vehicle's position, ETA, and progress along the multi-waypoint OSRM route in the **Live Tracking** tab.
+6. **Breakdown / Issues:** If a vehicle breaks down, the driver reports it in the app. The dispatcher can then authorize an "Emergency Recovery" from the dashboard, assigning a new vehicle to the breakdown coordinates.
+7. **Fuel & Maintenance:** Drivers log fuel (now using `FuelLog` with receipt images) and complete maintenance tasks from the app. These immediately reflect in the Admin **Analytics** and Fuel/Maintenance tabs.
 
 ---
 

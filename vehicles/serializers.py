@@ -103,6 +103,17 @@ class VehicleSerializer(serializers.ModelSerializer):
     driver_name = serializers.SerializerMethodField()
     location = PointDictField()
     photo_url = serializers.SerializerMethodField()
+    active_dispatch_geometry = serializers.SerializerMethodField()
+    
+    def get_active_dispatch_geometry(self, obj):
+        if obj.has_active_dispatch:
+            active = obj.dispatch_requests.filter(
+                status__in=obj.ACTIVE_DISPATCH_STATUSES
+            ).order_by('-created_at').first()
+            if active:
+                from .views import safe_route_info
+                return safe_route_info(obj, active, deadline=2.0)['geometry']
+        return None
     
     def get_driver_name(self, obj):
         return obj.driver.name if obj.driver else None
@@ -124,10 +135,12 @@ class VehicleSerializer(serializers.ModelSerializer):
             'driver', 'driver_name', 'last_location_at',
             'total_distance_km',
             'has_active_dispatch', 'active_dispatch_status',
+            'active_dispatch_geometry',
         ]
         read_only_fields = [
             'id', 'driver_name', 'is_available', 'photo_url',
             'has_active_dispatch', 'active_dispatch_status',
+            'active_dispatch_geometry',
             'last_location_at', 'total_distance_km',
         ]
 

@@ -75,9 +75,16 @@ class VerifyAdminUserView(APIView):
         if not user:
             return Response({'error': 'User not found'}, status=404)
 
-        # Validate against the canonical (admin's) org name, case-insensitive
-        expected_org = get_organization_name()
-        if not hasattr(user, 'profile') or expected_org.lower() != (organization_name or '').lower():
+        # Validate against the user's actual org name
+        expected_org = user.profile.organization_name
+        if expected_org == 'Default Org':
+            canonical_org = get_organization_name()
+            if canonical_org != 'Default Org':
+                expected_org = canonical_org
+                user.profile.organization_name = expected_org
+                user.profile.save(update_fields=['organization_name'])
+
+        if expected_org.lower() != (organization_name or '').lower():
             return Response({'error': f'Invalid organization name. Expected: {expected_org}'}, status=400)
 
         return Response({'success': True, 'message': 'User verified'})
@@ -99,9 +106,16 @@ class ResetAdminPasswordView(APIView):
         if not user:
             return Response({'error': 'User not found'}, status=404)
 
-        # Validate against the canonical (admin's) org name, case-insensitive
-        expected_org = get_organization_name()
-        if not hasattr(user, 'profile') or expected_org.lower() != (organization_name or '').lower():
+        # Validate against the user's actual org name
+        expected_org = user.profile.organization_name
+        if expected_org == 'Default Org':
+            canonical_org = get_organization_name()
+            if canonical_org != 'Default Org':
+                expected_org = canonical_org
+                user.profile.organization_name = expected_org
+                user.profile.save(update_fields=['organization_name'])
+
+        if expected_org.lower() != (organization_name or '').lower():
             return Response({'error': f'Invalid organization name. Expected: {expected_org}'}, status=400)
 
         if len(new_password) < 8:

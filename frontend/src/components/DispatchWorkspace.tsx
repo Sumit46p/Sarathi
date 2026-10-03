@@ -330,6 +330,7 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
 
   // Normal Logistics Candidate Evaluation
   const [evaluating, setEvaluating] = useState(false);
+  const [pickupToDestGeometry, setPickupToDestGeometry] = useState<Array<[number, number]> | null>(null);
   const [recommended, setRecommended] = useState<CandidateVehicle | null>(null);
   const [otherCandidates, setOtherCandidates] = useState<CandidateVehicle[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateVehicle | null>(null);
@@ -486,6 +487,8 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
       const res = await api.post('/dispatch/preview/', {
         lat: pickupLocation.lat,
         lng: pickupLocation.lng,
+        dest_lat: destLocation?.lat,
+        dest_lng: destLocation?.lng,
         vehicle_type: vehicleType,
         operation_type: 'NORMAL_LOGISTICS',
       });
@@ -493,6 +496,11 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
       if (res.data) {
         setRecommended(res.data.recommended || null);
         setOtherCandidates(res.data.candidates || []);
+        if (res.data.summary?.pickup_to_dest_geometry) {
+          setPickupToDestGeometry(res.data.summary.pickup_to_dest_geometry);
+        } else {
+          setPickupToDestGeometry(null);
+        }
         if (res.data.recommended) {
           setSelectedCandidate(res.data.recommended);
         }
@@ -502,13 +510,13 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
     } finally {
       setEvaluating(false);
     }
-  }, [pickupLocation, vehicleType]);
+  }, [pickupLocation, destLocation, vehicleType]);
 
   useEffect(() => {
     if (dispatchMode === 'logistics' && pickupLocation) {
       evaluateNormalLogistics();
     }
-  }, [dispatchMode, pickupLocation, vehicleType, evaluateNormalLogistics]);
+  }, [dispatchMode, pickupLocation, destLocation, vehicleType, evaluateNormalLogistics]);
 
   // Confirm Normal Logistics Dispatch
   const handleConfirmLogistics = async () => {
@@ -1486,15 +1494,19 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
           {/* Route Between Pickup and Destination */}
           {pickupLocation && destLocation && (
             <Polyline
-              positions={[
-                [pickupLocation.lat, pickupLocation.lng],
-                [destLocation.lat, destLocation.lng],
-              ]}
+              positions={
+                pickupToDestGeometry || [
+                  [pickupLocation.lat, pickupLocation.lng],
+                  [destLocation.lat, destLocation.lng],
+                ]
+              }
               pathOptions={{
                 color: '#10b981',
-                weight: 3,
-                dashArray: '8, 8',
+                weight: pickupToDestGeometry ? 5 : 3,
+                dashArray: pickupToDestGeometry ? undefined : '8, 8',
                 opacity: 0.85,
+                lineCap: 'round',
+                lineJoin: 'round',
               }}
             />
           )}
