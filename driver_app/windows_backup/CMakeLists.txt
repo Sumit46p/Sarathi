@@ -32,22 +32,6 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
-# Suppress MSVC C2338 error from permission_handler_windows which uses
-# the deprecated <experimental/coroutine> header (removed in newer VS 2022).
-add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
-
-# Point CMake's find_program() to our pre-downloaded nuget.exe so plugins
-# (e.g. audioplayers_windows) don't attempt a web download which fails.
-# nuget.exe was placed here by running:
-#   Invoke-WebRequest -Uri https://dist.nuget.org/win-x86-commandline/latest/nuget.exe -OutFile "$env:LOCALAPPDATA\nuget\nuget.exe"
-list(APPEND CMAKE_PROGRAM_PATH "$ENV{LOCALAPPDATA}/nuget")
-
-# Add /FS globally so ALL compilation units (including plugin targets that don't
-# go through APPLY_STANDARD_SETTINGS) serialize PDB writes, fixing C1041 errors
-# that occur when multiple CL.EXE processes write the same .pdb in parallel.
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FS")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /FS")
-
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by
@@ -57,8 +41,6 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)
   target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100")
   target_compile_options(${TARGET} PRIVATE /EHsc)
-  # /FS: serialize PDB writes so parallel CL.EXE processes don't conflict (C1041)
-  target_compile_options(${TARGET} PRIVATE /FS)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
 endfunction()

@@ -15,6 +15,11 @@ djangorestframework-simplejwt==5.3.1
 reportlab==4.2.4
 redis==5.0.8
 django-redis==5.4.0
+<<<<<<< Updated upstream
 daphne>=4.0.0
 channels>=4.0.0
 channels-redis>=4.0.0
+=======
+daphne==4.2.3
+channels==4.3.2
+>>>>>>> Stashed changes
