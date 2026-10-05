@@ -3436,24 +3436,34 @@ def analytics_dashboard(request):
     user = request.user
     org_ids = get_org_user_ids(user)
     
-    # Base querysets scoped to organization
-    vehicles = Vehicle.objects.filter(owner__in=org_ids)
-    drivers = Driver.objects.filter(owner__in=org_ids)
+    # Base querysets scoped to organization — .only() limits fetched columns for speed
+    vehicles = Vehicle.objects.filter(owner__in=org_ids).only(
+        'id', 'vehicle_type', 'is_available', 'admin_blocked', 'driver_id',
+    )
+    drivers = Driver.objects.filter(owner__in=org_ids).only('id', 'name', 'is_on_duty')
     dispatches = DispatchRequest.objects.filter(assigned_vehicle__owner__in=org_ids)
     emergencies = EmergencyRequest.objects.filter(user__in=org_ids)
     issues = IssueReport.objects.filter(driver__owner__in=org_ids)
+    fuel_entries = FuelEntry.objects.filter(driver__owner__in=org_ids)
     fuel_logs = FuelLog.objects.filter(driver__owner__in=org_ids)
-    
+
     # ── 1. Fleet Status Pie Data ──────────────────────────────────────────
-    total_vehicles = vehicles.count()
-    available_count = vehicles.filter(is_available=True, admin_blocked=False).count()
-    unavailable_count = vehicles.filter(is_available=False).count()
-    blocked_count = vehicles.filter(admin_blocked=True).count()
-    
+    # Single aggregate query instead of 4 separate .count() calls
+    fleet_agg = vehicles.aggregate(
+        total=Count('id'),
+        available=Count('id', filter=Q(is_available=True, admin_blocked=False)),
+        unavailable=Count('id', filter=Q(is_available=False)),
+        blocked=Count('id', filter=Q(admin_blocked=True)),
+    )
+    total_vehicles    = fleet_agg['total']       or 0
+    available_count   = fleet_agg['available']   or 0
+    unavailable_count = fleet_agg['unavailable'] or 0
+    blocked_count     = fleet_agg['blocked']     or 0
+
     fleet_status = [
-        { 'name': 'Available', 'value': available_count, 'color': '#10b981' },
+        { 'name': 'Available',   'value': available_count,   'color': '#10b981' },
         { 'name': 'Unavailable', 'value': unavailable_count, 'color': '#f59e0b' },
-        { 'name': 'Blocked', 'value': blocked_count, 'color': '#ef4444' },
+        { 'name': 'Blocked',     'value': blocked_count,     'color': '#ef4444' },
     ]
     
     # ── 2. Dispatch Volume by Day (last 7 days) ──────────────────────────
@@ -3663,27 +3673,29 @@ def analytics_dashboard(request):
         .filter(total_trips__gt=0)
         .order_by('-completed_trips')[:5]
     )
-    event_cutoff = timezone.now() - timezone.timedelta(days=DRIVER_SCORE_WINDOW_DAYS)
     driver_ids = [d.id for d in driver_perf_rows]
-    event_breakdown = {}
+
+    # Safety score: -20 pts per accident (EmergencyRequest type='accident').
+    # FK path: EmergencyRequest.assigned_vehicle → Vehicle.driver → Driver
+    ACCIDENT_SCORE_PENALTY = 20
+    accidents_by_driver: dict[int, int] = {}
     if driver_ids:
-        agg = (
-            DrivingEvent.objects
-            .filter(driver_id__in=driver_ids, created_at__gte=event_cutoff)
-            .values('driver_id', 'event_type')
+        acc_agg = (
+            emergencies  # already org-scoped
+            .filter(
+                assigned_vehicle__driver_id__in=driver_ids,
+                emergency_type='accident',
+            )
+            .values('assigned_vehicle__driver_id')
             .annotate(count=Count('id'))
         )
-        for row in agg:
-            entry = event_breakdown.setdefault(
-                row['driver_id'], {'harsh_accel': 0, 'harsh_brake': 0, 'harsh_turn': 0, 'total': 0}
-            )
-            entry[row['event_type']] = row['count']
-            entry['total'] += row['count']
+        for row in acc_agg:
+            accidents_by_driver[row['assigned_vehicle__driver_id']] = row['count']
 
     driver_performance = []
     for d in driver_perf_rows:
-        breakdown = event_breakdown.get(d.id, {'harsh_accel': 0, 'harsh_brake': 0, 'harsh_turn': 0, 'total': 0})
-        penalty = sum(breakdown[row_type] * w for row_type, w in DRIVER_SCORE_WEIGHTS.items())
+        accidents = accidents_by_driver.get(d.id, 0)
+        penalty = accidents * ACCIDENT_SCORE_PENALTY
         driver_performance.append({
             'name': d.name,
             'total_trips': d.total_trips,
@@ -3691,8 +3703,7 @@ def analytics_dashboard(request):
             'acceptance_rate': round((d.accepted_trips / d.total_trips) * 100, 1) if d.total_trips else 0,
             'completed_trips': d.completed_trips,
             'score': max(0, 100 - penalty),
-            'harsh_events': breakdown['total'],
-            'events': breakdown,
+            'accidents': accidents,
         })
 
     return Response({

@@ -46,8 +46,7 @@ export interface AnalyticsData {
     acceptance_rate: number;
     completed_trips: number;
     score: number;
-    harsh_events: number;
-    events: { harsh_accel: number; harsh_brake: number; harsh_turn: number; total: number };
+    accidents: number;
   }>;
   kpi: {
     total_vehicles: number;
