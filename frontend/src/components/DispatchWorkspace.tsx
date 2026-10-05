@@ -207,6 +207,8 @@ interface ActiveDispatch {
   duration_min?: number;
   created_at: string;
   route_geometry?: Array<[number, number]> | null;
+  gps_lost?: boolean;
+  assigned_vehicle_last_location_at?: string | null;
 }
 
 const EXISTING_VEHICLE_TYPES = [
@@ -1148,6 +1150,20 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
                         </span>
                       </div>
 
+                      {/* GPS Lost Warning */}
+                      {op.gps_lost && (
+                        <div style={{ marginTop: '12px', padding: '10px 14px', backgroundColor: 'rgba(255, 76, 76, 0.1)', border: '1px solid rgba(255, 76, 76, 0.3)', borderRadius: '8px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                          <AlertCircle size={16} color="#FF4C4C" style={{ marginTop: '2px' }} />
+                          <div>
+                            <strong style={{ color: '#FF4C4C', fontSize: '13px', display: 'block', marginBottom: '2px' }}>⚠️ GPS Signal Lost</strong>
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.4' }}>
+                              Driver location is stale or turned off. Last seen:{' '}
+                              {op.assigned_vehicle_last_location_at ? new Date(op.assigned_vehicle_last_location_at).toLocaleTimeString() : 'Unknown'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Route & Cargo details */}
                       <div className="op-route-meta">
                         <div>
@@ -1449,6 +1465,40 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
               </Marker>
             );
           })}
+
+          {/* Active Ops: Pickup & Destination Markers */}
+          {dispatchMode === 'active' && liveOperations.map((op) => (
+            <React.Fragment key={`op-markers-${op.id}`}>
+              {op.request_lat != null && op.request_lng != null && (
+                <Marker position={[op.request_lat, op.request_lng]} icon={pickupMarkerIcon}>
+                  <Popup>
+                    <div className="target-popup-content">
+                      <strong>📍 Pickup: {op.location_name || 'Pickup Site'}</strong>
+                      <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: '#666' }}>{op.assigned_vehicle_name} ({op.assigned_vehicle_plate})</p>
+                      <span className="coords">{op.request_lat.toFixed(5)}, {op.request_lng.toFixed(5)}</span>
+                    </div>
+                  </Popup>
+                </Marker>
+              )}
+              {op.dest_lat != null && op.dest_lng != null && (
+                <Marker position={[op.dest_lat, op.dest_lng]} icon={destMarkerIcon}>
+                  <Popup>
+                    <div className="target-popup-content">
+                      <strong>🏁 Destination: {op.destination_name || 'Delivery Destination'}</strong>
+                      <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: '#666' }}>{op.assigned_vehicle_name} ({op.assigned_vehicle_plate})</p>
+                      <span className="coords">{op.dest_lat.toFixed(5)}, {op.dest_lng.toFixed(5)}</span>
+                    </div>
+                  </Popup>
+                </Marker>
+              )}
+              {op.route_geometry && op.route_geometry.length > 1 && (
+                <Polyline
+                  positions={op.route_geometry}
+                  pathOptions={{ color: '#f59e0b', weight: 4, opacity: 0.8, dashArray: '6, 4', lineCap: 'round', lineJoin: 'round' }}
+                />
+              )}
+            </React.Fragment>
+          ))}
 
           {/* Fleet Vehicles Markers */}
           {(vehiclesList.length > 0 ? vehiclesList : fleetVehicles).map((v) => {

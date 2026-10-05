@@ -32,12 +32,17 @@ class _TripsScreenState extends State<TripsScreen>
   late final AnimationController _pulse =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
         ..repeat(reverse: true);
+  
+  // Pickup confirmation state
+  bool _showPickupConfirmDialog = false;
+  bool _confirmingPickup = false;
 
   static const Map<String, List<String>> _validTransitions = {
     'assigned': ['accepted', 'cancelled'],
     'accepted': ['en_route', 'cancelled'],
-    'en_route': ['arrived', 'cancelled'],
+    'en_route': ['arrived', 'cancelled', 'AT_PICKUP'],
     'arrived': ['completed', 'cancelled'],
+    'AT_PICKUP': ['completed', 'cancelled'],
   };
 
   static const Map<String, String> _statusLabels = {
@@ -47,6 +52,7 @@ class _TripsScreenState extends State<TripsScreen>
     'arrived': 'Arrived',
     'completed': 'Completed',
     'cancelled': 'Cancelled',
+    'AT_PICKUP': 'At Pickup',
   };
 
   // Stepper order used to render the lifecycle timeline.
@@ -54,6 +60,7 @@ class _TripsScreenState extends State<TripsScreen>
     'assigned',
     'accepted',
     'en_route',
+    'AT_PICKUP',
     'arrived',
     'completed',
   ];
@@ -143,12 +150,23 @@ class _TripsScreenState extends State<TripsScreen>
     return null;
   }
 
+  LatLng? _destinationLocation() {
+    final lat = (_dispatch?['dest_lat'] as num?)?.toDouble();
+    final lng = (_dispatch?['dest_lng'] as num?)?.toDouble();
+    if (lat != null && lng != null) return LatLng(lat, lng);
+    return null;
+  }
+
+  String _pickupName() => _dispatch?['location_name']?.toString() ?? 'Pickup';
+  String _destName() => _dispatch?['destination_name']?.toString() ?? 'Destination';
+
   void _fitMap() {
     if (!_mapReady) return;
     final points = <LatLng>[
       ..._decodeGeometry(_dispatch?['geometry']),
       if (_vehicleLocation() case final v?) v,
       if (_requestLocation() case final r?) r,
+      if (_destinationLocation() case final d?) d,
     ];
     if (points.isEmpty) return;
     if (points.length == 1) {
@@ -159,28 +177,147 @@ class _TripsScreenState extends State<TripsScreen>
       _mapController.fitCamera(
         CameraFit.bounds(
           bounds: LatLngBounds.fromPoints(points),
-          padding: const EdgeInsets.fromLTRB(48, 48, 48, 48),
+          padding: const EdgeInsets.fromLTRB(48, 48, 48, 120),
         ),
       );
     } catch (_) {
       _mapController.move(points.first, 14);
     }
+Future<void> _transition(String next) async {
+      // Extract location from dispatch data for GPS validation
+      double? pickupLat, pickupLng, destinationLat, destinationLng;
+      
+      final vehicleLoc = _dispatch?['assigned_vehicle_location'];
+      if (vehicleLoc is Map) {
+        pickupLat = (vehicleLoc['lat'] as num?)?.toDouble();
+        pickupLng = (vehicleLoc['lng'] as num?)?.toDouble();
+      }
+      
+      final destLoc = _dispatch?['destination_location'];
+      if (destLoc is Map) {
+        destinationLat = (destLoc['lat'] as num?)?.toDouble();
+        destinationLng = (destLoc['lng'] as num?)?.toDouble();
+      }
+      
+      setState(() => _transitioning = true);
+      try {
+        final result = await ApiService.transitionDispatch(
+          status: next,
+          pickupLat: pickupLat,
+          pickupLng: pickupLng,
+          destinationLat: (next == 'completed' || next == 'arrived') ? destinationLat : null,
+          destinationLng: (next == 'completed' || next == 'arrived') ? destinationLng : null,
+        );
+        if (!mounted) return;
+        setState(() => _transitioning = false);
+        
+        // Show GPS warnings if returned from server
+        if (result is Map && result['gps_warnings'] != null) {
+          final warnings = List<String>.from(result['gps_warnings'] as List);
+          final gpsErrors = warnings.join('\n\n');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$gpsErrors\n\n⚠️ Admin override successful (emergency only).'),
+              backgroundColor: AppTheme.warningColor,
+              duration: const Duration(seconds: 8),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        
+        setState(() => _dispatch = (result is Map && result['admin_override'] == true) ? _dispatch! : result);
+        _fitMap();
+      } on ApiException catch (e) {
+        if (!mounted) return;
+        setState(() => _transitioning = false);
+        
+        // Map API error messages to user-friendly GPS-specific messages
+        String errorMessage = e.message;
+        
+        if (e.message.contains('GPS signal unavailable')) {
+          errorMessage = '📍 Location Required\n\nPlease enable location services and wait for GPS lock before proceeding.';
+        } else if (e.message.contains('GPS stale') || e.message.contains('GPS outdated')) {
+          errorMessage = '📍 Location Signal Outdated\n\nPlease ensure location services are enabled and try again in a moment.';
+        } else if (e.message.contains('Movement required') || e.message.contains('No movement')) {
+          errorMessage = '🚗 Movement Required\n\nYou must start moving from the pickup. Please drive away before marking "En Route".';
+        } else if (e.message.contains('Too far from destination') || e.message.contains('Not at destination')) {
+          errorMessage = '📍 Not at Destination\n\nYou must be within 500m of the destination. Please continue driving.';
+        } else if (e.message.contains('Admin Override')) {
+          errorMessage = '⚠️ Admin Override\n\nThis transition was approved by an administrator (emergency use only).';
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 6),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _transitioning = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update trip: ${e.toString()}'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _transition(String next) async {
     setState(() => _transitioning = true);
-    final result = await ApiService.transitionDispatch(status: next);
-    if (!mounted) return;
-    setState(() => _transitioning = false);
-    if (result == null) {
+    try {
+      final result = await ApiService.transitionDispatch(status: next);
+      if (!mounted) return;
+      setState(() => _transitioning = false);
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Failed to update trip'),
+              backgroundColor: AppTheme.errorColor),
+        );
+      } else {
+        setState(() => _dispatch = result);
+        _fitMap();
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _transitioning = false);
+      
+      // Show detailed GPS validation error messages to the driver
+      String errorMessage = e.message;
+      
+      // Extract detail field if available for more context
+      if (e.message.contains('GPS signal required')) {
+        errorMessage = '📍 Location Required\n\nPlease enable location services and wait for GPS lock before proceeding.';
+      } else if (e.message.contains('GPS signal outdated')) {
+        errorMessage = '📍 Location Signal Outdated\n\nPlease ensure location services are enabled and try again in a moment.';
+      } else if (e.message.contains('Movement required')) {
+        errorMessage = '🚗 Movement Required\n\nYou must start moving before marking "En Route". Please drive away from the pickup location.';
+      } else if (e.message.contains('Too far from destination')) {
+        errorMessage = '📍 Not at Destination\n\nYou must be near the destination to mark this status. Please continue driving.';
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Failed to update trip'),
-            backgroundColor: AppTheme.errorColor),
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: AppTheme.errorColor,
+          duration: const Duration(seconds: 5),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
-    } else {
-      setState(() => _dispatch = result);
-      _fitMap();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _transitioning = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update trip: ${e.toString()}'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
     }
   }
 
@@ -232,6 +369,7 @@ class _TripsScreenState extends State<TripsScreen>
     final route = _decodeGeometry(_dispatch?['geometry']);
     final vehicle = _vehicleLocation();
     final request = _requestLocation();
+    final dest = _destinationLocation();
 
     LatLng center;
     if (vehicle != null) {
@@ -288,15 +426,73 @@ class _TripsScreenState extends State<TripsScreen>
                   ),
                 ],
               ),
+            // Pickup marker with label
             if (request != null)
               MarkerLayer(
                 markers: [
                   Marker(
                     point: request,
-                    width: 40,
-                    height: 40,
-                    child: const Icon(Icons.location_on,
-                        color: AppTheme.errorColor, size: 36),
+                    width: 100,
+                    height: 64,
+                    alignment: Alignment.bottomCenter,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.errorColor,
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
+                            ],
+                          ),
+                          child: Text(
+                            _pickupName(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Icon(Icons.location_on, color: AppTheme.errorColor, size: 32),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            // Destination marker with label
+            if (dest != null)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: dest,
+                    width: 110,
+                    height: 64,
+                    alignment: Alignment.bottomCenter,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor,
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
+                            ],
+                          ),
+                          child: Text(
+                            _destName(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Icon(Icons.flag_rounded, color: AppTheme.primaryColor, size: 32),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -347,54 +543,40 @@ class _TripsScreenState extends State<TripsScreen>
           ),
         ),
         // Legend chip
-        if (request != null)
-          Positioned(
-            left: 12,
-            bottom: 12,
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppTheme.surface.withValues(alpha: 0.95),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.place,
-                      size: 14, color: AppTheme.errorColor),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Scene',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Icon(Icons.local_shipping_outlined,
-                      size: 14, color: AppTheme.primaryColor),
-                  const SizedBox(width: 4),
-                  Text(
-                    'My unit',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.onSurface,
-                    ),
-                  ),
-                ],
-              ),
+        Positioned(
+          left: 12,
+          bottom: 12,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.surface.withValues(alpha: 0.95),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.local_shipping_outlined, size: 14, color: AppTheme.primaryColor),
+                const SizedBox(width: 4),
+                Text('My Vehicle', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
+                const SizedBox(width: 10),
+                Icon(Icons.location_on, size: 14, color: AppTheme.errorColor),
+                const SizedBox(width: 4),
+                Text('Pickup', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
+                const SizedBox(width: 10),
+                Icon(Icons.flag_rounded, size: 14, color: AppTheme.primaryColor),
+                const SizedBox(width: 4),
+                Text('Destination', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
+              ],
             ),
           ),
+        ),
       ],
     );
   }

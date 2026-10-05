@@ -118,15 +118,25 @@ export default function LiveTracking() {
     });
   }, [vehicles, search, typeFilter, statusFilter]);
 
-  /* vehicles shown on map */
+  /* vehicles shown on map - only those with valid location within Nepal bounds */
   const mapVehicles = useMemo(
-    () => vehicles.filter(v => v.location && NEPAL_BOUNDS.contains([v.location.lat, v.location.lng])),
+    () => vehicles.filter((v): v is Vehicle & { location: NonNullable<Vehicle['location']> } =>
+      v.location !== null && NEPAL_BOUNDS.contains([v.location.lat, v.location.lng])
+    ),
+    [vehicles],
+  );
+  
+  /* count vehicles without GPS */
+  const vehiclesWithoutGPS = useMemo(
+    () => vehicles.filter(v => !v.location).length,
     [vehicles],
   );
 
   const handleSelect = (v: Vehicle) => {
     setSelectedId(v.id);
-    if (v.location) setFocusTarget({ lat: v.location.lat, lng: v.location.lng });
+    if (v.location && NEPAL_BOUNDS.contains([v.location.lat, v.location.lng])) {
+      setFocusTarget({ lat: v.location.lat, lng: v.location.lng });
+    }
   };
 
   const clearSearch = () => { setSearch(''); searchRef.current?.focus(); };
@@ -196,6 +206,7 @@ export default function LiveTracking() {
           <span><span className="lt-stat-val">{vehicles.length}</span> total</span>
           <span><span className="lt-stat-val" style={{ color: '#22c55e' }}>{vehicles.filter(v => v.is_available).length}</span> available</span>
           <span><span className="lt-stat-val" style={{ color: '#f59e0b' }}>{vehicles.filter(v => !v.is_available).length}</span> in service</span>
+          {vehiclesWithoutGPS > 0 && <span><span className="lt-stat-val" style={{ color: '#64748b' }}>{vehiclesWithoutGPS}</span> no GPS</span>}
         </div>
 
         {/* vehicle list */}
@@ -242,9 +253,13 @@ export default function LiveTracking() {
                   <span className={`lt-card-status ${v.is_available ? 'available' : 'unavailable'}`}>
                     {v.is_available ? 'Available' : 'In service'}
                   </span>
-                  {v.location && (
+                  {v.location ? (
                     <span className="lt-card-locate">
                       <MapPin size={11} /> Locate
+                    </span>
+                  ) : (
+                    <span className="lt-card-locate" style={{ color: '#94a3b8', cursor: 'default' }}>
+                      <MapPin size={11} /> No GPS
                     </span>
                   )}
                 </div>

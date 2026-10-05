@@ -41,6 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _notificationFailures = 0;
   final AudioPlayer _notificationPlayer = AudioPlayer();
   final Set<String> _beepedNotificationIds = <String>{};
+  bool _hasNotifiedGpsLost = false;
 
   @override
   void initState() {
@@ -461,8 +462,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (success) {
         _consecutiveLocationFailures = 0;
+        _hasNotifiedGpsLost = false;
       } else {
         _consecutiveLocationFailures++;
+      }
+
+      if (_consecutiveLocationFailures >= 6 && _activeDispatch != null && !_hasNotifiedGpsLost) {
+        _hasNotifiedGpsLost = true;
+        ApiService.notifyGpsLost();
       }
 
       if (mounted) {
@@ -648,6 +655,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // GPS Lost Mid-Trip Warning Banner
+              if (_activeDispatch != null && _consecutiveLocationFailures >= 6)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 20),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.errorColor.withOpacity(0.1),
+                    border: Border.all(color: AppTheme.errorColor.withOpacity(0.5)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.gps_off, color: AppTheme.errorColor, size: 28),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'GPS Signal Lost',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.errorColor,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Your dispatcher can no longer track you. Admin has been alerted. Please ensure Location is on.',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppTheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
               // Header
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

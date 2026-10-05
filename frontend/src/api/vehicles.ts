@@ -11,7 +11,7 @@ export interface Vehicle {
   location: {
     lat: number;
     lng: number;
-  };
+  } | null;
   has_active_dispatch?: boolean;
   active_dispatch_status?: string | null;
   active_dispatch_geometry?: Array<[number, number]> | null;
@@ -46,8 +46,7 @@ export interface AnalyticsData {
     acceptance_rate: number;
     completed_trips: number;
     score: number;
-    harsh_events: number;
-    events: { harsh_accel: number; harsh_brake: number; harsh_turn: number; total: number };
+    accidents: number;
   }>;
   kpi: {
     total_vehicles: number;

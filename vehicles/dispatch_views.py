@@ -587,7 +587,11 @@ def dispatch_request_transition(request, pk):
             matched_target = target
             break
 
-    # Admin override transitions
+    # Check if admin is trying to skip or go backwards in the state machine
+    admin_override = request.data.get('admin_override', False)
+    is_invalid_transition = not matched_target
+    
+    # Admin override transitions (only if explicitly requested)
     if not matched_target:
         allowed_admin = [
             'accepted', 'en_route', 'arrived', 'in_service', 'completed', 'cancelled', 'rejected',
@@ -604,6 +608,104 @@ def dispatch_request_transition(request, pk):
         return Response({
             'error': f"Cannot transition operation from '{dispatch.status}' to '{new_status}'."
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Block invalid state machine transitions unless admin explicitly overrides
+    if is_invalid_transition and not admin_override:
+        return Response({
+            'error': 'Invalid state transition',
+            'detail': f"Cannot transition from '{dispatch.status}' to '{matched_target}'. This violates the dispatch state machine. Use admin_override=true for emergency only.",
+            'current_status': dispatch.status,
+            'requested_status': matched_target,
+            'valid_next_states': valid_transitions,
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # ========== GPS VALIDATION FOR ADMIN (Now blocks unless admin_override=true) ==========
+    gps_warnings = []
+    
+    # Expand GPS validation to cover ALL location-dependent statuses
+    gps_required_statuses = [
+        'en_route', 'EN_ROUTE_TO_PICKUP', 'EN_ROUTE_TO_BREAKDOWN',
+        'AT_PICKUP', 'AT_BREAKDOWN_LOCATION', 
+        'in_service', 'IN_TRANSIT', 'IN_TRANSIT_TO_DESTINATION',
+        'arrived', 'ARRIVED_AT_DESTINATION', 'completed', 'GOODS_TRANSFERRED'
+    ]
+    
+    if dispatch.assigned_vehicle and matched_target in gps_required_statuses:
+        vehicle = dispatch.assigned_vehicle
+        now = timezone.now()
+        GPS_STALENESS_THRESHOLD_SECONDS = 120
+        MOVEMENT_THRESHOLD_METERS = 100
+        ARRIVAL_GEOFENCE_METERS = 500
+        
+        # Check GPS staleness (for all GPS-dependent statuses)
+        if vehicle.last_location_at is None:
+            gps_warnings.append('GPS signal unavailable')
+        else:
+            gps_age_seconds = (now - vehicle.last_location_at).total_seconds()
+            if gps_age_seconds > GPS_STALENESS_THRESHOLD_SECONDS:
+                gps_warnings.append(f'GPS stale ({int(gps_age_seconds)}s old)')
+                
+                # ⚠️ IMPORTANT: If GPS is very stale (>10 min) during active dispatch,
+                # this likely means driver turned off location mid-route.
+                # We should still allow completion if they're claiming to be at destination,
+                # but flag it for review.
+                if gps_age_seconds > 600:  # 10 minutes
+                    gps_warnings.append('⚠️ GPS has been off for >10 minutes - verify driver actually completed trip')
+        
+        # Check movement for en_route transitions
+        if matched_target in ['en_route', 'EN_ROUTE_TO_PICKUP', 'EN_ROUTE_TO_BREAKDOWN'] and dispatch.pickup_location and vehicle.location:
+            from .views import haversine_distance_km
+            distance_from_pickup_m = haversine_distance_km(
+                dispatch.pickup_location.y, dispatch.pickup_location.x,
+                vehicle.location.y, vehicle.location.x
+            ) * 1000
+            if distance_from_pickup_m < MOVEMENT_THRESHOLD_METERS:
+                gps_warnings.append(f'No movement ({int(distance_from_pickup_m)}m from pickup)')
+        
+        # Check proximity for pickup arrival
+        if matched_target in ['AT_PICKUP', 'AT_BREAKDOWN_LOCATION'] and dispatch.pickup_location and vehicle.location:
+            from .views import haversine_distance_km
+            distance_to_pickup_m = haversine_distance_km(
+                dispatch.pickup_location.y, dispatch.pickup_location.x,
+                vehicle.location.y, vehicle.location.x
+            ) * 1000
+            if distance_to_pickup_m > ARRIVAL_GEOFENCE_METERS:
+                gps_warnings.append(f'Too far from pickup location ({int(distance_to_pickup_m)}m)')
+        
+        # Check proximity for destination arrival/completion
+        if matched_target in ['arrived', 'ARRIVED_AT_DESTINATION', 'completed', 'in_service', 'IN_TRANSIT', 'GOODS_TRANSFERRED'] and dispatch.destination and vehicle.location:
+            from .views import haversine_distance_km
+            distance_to_destination_m = haversine_distance_km(
+                dispatch.destination.y, dispatch.destination.x,
+                vehicle.location.y, vehicle.location.x
+            ) * 1000
+            if distance_to_destination_m > ARRIVAL_GEOFENCE_METERS:
+                gps_warnings.append(f'Too far from destination ({int(distance_to_destination_m)}m)')
+    
+    # Block transition if GPS validation fails, unless admin explicitly overrides
+    if gps_warnings and not admin_override:
+        return Response({
+            'error': 'GPS validation failed',
+            'gps_warnings': gps_warnings,
+            'detail': 'Status transition blocked due to GPS validation failures. Use admin_override=true to force (emergency only).',
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Log admin overrides for audit trail (both state machine violations and GPS warnings)
+    if admin_override and (gps_warnings or is_invalid_transition):
+        from .models import Notification
+        override_reasons = []
+        if is_invalid_transition:
+            override_reasons.append(f"Invalid state transition: {dispatch.status} → {matched_target}")
+        override_reasons.extend(gps_warnings)
+        
+        warning_msg = f"⚠️ Admin Override: {request.user.username} forced dispatch #{dispatch.pk} to '{matched_target}' despite:\n" + "\n".join(f"• {w}" for w in override_reasons)
+        Notification.objects.create(
+            user=dispatch.assigned_vehicle.owner if dispatch.assigned_vehicle else request.user,
+            title='Dispatch Override (Emergency)',
+            message=warning_msg,
+            notification_type='admin',
+        )
+    # ========== END GPS VALIDATION ==========
 
     try:
         dispatch.transition_to(matched_target)
@@ -626,4 +728,11 @@ def dispatch_request_transition(request, pk):
             orig.save(update_fields=['status', 'completed_at'])
 
     serializer = DispatchRequestSerializer(dispatch, context={'request': request})
-    return Response(serializer.data)
+    response_data = serializer.data
+    
+    # Include GPS warnings in response so frontend can show them
+    if gps_warnings:
+        response_data['gps_warnings'] = gps_warnings
+        response_data['admin_override'] = True
+    
+    return Response(response_data)

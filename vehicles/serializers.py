@@ -180,6 +180,9 @@ class DispatchRequestSerializer(serializers.ModelSerializer):
     assigned_vehicle_photo = serializers.SerializerMethodField()
     failed_vehicle_name = serializers.SerializerMethodField()
     failed_vehicle_plate = serializers.SerializerMethodField()
+    # GPS-lost fields: populated from the assigned vehicle's staleness state
+    gps_lost = serializers.SerializerMethodField()
+    assigned_vehicle_last_location_at = serializers.SerializerMethodField()
 
     def get_assigned_vehicle_name(self, obj):
         return obj.assigned_vehicle.name if obj.assigned_vehicle else None
@@ -211,6 +214,25 @@ class DispatchRequestSerializer(serializers.ModelSerializer):
     def get_failed_vehicle_plate(self, obj):
         return obj.failed_vehicle.number_plate if obj.failed_vehicle else None
 
+    def get_gps_lost(self, obj):
+        """True when the assigned vehicle has had no GPS update in the last 5 minutes
+        AND the dispatch is in an active (non-terminal) state."""
+        ACTIVE = {'assigned', 'dispatched', 'DISPATCHED', 'accepted', 'en_route', 'arrived',
+                  'in_service', 'RESPONDING', 'IN_PROGRESS', 'EN_ROUTE_TO_PICKUP',
+                  'AT_PICKUP', 'IN_TRANSIT', 'EN_ROUTE_TO_BREAKDOWN', 'AT_BREAKDOWN_LOCATION',
+                  'GOODS_TRANSFERRED', 'IN_TRANSIT_TO_DESTINATION'}
+        if obj.status not in ACTIVE:
+            return False
+        if not obj.assigned_vehicle:
+            return False
+        return obj.assigned_vehicle.is_stale
+
+    def get_assigned_vehicle_last_location_at(self, obj):
+        """ISO timestamp of the vehicle's last GPS fix, or None."""
+        if obj.assigned_vehicle and obj.assigned_vehicle.last_location_at:
+            return obj.assigned_vehicle.last_location_at.isoformat()
+        return None
+
     class Meta:
         model = DispatchRequest
         fields = [
@@ -226,6 +248,7 @@ class DispatchRequestSerializer(serializers.ModelSerializer):
             'distance_km', 'duration_min', 'used_osrm',
             'created_by', 'created_at', 'assigned_at', 'accepted_at',
             'en_route_at', 'arrived_at', 'in_service_at', 'completed_at',
+            'gps_lost', 'assigned_vehicle_last_location_at',
         ]
 
 class MaintenanceRecordSerializer(serializers.ModelSerializer):

@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.company.sarthi"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37  // Required by permission_handler_android plugin
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

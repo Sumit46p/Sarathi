@@ -53,7 +53,9 @@ function VehicleBounds({ vehicles }: { vehicles: Vehicle[] }) {
 
   useEffect(() => {
     const points = vehicles
-      .filter(vehicle => vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng]))
+      .filter((vehicle): vehicle is Vehicle & { location: NonNullable<Vehicle['location']> } => 
+        vehicle.location !== null && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng])
+      )
       .map(vehicle => [vehicle.location.lat, vehicle.location.lng] as [number, number]);
 
     if (points.length > 1) {
@@ -97,7 +99,9 @@ export default function FleetMap() {
   }, []);
 
   const nepalVehicles = useMemo(
-    () => vehicles.filter(vehicle => vehicle.location && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng])),
+    () => vehicles.filter((vehicle): vehicle is Vehicle & { location: NonNullable<Vehicle['location']> } =>
+      vehicle.location !== null && NEPAL_BOUNDS.contains([vehicle.location.lat, vehicle.location.lng])
+    ),
     [vehicles],
   );
 
