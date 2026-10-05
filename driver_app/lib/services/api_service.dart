@@ -611,6 +611,20 @@ class ApiService {
     }
   }
 
+  /// Called once when consecutive location failures occur mid-trip, to alert admin
+  static Future<void> notifyGpsLost() async {
+    try {
+      await _authenticatedRequest(
+        (headers) => http.post(
+          Uri.parse('$_baseUrl/api/drivers/me/gps-lost/'),
+          headers: headers,
+        ),
+      );
+    } catch (_) {
+      // Best effort, ignore errors
+    }
+  }
+
   static Future<bool> reportIssue({
     required String description,
     File? image,
@@ -828,26 +842,6 @@ class ApiService {
      }
    }
 
-  /// Returns the driver's active dispatch, or [null] if there is none (404).
-  /// Throws [ApiException] on network/server/auth errors.
-  static Future<Map<String, dynamic>?> getMyDispatch() async {
-    try {
-      final response = await _authenticatedRequest(
-        (headers) => http.get(
-          Uri.parse('$_baseUrl/api/drivers/me/dispatch/'),
-          headers: headers,
-        ),
-      );
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    } on ApiException catch (e) {
-      if (e.kind == ApiErrorKind.notFound) {
-        return null;
-      }
-      _log('getMyDispatch failed: $e');
-      rethrow;
-    }
-  }
-
   static Future<List<dynamic>> getTripHistory() async {
     try {
       final response = await _authenticatedRequest(
@@ -904,25 +898,6 @@ class ApiService {
       return [];
     } on ApiException catch (e) {
       _log('getNotifications failed: $e');
-      rethrow;
-    }
-  }
-
-  static Future<Map<String, dynamic>?> transitionDispatch({
-    required String status,
-  }) async {
-    try {
-      final response = await _authenticatedRequest(
-        (headers) => http.post(
-          Uri.parse('$_baseUrl/api/drivers/me/dispatch/transition/'),
-          headers: headers,
-          body: jsonEncode({'status': status}),
-        ),
-      );
-      _log('transitionDispatch status: ${response.statusCode}');
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    } on ApiException catch (e) {
-      _log('transitionDispatch exception: $e');
       rethrow;
     }
   }
@@ -1172,6 +1147,73 @@ class ApiService {
       return response.statusCode == 200;
     } on ApiException {
       return false;
+    }
+  }
+
+  // ── Dispatch Transition (Driver App) ────────────────────────────────────────────
+  /// Updates dispatch status (en_route → arrived → completed)
+  /// Also handles the new pickup verification: AT_PICKUP for en_route
+  /// Sends GPS coordinates for validation
+  static Future<Map<String, dynamic>> transitionDispatch({
+    required String status,
+    double? pickupLat,
+    double? pickupLng,
+    double? destinationLat,
+    double? destinationLng,
+  }) async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.post(
+          Uri.parse('$_baseUrl/api/drivers/me/dispatch/transition/'),
+          headers: headers,
+          body: jsonEncode({
+            'status': status,
+            if (pickupLat != null && pickupLng != null)
+              'pickup_location': {'lat': pickupLat, 'lng': pickupLng},
+            if (destinationLat != null && destinationLng != null)
+              'destination_location': {'lat': destinationLat, 'lng': destinationLng},
+          }),
+        ),
+      );
+      
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      
+      // Handle GPS validation warnings
+      if (data.containsKey('gps_warnings') && data['gps_warnings'] is List) {
+        (data['gps_warnings'] as List).forEach((warning) {
+          if (warning is String) {
+            _log('GPS Warning: $warning');
+          }
+        });
+      }
+      
+      return data;
+    } on ApiException {
+      rethrow;
+    }
+  }
+
+  // ── Get Active Driver Dispatch ───────────────────────────────────────────────────
+  static Future<Map<String, dynamic>?> getMyDispatch() async {
+    try {
+      final response = await _authenticatedRequest(
+        (headers) => http.get(
+          Uri.parse('$_baseUrl/api/drivers/me/dispatch/'),
+          headers: headers,
+        ),
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data as Map<String, dynamic>;
+      }
+      return null;
+    } on ApiException catch (e) {
+      if (e.kind == ApiErrorKind.notFound) {
+        return null;
+      }
+      _log('getMyDispatch failed: $e');
+      rethrow;
     }
   }
 }

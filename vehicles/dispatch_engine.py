@@ -155,15 +155,25 @@ class DispatchEngine:
             is_available=True,
             admin_blocked=False,
             location__isnull=False,
-        ).select_related('driver', 'driver__user', 'organization')
+        ).select_related('driver', 'driver__user', 'driver__user__profile', 'organization')
 
         if self.organization:
             qs = qs.filter(organization=self.organization)
 
+        stale_cutoff = timezone.now() - timezone.timedelta(minutes=5)
         candidates = []
         for vehicle in qs:
             # Must have an active driver on duty
             if not vehicle.driver or not vehicle.driver.is_active or not vehicle.driver.is_on_duty:
+                continue
+
+            # Driver must have the app open recently (online within the last 5 min)
+            profile = getattr(getattr(vehicle.driver, 'user', None), 'profile', None)
+            if (profile is None
+                    or profile.last_app_activity is None
+                    or profile.last_app_activity < stale_cutoff):
+                # Mark them unavailable in DB so the admin list is also correct
+                Vehicle.objects.filter(pk=vehicle.pk).update(is_available=False)
                 continue
 
             # Must not have an active ongoing dispatch
@@ -201,8 +211,8 @@ class DispatchEngine:
                 avg_speed_kmh = 35.0 if self.request_type == 'NORMAL' else 45.0
                 eta_min = (dist_km / avg_speed_kmh) * 60.0
 
-            # Discard vehicles farther than 150 km for local response
-            if dist_km > 150.0:
+            # Discard vehicles farther than 800 km to cover long-distance national trips
+            if dist_km > 800.0:
                 continue
 
             score, reason = self._compute_score_and_reason(vehicle, dist_km, eta_min)

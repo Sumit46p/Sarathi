@@ -11,7 +11,7 @@ export interface Vehicle {
   location: {
     lat: number;
     lng: number;
-  };
+  } | null;
   has_active_dispatch?: boolean;
   active_dispatch_status?: string | null;
   active_dispatch_geometry?: Array<[number, number]> | null;

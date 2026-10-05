@@ -182,7 +182,11 @@ class Vehicle(models.Model):
             return True
         return (timezone.now() - self.last_location_at).total_seconds() > 300
 
-    ACTIVE_DISPATCH_STATUSES = ['assigned', 'dispatched', 'DISPATCHED', 'accepted', 'en_route', 'arrived', 'in_service', 'RESPONDING', 'IN_PROGRESS']
+    ACTIVE_DISPATCH_STATUSES = [
+        'assigned', 'dispatched', 'DISPATCHED', 'accepted', 'en_route', 'arrived', 'in_service', 'RESPONDING', 'IN_PROGRESS',
+        'EN_ROUTE_TO_PICKUP', 'AT_PICKUP', 'IN_TRANSIT', 'EN_ROUTE_TO_BREAKDOWN', 'AT_BREAKDOWN_LOCATION',
+        'GOODS_TRANSFERRED', 'IN_TRANSIT_TO_DESTINATION'
+    ]
 
     @property
     def has_active_dispatch(self) -> bool:
@@ -200,36 +204,57 @@ class Vehicle(models.Model):
         return active.status if active else None
 
     def recompute_availability(self) -> None:
-        """Derive `is_available` from driver duty + admin block + active dispatch + driver online status.
+        """Derive `is_available` from driver duty + admin block + active dispatch + GPS health.
 
         A vehicle is available if:
         - the vehicle is not admin-blocked, AND
         - the vehicle has no active dispatch in progress, AND
-        - a driver is assigned AND the driver is on duty AND the driver app is actively online (last activity within 5 minutes)
+        - a driver is assigned AND the driver is on duty, AND
+        - GPS signal is recent (< 5 minutes) when driver is on duty
+
+        NOTE: We intentionally do NOT check driver app online status (last_app_activity)
+        here. is_available is a structural DB flag that persists. Real-time online checks
+        are enforced by the dispatch engine at dispatch time only. Mixing them here caused
+        vehicles to get permanently stuck unavailable when a driver's phone went dark.
         
-        Uses a queryset update to avoid re-firing the post_save signal
-        (which would recurse).
+        However, we DO check GPS staleness because:
+        1. A vehicle without GPS cannot be dispatched (dispatch engine needs location)
+        2. GPS staleness indicates a real hardware/permission issue that needs attention
+        3. Unlike app activity (temporary), GPS loss mid-route is a safety concern
+
+        Uses a queryset update to avoid re-firing the post_save signal (which would recurse).
         """
-        # If no driver assigned, vehicle is NOT available (cannot be dispatched)
         if not self.driver:
             is_available = False
         else:
-            # Driver is assigned - check if they're on duty and online
-            driver_online = False
-            if self.driver.is_on_duty:
-                # Check if driver has an active profile with recent app activity
-                if hasattr(self.driver, 'user') and self.driver.user:
-                    profile = getattr(self.driver.user, 'profile', None)
-                    driver_online = profile.is_online if profile else False
+            # Check if GPS is stale when driver is on duty
+            gps_is_healthy = not self.is_stale if self.driver.is_on_duty else True
             
-            is_available = driver_online and not self.admin_blocked and not self.has_active_dispatch
-        
+            is_available = (
+                self.driver.is_on_duty
+                and not self.admin_blocked
+                and not self.has_active_dispatch
+                and gps_is_healthy  # ✅ NEW: Check GPS health for on-duty drivers
+            )
+
+        # Keep vehicle_status in sync so the dispatch engine's status check
+        # doesn't contradict is_available (e.g. stuck in 'maintenance' after recovery)
+        update_fields = {'is_available': is_available}
+        if is_available and self.vehicle_status in ('maintenance', 'offline', 'in_use', 'on_route', 'reserved'):
+            update_fields['vehicle_status'] = 'available'
+        elif not is_available and self.vehicle_status == 'available':
+            # If GPS is stale but vehicle has active dispatch, keep status as on_route
+            if self.has_active_dispatch:
+                update_fields['vehicle_status'] = 'on_route'
+            else:
+                update_fields['vehicle_status'] = 'offline' if self.is_stale else 'assigned'
+
         # Update database and refresh in-memory object
-        updated_count = Vehicle.objects.filter(pk=self.pk).update(is_available=is_available)
-        # Force refresh from database to ensure we have latest state
+        updated_count = Vehicle.objects.filter(pk=self.pk).update(**update_fields)
         if updated_count > 0:
             self.refresh_from_db()
         self.is_available = is_available
+
 
     class Meta:
         ordering = ['name']

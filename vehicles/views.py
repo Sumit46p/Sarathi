@@ -318,6 +318,30 @@ class VehicleListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return Vehicle.objects.filter(owner__in=get_org_user_ids(self.request.user))
 
+    def list(self, request, *args, **kwargs):
+        """
+        Before returning the vehicle list, lazily fix availability for vehicles
+        whose driver went off-duty without triggering a signal (e.g. direct DB edits).
+        
+        IMPORTANT: We only write is_available=False to DB for hard duty/assignment
+        changes (no driver, or driver explicitly off duty). We do NOT write to DB
+        for stale last_app_activity — the dispatch engine already enforces the
+        5-minute online check in-memory, and permanently writing False would cause
+        vehicles to get "stuck" unavailable when the driver comes back online.
+        """
+        stale_vehicles = (
+            self.get_queryset()
+            .filter(is_available=True)
+            .select_related('driver', 'driver__user', 'driver__user__profile')
+        )
+        for vehicle in stale_vehicles:
+            driver = vehicle.driver
+            # Only write False to DB for genuine structural reasons (no driver / off duty)
+            if not driver or not driver.is_on_duty:
+                Vehicle.objects.filter(pk=vehicle.pk).update(is_available=False)
+
+        return super().list(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
@@ -546,11 +570,18 @@ def dispatch_live_payload(dispatch, request=None):
 @permission_classes([IsAuthenticated])
 def active_dispatch(request):
     """Return the owner's latest active dispatch with live route geometry."""
+    try:
+        org = request.user.profile.organization
+    except Exception:
+        org = None
+
+    from django.db.models import Q
     dispatch = (
         DispatchRequest.objects
         .select_related('assigned_vehicle')
         .filter(
-            assigned_vehicle__owner__in=get_org_user_ids(request.user),
+            Q(assigned_vehicle__owner__in=get_org_user_ids(request.user)) |
+            Q(assigned_vehicle__organization=org),
             status__in=ACTIVE_DISPATCH_STATUSES,
         )
         .order_by('-created_at')
@@ -709,6 +740,8 @@ def driver_duty(request):
     Body: {"is_on_duty": true|false}
     Sets the driver's duty status. Availability of the assigned vehicle is
     derived (driver on duty AND not admin-blocked) via the Vehicle signal.
+    If driver goes off-duty while an active dispatch exists, an admin
+    notification is automatically created.
     """
     try:
         driver = Driver.objects.get(user=request.user)
@@ -724,6 +757,31 @@ def driver_duty(request):
             {'error': 'is_on_duty must be a boolean'},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    # Before going off-duty, check for active dispatches and notify admin
+    if not on_duty:
+        vehicle = driver.assigned_vehicles.first()
+        if vehicle:
+            active_dispatch = DispatchRequest.objects.filter(
+                assigned_vehicle=vehicle,
+                status__in=ACTIVE_DISPATCH_STATUSES,
+            ).order_by('-created_at').first()
+            if active_dispatch:
+                # Notify the vehicle owner (admin) about the driver going offline during a trip
+                try:
+                    Notification.objects.create(
+                        user=vehicle.owner,
+                        title=f'⚠️ Driver Went Offline During Trip',
+                        message=(
+                            f'Driver {driver.name} ({driver.phone_number}) turned off their '
+                            f'location while on an active trip in {vehicle.name} '
+                            f'({vehicle.number_plate or "no plate"}). '
+                            f'Dispatch #{active_dispatch.id} — Status: {active_dispatch.get_status_display()}.'
+                        ),
+                        notification_type='admin',
+                    )
+                except Exception:
+                    pass  # Don't fail the duty toggle because of a notification error
 
     driver.is_on_duty = on_duty
     driver.save(update_fields=['is_on_duty'])
@@ -757,8 +815,58 @@ def driver_duty(request):
     return Response(DriverMeSerializer(data).data)
 
 
-ACTIVE_DISPATCH_STATUSES = ['assigned', 'dispatched', 'DISPATCHED', 'accepted', 'en_route', 'arrived', 'in_service', 'RESPONDING', 'IN_PROGRESS']
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def driver_gps_lost(request):
+    """
+    POST /api/drivers/me/gps-lost/
+    Called by the driver app when consecutive GPS failures are detected
+    mid-trip. Creates an admin notification so the dispatcher is aware.
+    The driver app is responsible for calling this only once per "GPS lost"
+    event (not on every failed attempt).
+    """
+    try:
+        driver = Driver.objects.get(user=request.user)
+    except Driver.DoesNotExist:
+        return Response({'error': 'No driver profile found'}, status=status.HTTP_404_NOT_FOUND)
 
+    vehicle = driver.assigned_vehicles.first()
+    if not vehicle:
+        return Response({'error': 'No vehicle assigned'}, status=status.HTTP_404_NOT_FOUND)
+
+    active_dispatch = DispatchRequest.objects.filter(
+        assigned_vehicle=vehicle,
+        status__in=ACTIVE_DISPATCH_STATUSES,
+    ).order_by('-created_at').first()
+
+    if not active_dispatch:
+        return Response({'error': 'No active dispatch'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        Notification.objects.create(
+            user=vehicle.owner,
+            title=f'📡 GPS Signal Lost — Active Trip',
+            message=(
+                f'Driver {driver.name} ({driver.phone_number}) has lost GPS signal '
+                f'mid-trip in {vehicle.name} ({vehicle.number_plate or "no plate"}). '
+                f'Dispatch #{active_dispatch.id} — Status: {active_dispatch.get_status_display()}. '
+                f'Please contact the driver.'
+            ),
+            notification_type='admin',
+        )
+    except Exception:
+        pass
+
+    return Response({'success': True, 'message': 'Admin notified of GPS loss'})
+
+
+
+
+ACTIVE_DISPATCH_STATUSES = [
+    'assigned', 'dispatched', 'DISPATCHED', 'accepted', 'en_route', 'arrived', 'in_service', 'RESPONDING', 'IN_PROGRESS',
+    'EN_ROUTE_TO_PICKUP', 'AT_PICKUP', 'IN_TRANSIT', 'EN_ROUTE_TO_BREAKDOWN', 'AT_BREAKDOWN_LOCATION',
+    'GOODS_TRANSFERRED', 'IN_TRANSIT_TO_DESTINATION'
+]
 # Statuses that mean a driver accepted the trip (used for acceptance-rate KPI).
 ACCEPTED_DISPATCH_STATUSES = ['accepted', 'en_route', 'arrived', 'completed']
 
@@ -808,6 +916,11 @@ def driver_dispatch_transition(request):
     POST /api/drivers/me/dispatch/transition/
     Body: {"status": "accepted"|"en_route"|"arrived"|"completed"}
     Advances the active dispatch through its state machine.
+    
+    GPS Validation Rules (matching real fleet systems):
+    - en_route: Requires recent GPS (< 2 min) + movement from start (> 100m)
+    - arrived: Requires recent GPS (< 2 min) + proximity to destination (< 500m)
+    - completed: Requires recent GPS (< 2 min) + proximity to destination (< 500m)
     """
     try:
         driver = Driver.objects.get(user=request.user)
@@ -842,6 +955,92 @@ def driver_dispatch_transition(request):
             {'error': f"Invalid transition from '{dispatch.status}' to '{new_status}'"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    # ========== GPS VALIDATION (Real Fleet System Logic) ==========
+    now = timezone.now()
+    GPS_STALENESS_THRESHOLD_SECONDS = 120  # 2 minutes
+    MOVEMENT_THRESHOLD_METERS = 100  # Must move > 100m to mark "en route"
+    ARRIVAL_GEOFENCE_METERS = 500  # Must be within 500m to mark "arrived"
+    
+    # Check if GPS is recent enough for status transitions that require location verification
+    gps_dependent_statuses = ['en_route', 'arrived', 'completed']
+    if new_status in gps_dependent_statuses:
+        if vehicle.last_location_at is None:
+            return Response(
+                {
+                    'error': 'GPS signal required',
+                    'detail': 'Please enable location services and wait for GPS lock before proceeding.',
+                    'requires_gps': True
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        gps_age_seconds = (now - vehicle.last_location_at).total_seconds()
+        if gps_age_seconds > GPS_STALENESS_THRESHOLD_SECONDS:
+            return Response(
+                {
+                    'error': 'GPS signal outdated',
+                    'detail': f'Last GPS update was {int(gps_age_seconds)} seconds ago. Please ensure location is enabled and try again.',
+                    'requires_gps': True,
+                    'gps_age_seconds': int(gps_age_seconds)
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        if vehicle.location is None:
+            return Response(
+                {
+                    'error': 'Vehicle location unavailable',
+                    'detail': 'Please wait for GPS coordinates to be received.',
+                    'requires_gps': True
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    
+    # Validate "en_route" transition: Vehicle must have moved from pickup location
+    if new_status == 'en_route' and dispatch.pickup_location:
+        distance_from_pickup_m = haversine_distance_km(
+            dispatch.pickup_location.y,
+            dispatch.pickup_location.x,
+            vehicle.location.y,
+            vehicle.location.x,
+        ) * 1000  # Convert to meters
+        
+        if distance_from_pickup_m < MOVEMENT_THRESHOLD_METERS:
+            return Response(
+                {
+                    'error': 'Movement required',
+                    'detail': f'Vehicle must move at least {MOVEMENT_THRESHOLD_METERS}m from pickup location before marking "En Route". Currently {int(distance_from_pickup_m)}m from pickup.',
+                    'requires_movement': True,
+                    'distance_from_pickup_m': int(distance_from_pickup_m),
+                    'required_distance_m': MOVEMENT_THRESHOLD_METERS
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    
+    # Validate "arrived" and "completed" transitions: Vehicle must be near destination
+    if new_status in ['arrived', 'completed'] and dispatch.destination:
+        distance_to_destination_m = haversine_distance_km(
+            dispatch.destination.y,
+            dispatch.destination.x,
+            vehicle.location.y,
+            vehicle.location.x,
+        ) * 1000  # Convert to meters
+        
+        if distance_to_destination_m > ARRIVAL_GEOFENCE_METERS:
+            status_label = 'arrived' if new_status == 'arrived' else 'completed'
+            return Response(
+                {
+                    'error': f'Too far from destination',
+                    'detail': f'Vehicle must be within {ARRIVAL_GEOFENCE_METERS}m of destination to mark "{status_label}". Currently {int(distance_to_destination_m)}m away.',
+                    'requires_proximity': True,
+                    'distance_to_destination_m': int(distance_to_destination_m),
+                    'required_distance_m': ARRIVAL_GEOFENCE_METERS
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    
+    # ========== END GPS VALIDATION ==========
 
     try:
         dispatch.transition_to(new_status)
@@ -921,6 +1120,9 @@ def dispatch_transition(request, pk):
     Body: {"status": "accepted"|"en_route"|"arrived"|"completed"|"cancelled"}
     Owner-scoped (admin) advance of the active dispatch for this vehicle.
     Lets the dispatcher accept/reject from the dashboard; first acceptor wins.
+    
+    Admin GPS Override: Admins can force status changes, but the system logs a warning
+    when GPS validation would have failed. This is for emergency override only.
     """
     try:
         vehicle = Vehicle.objects.get(pk=pk, owner__in=get_org_user_ids(request.user))
@@ -942,11 +1144,102 @@ def dispatch_transition(request, pk):
         )
 
     new_status = request.data.get('status')
-    if new_status not in DispatchRequest.VALID_TRANSITIONS.get(dispatch.status, []):
-        return Response(
-            {'error': f"Invalid transition from '{dispatch.status}' to '{new_status}'"},
-            status=status.HTTP_400_BAD_REQUEST,
+    admin_override = request.data.get('admin_override', False)
+    valid_transitions = DispatchRequest.VALID_TRANSITIONS.get(dispatch.status, [])
+    is_invalid_transition = new_status not in valid_transitions
+    
+    # Block invalid state machine transitions unless admin explicitly overrides
+    if is_invalid_transition and not admin_override:
+        return Response({
+            'error': 'Invalid state transition',
+            'detail': f"Cannot transition from '{dispatch.status}' to '{new_status}'. This violates the dispatch state machine. Use admin_override=true for emergency only.",
+            'current_status': dispatch.status,
+            'requested_status': new_status,
+            'valid_next_states': valid_transitions,
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # ========== GPS VALIDATION FOR ADMIN (Now blocks unless admin_override=true) ==========
+    gps_warnings = []
+    
+    # Expand GPS validation to cover ALL location-dependent statuses
+    gps_required_statuses = [
+        'en_route', 'EN_ROUTE_TO_PICKUP', 'EN_ROUTE_TO_BREAKDOWN',
+        'AT_PICKUP', 'AT_BREAKDOWN_LOCATION', 
+        'in_service', 'IN_TRANSIT', 'IN_TRANSIT_TO_DESTINATION',
+        'arrived', 'ARRIVED_AT_DESTINATION', 'completed', 'GOODS_TRANSFERRED'
+    ]
+    
+    if new_status in gps_required_statuses:
+        now = timezone.now()
+        GPS_STALENESS_THRESHOLD_SECONDS = 120
+        MOVEMENT_THRESHOLD_METERS = 100
+        ARRIVAL_GEOFENCE_METERS = 500
+        
+        # Check GPS staleness (for all GPS-dependent statuses, not just some)
+        if vehicle.last_location_at is None:
+            gps_warnings.append('GPS signal unavailable')
+        else:
+            gps_age_seconds = (now - vehicle.last_location_at).total_seconds()
+            if gps_age_seconds > GPS_STALENESS_THRESHOLD_SECONDS:
+                gps_warnings.append(f'GPS stale ({int(gps_age_seconds)}s old)')
+                
+                # ⚠️ IMPORTANT: If GPS is very stale (>10 min) during active dispatch,
+                # this likely means driver turned off location mid-route.
+                # We should still allow completion if they're claiming to be at destination,
+                # but flag it for review.
+                if gps_age_seconds > 600:  # 10 minutes
+                    gps_warnings.append('⚠️ GPS has been off for >10 minutes - verify driver actually completed trip')
+        
+        # Check movement for en_route transitions
+        if new_status in ['en_route', 'EN_ROUTE_TO_PICKUP', 'EN_ROUTE_TO_BREAKDOWN'] and dispatch.pickup_location and vehicle.location:
+            distance_from_pickup_m = haversine_distance_km(
+                dispatch.pickup_location.y, dispatch.pickup_location.x,
+                vehicle.location.y, vehicle.location.x
+            ) * 1000
+            if distance_from_pickup_m < MOVEMENT_THRESHOLD_METERS:
+                gps_warnings.append(f'No movement ({int(distance_from_pickup_m)}m from pickup)')
+        
+        # Check proximity for pickup arrival
+        if new_status in ['AT_PICKUP', 'AT_BREAKDOWN_LOCATION'] and dispatch.pickup_location and vehicle.location:
+            distance_to_pickup_m = haversine_distance_km(
+                dispatch.pickup_location.y, dispatch.pickup_location.x,
+                vehicle.location.y, vehicle.location.x
+            ) * 1000
+            if distance_to_pickup_m > ARRIVAL_GEOFENCE_METERS:
+                gps_warnings.append(f'Too far from pickup location ({int(distance_to_pickup_m)}m)')
+        
+        # Check proximity for destination arrival/completion
+        if new_status in ['arrived', 'ARRIVED_AT_DESTINATION', 'completed', 'in_service', 'IN_TRANSIT', 'GOODS_TRANSFERRED'] and dispatch.destination and vehicle.location:
+            distance_to_destination_m = haversine_distance_km(
+                dispatch.destination.y, dispatch.destination.x,
+                vehicle.location.y, vehicle.location.x
+            ) * 1000
+            if distance_to_destination_m > ARRIVAL_GEOFENCE_METERS:
+                gps_warnings.append(f'Too far from destination ({int(distance_to_destination_m)}m)')
+    
+    # Block transition if GPS validation fails, unless admin explicitly overrides
+    if gps_warnings and not admin_override:
+        return Response({
+            'error': 'GPS validation failed',
+            'gps_warnings': gps_warnings,
+            'detail': 'Status transition blocked due to GPS validation failures. Use admin_override=true to force (emergency only).',
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Log admin overrides for audit trail (both state machine violations and GPS warnings)
+    if admin_override and (gps_warnings or is_invalid_transition):
+        override_reasons = []
+        if is_invalid_transition:
+            override_reasons.append(f"Invalid state transition: {dispatch.status} → {new_status}")
+        override_reasons.extend(gps_warnings)
+        
+        warning_msg = f"⚠️ Admin Override: {request.user.username} forced vehicle #{vehicle.pk} dispatch #{dispatch.pk} to '{new_status}' despite:\n" + "\n".join(f"• {w}" for w in override_reasons)
+        Notification.objects.create(
+            user=vehicle.owner,
+            title='Dispatch Override (Emergency)',
+            message=warning_msg,
+            notification_type='admin',
         )
+    # ========== END GPS VALIDATION ==========
 
     try:
         dispatch.transition_to(new_status)
@@ -955,6 +1248,12 @@ def dispatch_transition(request, pk):
 
     data = DispatchRequestSerializer(dispatch).data
     data['geometry'] = safe_route_geometry(vehicle, dispatch)
+    
+    # Include GPS warnings in response so frontend can show them
+    if gps_warnings:
+        data['gps_warnings'] = gps_warnings
+        data['admin_override'] = True
+    
     return Response(data)
 
 
@@ -1126,12 +1425,27 @@ def nearest_vehicles(request):
 
     request_point = Point(lng, lat, srid=4326)
 
+    # Sweep stale availability before returning candidates — signals can't detect
+    # the passage of time, so a driver who killed the app will still be marked
+    # is_available=True unless we check here.
+    stale_qs = (
+        Vehicle.objects
+        .filter(owner__in=get_org_user_ids(request.user), is_available=True, vehicle_type=vehicle_type)
+        .select_related('driver')
+    )
+    for v in stale_qs:
+        driver = v.driver
+        # Only write is_available=False for genuine structural reasons (off duty / no driver)
+        if not driver or not driver.is_on_duty:
+            Vehicle.objects.filter(pk=v.pk).update(is_available=False)
+
     vehicles = (
         Vehicle.objects
         .filter(owner__in=get_org_user_ids(request.user), is_available=True, vehicle_type=vehicle_type)
         .annotate(distance=Distance('location', request_point))
         .order_by('distance')[:5]
     )
+
 
     results = []
     for v in vehicles:

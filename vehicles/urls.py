@@ -28,6 +28,7 @@ urlpatterns = [
     path('drivers/reset-password/', views.reset_password, name='driver-reset-password'),
     path('drivers/verify-identity/', views.verify_driver_identity, name='driver-verify-identity'),
     path('drivers/me/duty/', views.driver_duty, name='driver-duty'),
+    path('drivers/me/gps-lost/', views.driver_gps_lost, name='driver-gps-lost'),
     path('drivers/me/dispatch/', views.driver_dispatch, name='driver-dispatch'),
     path('drivers/me/dispatch/transition/', views.driver_dispatch_transition, name='driver-dispatch-transition'),
     path('drivers/me/trip-history/', views.driver_trip_history, name='driver-trip-history'),
