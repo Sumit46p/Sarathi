@@ -1,0 +1,18 @@
+<!DOCTYPE html><meta charset=utf-8><link rel=stylesheet href=theme.css><script src=slide.js defer></script><script src=route.js></script>
+<style>.nd rect{fill:#fbfbf9;stroke:var(--ink);stroke-width:1.2;cursor:pointer;transition:.3s}.nd text{pointer-events:none;font:700 14px 'Schibsted Grotesk';text-anchor:middle}.nd.on rect{fill:var(--ink)}.nd.on text{fill:#fff}.nd.dn rect{fill:#dff0ea;stroke:var(--tl)}.nd.bad rect{stroke:var(--rd);stroke-dasharray:4 3}.nd:hover rect{stroke:var(--am)}
+.ln2{stroke:var(--ink);stroke-width:1.4;fill:none}.ln2.bd{stroke:var(--rd);stroke-dasharray:5 5}#tk{transition:transform .7s cubic-bezier(.6,0,.3,1);fill:var(--am)}</style>
+<h2 class=u>Dispatch lifecycle</h2><p class="s u" style="--d:.1s;font-size:19px">Every dispatch request follows a clear path from creation to completion. Click any state to see details.</p>
+<svg id=a viewBox="0 0 1160 320" width=1160></svg>
+<div class="k" id=d style="font-size:19px;min-height:64px;margin-top:6px"></div>
+<script>
+const M=[['pending','Request created. Waiting for the dispatch engine.'],['assigned','The engine assigns a vehicle and the driver is notified.'],['accepted','The driver (or dispatcher) accepts. First accept wins.'],['en_route','The driver departs for the scene or pickup.'],['arrived','The driver arrives at the scene or pickup.'],['in_service','Cargo loaded or service commenced.'],['completed','Mission completed.']];
+const X=i=>8+i*166,Y=90,Bx={rejected:[60,'Driver rejects the assignment.'],expired:[270,'Driver timeout: no response in time.'],cancelled:[640,'An authorized dispatcher can cancel any non-terminal state.']};
+let s='';M.forEach((m,i)=>{if(i)s+=`<line class=ln2 x1=${X(i-1)+130} y1=${Y+30} x2=${X(i)} y2=${Y+30} />`});
+s+=`<path class="ln2" d="M${X(1)+40} ${Y+60}V200H120V215M${X(1)+90} ${Y+60}V200H330V215" /><path class="ln2 bd" d="M${X(0)+65} ${Y+60}V255H640M${X(5)+65} ${Y+60}V255H640" /><path class="ln2 bd" d="M${X(1)+65} ${Y+60}V255M${X(2)+65} ${Y+60}V255M${X(3)+65} ${Y+60}V255M${X(4)+65} ${Y+60}V255" />`;
+M.forEach((m,i)=>s+=`<g class=nd data-k=${m[0]} data-m="${m[1]}" data-i=${i}><rect x=${X(i)} y=${Y} width=130 height=60 rx=3 /><text x=${X(i)+65} y=${Y+36}>${m[0]}</text></g>`);
+for(const k in Bx)s+=`<g class="nd bad" data-k=${k} data-m="${Bx[k][1]}" data-i=-1><rect x=${Bx[k][0]} y=${k=='cancelled'?255:215} width=130 height=50 rx=3 /><text x=${Bx[k][0]+65} y=${k=='cancelled'?285:245}>${k}</text></g>`;
+a.innerHTML=s+`<circle id=tk r=9 cx=0 cy=0 style="transform:translate(${X(0)+65}px,${Y-18}px)" />`;
+let c=0,h;const nd=[...document.querySelectorAll('.nd')];
+function set(k){const g=nd.find(x=>x.dataset.k==k),i=+g.dataset.i;nd.forEach(x=>x.classList.remove('on'));nd.forEach(x=>{const j=+x.dataset.i;x.classList.toggle('dn',j>=0&&i>=0&&j<i)});g.classList.add('on');d.innerHTML=`<b class=mo>${k}</b> &nbsp;${g.dataset.m}`;const r=g.querySelector('rect');tk.style.transform=`translate(${+r.getAttribute('x')+65}px,${+r.getAttribute('y')-18}px)`}
+nd.forEach(g=>g.onclick=()=>{clearInterval(h);set(g.dataset.k)});set('pending');h=setInterval(()=>{c=(c+1)%7;set(M[c][0])},1900)
+</script>

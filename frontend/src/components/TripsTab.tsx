@@ -19,6 +19,9 @@ interface Trip {
   created_at: string;
   assigned_at: string | null;
   completed_at: string | null;
+  cancelled_at: string | null;
+  rejected_at: string | null;
+  expired_at: string | null;
   distance_km: number | null;
   duration_min: number | null;
   trip_duration_seconds: number | null;

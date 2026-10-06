@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sarathi — Title</title>
+    <link rel="stylesheet" href="theme.css">
+    <script src="slide.js" defer></script>
+    <script src="route.js"></script>
+
+    <style>
+        .stage {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px 40px;
+        }
+
+        .lg {
+            width: 96px;
+            height: 96px;
+            border-radius: 50%;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 14px 34px #0e6e8c33, 0 0 0 7px #ffffffcc, 0 0 0 8px #0f1a2212;
+            animation: bob 5s ease-in-out infinite;
+        }
+
+        .lg img {
+            width: 68px;
+            height: 68px;
+            object-fit: contain
+        }
+
+        @keyframes bob {
+            50% {
+                transform: translateY(-7px)
+            }
+        }
+
+        h1 {
+            font-size: 104px;
+            line-height: 1;
+            margin: 18px 0 0
+        }
+
+        .sub {
+            font-size: 26px;
+            font-weight: 800;
+            margin: 12px 0 0
+        }
+
+        .tag {
+            font: 500 12px 'IBM Plex Mono', monospace;
+            color: var(--mu);
+            letter-spacing: .16em;
+            text-transform: uppercase;
+            margin: 10px 0 0
+        }
+
+        .map {
+            width: 720px;
+            max-width: 100%;
+            padding: 0;
+            overflow: hidden;
+            margin-top: 28px
+        }
+
+        .map svg {
+            display: block;
+            width: 100%;
+            height: auto
+        }
+
+        .team {
+            margin-top: 28px;
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1.5
+        }
+
+        .team p {
+            margin: 0
+        }
+
+        @media (prefers-reduced-motion:reduce) {
+            .lg {
+                animation: none
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="stage">
+
+        <div class="u" style="--d:.05s">
+            <div class="lg"><img src="logo.png" alt="Sarathi logo"></div>
+        </div>
+
+        <h1 class="u" style="--d:.15s">Sarathi</h1>
+
+        <p class="sub u" style="--d:.3s">Intelligent Fleet Management &amp; Dispatch Platform</p>
+
+        <p class="tag u" style="--d:.4s">Location-aware fleet management · Smart dispatch · Real-time tracking</p>
+
+        <div class="k map u" style="--d:.55s"><svg id="sv" viewBox="0 0 700 140"></svg></div>
+
+        <div class="team">
+            <p class="u" style="--d:.7s">Team: URANUS</p>
+            <p class="u" style="--d:.8s">BE Computer, Seventh Semester</p>
+            <p class="u" style="--d:.9s">Project III</p>
+        </div>
+
+    </div>
+
+    <script>
+        const svEl = document.getElementById('sv');
+
+        const P = rdp(R.raw, 2.5).map(p => [p[0], p[1] * .28 + 8]);
+        const L = P[P.length - 1];
+        const M = at(P, .55);
+
+        svEl.innerHTML =
+            mapBg(700, 140) +
+            `<path d="${D(P)}" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>` +
+            `<path class="dr" d="${D(P)}" fill="none" stroke="#f2541b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>` +
+            `<circle cx="${P[0][0]}" cy="${P[0][1]}" r="7" fill="#0e6e8c"/>` +
+            `<circle class="pl" cx="${M.x}" cy="${M.y}" r="7" fill="#f2541b" style="transform-origin:${M.x}px ${M.y}px"/>` +
+            `<rect x="${L[0] - 8}" y="${L[1] - 8}" width="15" height="15" fill="#0f1a22"/>` +
+            `<g id="mk"><circle r="8" fill="#fff" stroke="#0f1a22" stroke-width="3"/></g>`;
+
+        const mk = document.getElementById('mk');
+        const t0 = performance.now();
+
+        (function frame(t) {
+            const p = at(P, ((t - t0) / 9000) % 1);
+            mk.setAttribute('transform', `translate(${p.x} ${p.y})`);
+            requestAnimationFrame(frame);
+        })(t0);
+    </script>
+</body>
+
+</html>

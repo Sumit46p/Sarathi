@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Sarathi — System Architecture</title>
+
+    <link rel="stylesheet" href="theme.css">
+
+    <style>
+        /* ================================
+           Architecture Nodes
+        ================================= */
+
+        .nd rect {
+            fill: #fbfbf9;
+            stroke: var(--ink, #102a33);
+            stroke-width: 1.2;
+            cursor: pointer;
+            transition: fill 0.25s ease, stroke 0.25s ease;
+        }
+
+        .nd text {
+            pointer-events: none;
+            text-anchor: middle;
+            fill: var(--ink, #102a33);
+            font: 700 13px "Schibsted Grotesk", sans-serif;
+        }
+
+        .nd .z {
+            fill: var(--mu, #6b7c83);
+            font: 400 10.5px "IBM Plex Mono", monospace;
+        }
+
+        .nd:hover rect {
+            fill: #fff1ea;
+            stroke: var(--am, #e8743b);
+        }
+
+        .nd.on rect {
+            fill: var(--ink, #102a33);
+        }
+
+        .nd.on text {
+            fill: #fff;
+        }
+
+        .nd.on .z {
+            fill: #b9c6cc;
+        }
+
+        /* Active (animated) node */
+
+        .nd.fl rect {
+            fill: #fff1ea;
+            stroke: var(--am, #e8743b);
+            stroke-width: 2.6;
+        }
+
+        /* Connections */
+
+        .e {
+            fill: none;
+            stroke: #9fb0b6;
+            stroke-width: 1.3;
+            stroke-linejoin: round;
+            transition: stroke 0.25s ease;
+        }
+
+        .e.hl {
+            stroke: var(--ink, #102a33);
+            stroke-width: 1.8;
+        }
+
+        .e.fl {
+            stroke: var(--am, #e8743b);
+            stroke-width: 3;
+            stroke-dasharray: 7 6;
+            animation: dash 0.6s linear infinite;
+        }
+
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -13;
+            }
+        }
+
+        /* Moving indicator */
+
+        #pk {
+            fill: var(--am, #e8743b);
+            stroke: #fff;
+            stroke-width: 2;
+            opacity: 0;
+        }
+
+        /* Layer labels + bands */
+
+        .lyr {
+            fill: #8a979d;
+            font: 600 10px "IBM Plex Mono", monospace;
+            letter-spacing: 0.14em;
+        }
+
+        .band {
+            fill: #0e6e8c;
+            fill-opacity: 0.045;
+        }
+
+        .dock {
+            fill: none;
+            stroke: #0e6e8c;
+            stroke-dasharray: 5 5;
+        }
+
+        .dock-l {
+            fill: #0e6e8c;
+            font: 400 11px "IBM Plex Mono", monospace;
+        }
+
+        #architecture {
+            display: block;
+            width: 100%;
+            max-width: 1160px;
+            height: auto;
+            margin: 6px auto 0;
+        }
+
+        #description {
+            box-sizing: border-box;
+            width: min(1160px, 100%);
+            margin: 8px auto 0;
+            padding: 14px 20px;
+            min-height: 85px;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .e.fl {
+                animation: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ================================
+     Header
+================================= -->
+
+    <div style="text-align:center">
+
+        <h2 class="u" style="font-size:40px;margin:0 0 10px">
+            System Architecture
+        </h2>
+
+        <div class="row" style="gap:8px;justify-content:center">
+            <button id="b1">Trace GPS Update</button>
+            <button id="b2">Trace Dispatch</button>
+            <button id="b3">Trace Real-Time Push</button>
+        </div>
+    </div>
+
+
+    <!-- ================================
+     Architecture Diagram
+================================= -->
+
+    <svg id="architecture" viewBox="0 0 1160 504"></svg>
+
+
+    <!-- ================================
+     Explanation Panel
+================================= -->
+
+    <div class="k" id="description"></div>
+
+
+    <script>
+        /* =========================================================
+           SARATHI — SYSTEM ARCHITECTURE
+    
+           Layout rules
+           - Five layers (rows) on a fixed grid.
+           - Every connection is an orthogonal (horizontal/vertical)
+             route, leaving and entering nodes at fixed ports.
+           - Long vertical links run through the gaps between nodes,
+             so no line is ever drawn across a box.
+        ========================================================= */
+
+
+        /* ---------------------------------------------------------
+           1. DOM REFERENCES
+        --------------------------------------------------------- */
+
+        const svg = document.getElementById("architecture");
+        const description = document.getElementById("description");
+        const traceButtons = {
+            gps: document.getElementById("b1"),
+            dispatch: document.getElementById("b2"),
+            realtime: document.getElementById("b3")
+        };
+
+
+        /* ---------------------------------------------------------
+           2. ROW GRID
+        --------------------------------------------------------- */
+
+        const ROW = {
+            client: { y: 12, h: 50 },
+            gateway: { y: 100, h: 44 },
+            api: { y: 182, h: 50 },
+            service: { y: 300, h: 52 },
+            data: { y: 428, h: 52 }
+        };
+
+        const SVC_W = 230;   // all service boxes share one width (40px gaps)
+
+
+        /* ---------------------------------------------------------
+           3. ARCHITECTURE NODES
+    
+           id: [x, row, width, title, technology, description]
+        --------------------------------------------------------- */
+
+        const nodeDefs = {
+
+            admin: [
+                130, "client", 420,
+                "Admin Dispatch Portal",
+                "React 19 · TypeScript · Vite · Leaflet",
+                "React and TypeScript dashboard with a live Leaflet map, dispatch console, candidate scoring, WebSocket updates and polling fallback."
+            ],
+
+            driver: [
+                710, "client", 420,
+                "Driver Mobile App",
+                "Flutter 3.x · Dart · Geolocator",
+                "Flutter app for GPS tracking, duty status, active trips, fuel receipts, issue reporting and sound alerts."
+            ],
+
+            asgi: [
+                330, "gateway", 600,
+                "Daphne ASGI + Django Channels",
+                "ProtocolTypeRouter · HTTP + WebSocket",
+                "A single Daphne process handles HTTP and WebSocket traffic. ProtocolTypeRouter separates the two protocols, with JWT authentication."
+            ],
+
+            http: [
+                110, "api", 590,
+                "Middleware → DRF Views",
+                "REST · JSON · JWT",
+                "Regular web requests pass through security checks (authentication, organization isolation) before reaching the REST API endpoints."
+            ],
+
+            websocket: [
+                740, "api", 410,
+                "JWTAuthMiddleware → NotificationConsumer",
+                "WebSocket · Notifications",
+                "WebSocket connections are authenticated with tokens. The system then handles real-time notifications and live updates for all connected clients."
+            ],
+
+            accounts: [
+                110, "service", SVC_W,
+                "Accounts App",
+                "Organizations · RBAC · Activity",
+                "Handles organizations, role-based access, user profiles, driver activity, registration and JWT authentication."
+            ],
+
+            signals: [
+                380, "service", SVC_W,
+                "post_save Signals",
+                "Notification · Issue · SOS",
+                "Automated triggers respond to system events. When trips complete, driver safety scores are updated. When vehicles break down, recovery workflow starts automatically."
+            ],
+
+            engine: [
+                650, "service", SVC_W,
+                "Dispatch Engine",
+                "vehicles/dispatch_engine.py",
+                "Dispatch Service finds available vehicles, calculates road routes, scores each option based on time and distance, then picks the best match and explains why it was chosen."
+            ],
+
+            osrmClient: [
+                920, "service", SVC_W,
+                "OSRM Client",
+                "vehicles/osrm.py",
+                "Routing Service communicates with external road network server. Receives detailed route geometry, simplifies it to reduce data size while maintaining accuracy, then stores the optimized route."
+            ],
+
+            postgres: [
+                110, "data", 410,
+                "PostgreSQL 16 + PostGIS",
+                "PointField SRID 4326 · GIST",
+                "Main database stores all fleet data including vehicle locations. Geographic data is optimized for fast distance searches. System filters out duplicate GPS readings within 15 meters to save space."
+            ],
+
+            redis: [
+                560, "data", 325,
+                "Redis 7 · Docker",
+                "DB 1 Cache · DB 2 Channels",
+                "DB 1 handles route and GPS caching. DB 2 provides the Django Channels pub/sub layer."
+            ],
+
+            osrm: [
+                920, "data", 230,
+                "OSRM Routing Engine",
+                "External Service",
+                "Returns real road distance and driving duration for candidate vehicles."
+            ]
+        };
+
+        // Normalise into { x, y, w, h, title, tech, text }
+        const nodes = {};
+        Object.entries(nodeDefs).forEach(([id, [x, row, w, title, tech, text]]) => {
+            nodes[id] = { x, y: ROW[row].y, w, h: ROW[row].h, title, tech, text };
+        });
+
+
+        /* ---------------------------------------------------------
+           4. CONNECTIONS (orthogonal routes)
+    
+           [from, to, [[x, y], ...]]
+           Routes start/end exactly on a node border.
+           Bottoms: client 62 · gateway 144 · api 232 · service 352
+           Tops:    gateway 100 · api 182 · service 300 · data 428
+        --------------------------------------------------------- */
+
+        const connections = [
+
+            /* Clients ↔ Gateway */
+            ["admin", "asgi", [[440, 62], [440, 100]]],
+            ["driver", "asgi", [[820, 62], [820, 100]]],
+
+            /* Gateway ↔ API (shared x with the lines above) */
+            ["asgi", "http", [[440, 144], [440, 182]]],
+            ["asgi", "websocket", [[820, 144], [820, 182]]],
+
+            /* API (HTTP) ↔ Services : straight drops */
+            ["http", "accounts", [[225, 232], [225, 300]]],
+            ["http", "signals", [[495, 232], [495, 300]]],
+            ["http", "engine", [[685, 232], [685, 300]]],
+
+            /* API (HTTP) ↔ Data : straight drops through the service gaps */
+            ["http", "postgres", [[360, 232], [360, 428]]],
+            ["http", "redis", [[630, 232], [630, 428]]],
+
+            /* Services ↔ Services */
+            ["engine", "osrmClient", [[880, 326], [920, 326]]],
+
+            /* Services ↔ Data */
+            ["accounts", "postgres", [[225, 352], [225, 428]]],
+            ["signals", "postgres", [[450, 352], [450, 428]]],
+            ["signals", "redis", [[590, 352], [590, 428]]],
+            ["engine", "postgres", [[700, 352], [700, 384], [480, 384], [480, 428]]],
+            ["osrmClient", "osrm", [[1035, 352], [1035, 428]]],
+            ["osrmClient", "redis", [[960, 352], [960, 396], [870, 396], [870, 428]]],
+
+            /* WebSocket ↔ Redis : down the engine / OSRM-client gap */
+            ["websocket", "redis", [[900, 232], [900, 372], [840, 372], [840, 428]]]
+        ];
+
+
+        /* ---------------------------------------------------------
+           5. TRACE FLOWS
+           Every hop follows a real connection above.
+        --------------------------------------------------------- */
+
+        const flows = {
+
+            gps: [
+                ["driver", "Driver obtains GPS location using Geolocator."],
+                ["asgi", "Location is sent through the ASGI layer."],
+                ["http", "JWT is verified and the location update is validated."],
+                ["http", "15 m jitter filter rejects GPS noise."],
+                ["postgres", "Vehicle location and GPS breadcrumb are stored."],
+                ["redis", "Latest location is cached in Redis DB 1 for fast access."],
+                ["http", "Update-location view returns success."],
+                ["admin", "Dashboard polls every 4-5 seconds and receives the latest position."]
+            ],
+
+            dispatch: [
+                ["admin", "Dispatcher enters pickup and destination."],
+                ["asgi", "POST /api/dispatch/ enters the backend."],
+                ["http", "DRF validates the request."],
+                ["engine", "Dispatch engine filters eligible vehicles."],
+                ["osrmClient", "Road route is calculated for each candidate."],
+                ["osrm", "OSRM returns road distance and driving ETA."],
+                ["osrmClient", "Distance, ETA and route geometry are returned."],
+                ["engine", "Candidates are scored and ranked."],
+                ["postgres", "Dispatch request is saved."],
+                ["signals", "Notification is created for the assigned driver."],
+                ["redis", "Redis broadcasts the notification."],
+                ["websocket", "WebSocket consumer sends the event to the driver."],
+                ["asgi", "Daphne sends the WebSocket frame."],
+                ["driver", "Driver receives the assignment instantly."]
+            ],
+
+            realtime: [
+                ["signals", "A dispatch, issue, SOS or maintenance event occurs."],
+                ["redis", "Redis broadcasts the event through pub/sub."],
+                ["websocket", "NotificationConsumer receives the event."],
+                ["asgi", "Daphne sends the WebSocket frame."],
+                ["admin", "Dashboard updates instantly without refreshing."]
+            ]
+        };
+
+
+        /* ---------------------------------------------------------
+           6. HELPERS
+        --------------------------------------------------------- */
+
+        // Polyline → SVG path with softly rounded corners
+        function pathD(points, radius = 7) {
+
+            let d = `M${points[0][0]} ${points[0][1]}`;
+
+            for (let i = 1; i < points.length - 1; i++) {
+
+                const [px, py] = points[i - 1];
+                const [cx, cy] = points[i];
+                const [nx, ny] = points[i + 1];
+
+                const l1 = Math.hypot(cx - px, cy - py);
+                const l2 = Math.hypot(nx - cx, ny - cy);
+                const r = Math.min(radius, l1 / 2, l2 / 2);
+
+                const ax = cx + (px - cx) / l1 * r;
+                const ay = cy + (py - cy) / l1 * r;
+                const bx = cx + (nx - cx) / l2 * r;
+                const by = cy + (ny - cy) / l2 * r;
+
+                d += ` L${ax} ${ay} Q${cx} ${cy} ${bx} ${by}`;
+            }
+
+            const last = points[points.length - 1];
+            return d + ` L${last[0]} ${last[1]}`;
+        }
+
+        // Find the edge element between two nodes (either direction)
+        function findEdge(a, b) {
+
+            const direct = document.getElementById(`edge-${a}-${b}`);
+            if (direct) return { el: direct, reversed: false };
+
+            const reverse = document.getElementById(`edge-${b}-${a}`);
+            if (reverse) return { el: reverse, reversed: true };
+
+            return null;
+        }
+
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+
+        /* ---------------------------------------------------------
+           7. BUILD DIAGRAM
+        --------------------------------------------------------- */
+
+        function buildDiagram() {
+
+            let html = "";
+
+            // Layer bands (alternating) + labels
+            const layers = [
+                ["CLIENTS", 0, 81, 41],
+                ["GATEWAY", 81, 163, 126],
+                ["API", 163, 266, 211],
+                ["SERVICES", 266, 390, 330],
+                ["DATA", 390, 504, 458]
+            ];
+
+            layers.forEach(([name, top, bottom, labelY], i) => {
+
+                if (i % 2 === 0) {
+                    html += `<rect class="band" x="0" y="${top}" width="1160" height="${bottom - top}"></rect>`;
+                }
+
+                html += `<text class="lyr" x="10" y="${labelY}">${name}</text>`;
+            });
+
+            // Docker boundary around Redis
+            html += `
+            <rect class="dock" x="550" y="416" width="345" height="82" rx="4"></rect>
+            <text class="dock-l" x="889" y="493" text-anchor="end">Docker</text>
+        `;
+
+            // Edges
+            html += `<g id="edges">`;
+
+            connections.forEach(([from, to, points]) => {
+                html += `<path class="e" id="edge-${from}-${to}" d="${pathD(points)}"></path>`;
+            });
+
+            html += `</g>`;
+
+            // Nodes
+            html += `<g id="nodes">`;
+
+            Object.entries(nodes).forEach(([id, n]) => {
+
+                const cx = n.x + n.w / 2;
+
+                html += `
+                <g class="nd" id="node-${id}" data-node="${id}">
+                    <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="4"></rect>
+                    <text x="${cx}" y="${n.y + n.h / 2 - 3}">${n.title}</text>
+                    <text class="z" x="${cx}" y="${n.y + n.h / 2 + 14}">${n.tech}</text>
+                </g>
+            `;
+            });
+
+            html += `</g>`;
+
+            // Animation marker (on top)
+            html += `<circle id="pk" r="6" cx="0" cy="0"></circle>`;
+
+            svg.innerHTML = html;
+        }
+
+
+        /* ---------------------------------------------------------
+           8. STATE
+        --------------------------------------------------------- */
+
+        function clearState() {
+
+            document.querySelectorAll(".nd").forEach(el => el.classList.remove("fl"));
+
+            document.querySelectorAll(".e").forEach(el => {
+                el.classList.remove("fl", "hl");
+                el.style.animationDirection = "";
+            });
+
+            Object.values(traceButtons).forEach(b => b.classList.remove("on"));
+        }
+
+        function selectNode(nodeId) {
+
+            document.querySelectorAll(".nd").forEach(el => el.classList.remove("on"));
+            document.querySelectorAll(".e").forEach(el => el.classList.remove("hl"));
+
+            if (!nodeId) return;
+
+            document.getElementById(`node-${nodeId}`).classList.add("on");
+
+            // Highlight every connection touching this node
+            connections.forEach(([from, to]) => {
+                if (from === nodeId || to === nodeId) {
+                    document.getElementById(`edge-${from}-${to}`).classList.add("hl");
+                }
+            });
+
+            description.innerHTML = `<b>${nodes[nodeId].title}.</b> ${nodes[nodeId].text}`;
+        }
+
+
+        /* ---------------------------------------------------------
+           9. TRACE ANIMATION
+        --------------------------------------------------------- */
+
+        let currentRun = 0;
+
+        // Move the marker along an edge path (forward or reversed)
+        function travel(edge, reversed, duration, runId) {
+
+            const marker = document.getElementById("pk");
+            const length = edge.getTotalLength();
+
+            return new Promise(resolve => {
+
+                const start = performance.now();
+
+                function frame(now) {
+
+                    if (runId !== currentRun) return resolve();
+
+                    const t = Math.min((now - start) / duration, 1);
+                    const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+                    const at = reversed ? length * (1 - eased) : length * eased;
+                    const p = edge.getPointAtLength(at);
+
+                    marker.setAttribute("transform", `translate(${p.x} ${p.y})`);
+
+                    if (t < 1) requestAnimationFrame(frame);
+                    else resolve();
+                }
+
+                requestAnimationFrame(frame);
+            });
+        }
+
+        async function trace(flowId) {
+
+            const runId = ++currentRun;
+            const marker = document.getElementById("pk");
+
+            clearState();
+            selectNode(null);
+
+            traceButtons[flowId].classList.add("on");
+
+            const flow = flows[flowId];
+
+            // Park the marker on the first node's outgoing port
+            const first = findEdge(flow[0][0], flow[1][0]);
+            const startPoint = first.el.getPointAtLength(first.reversed ? first.el.getTotalLength() : 0);
+            marker.setAttribute("transform", `translate(${startPoint.x} ${startPoint.y})`);
+            marker.style.opacity = 1;
+
+            for (let i = 0; i < flow.length; i++) {
+
+                if (runId !== currentRun) return;
+
+                const [nodeId, message] = flow[i];
+
+                // Light up the connection from the previous node and travel along it
+                if (i > 0) {
+
+                    const edge = findEdge(flow[i - 1][0], nodeId);
+
+                    edge.el.classList.add("fl");
+                    edge.el.style.animationDirection = edge.reversed ? "reverse" : "normal";
+                    edge.el.parentNode.appendChild(edge.el);   // draw above neighbours
+
+                    description.innerHTML =
+                        `<b>${i + 1}/${flow.length} · ${nodes[nodeId].title}.</b> ${message}`;
+
+                    await travel(edge.el, edge.reversed, 650, runId);
+
+                    if (runId !== currentRun) return;
+                }
+
+                document.getElementById(`node-${nodeId}`).classList.add("fl");
+
+                description.innerHTML =
+                    `<b>${i + 1}/${flow.length} · ${nodes[nodeId].title}.</b> ${message}`;
+
+                await sleep(i === 0 ? 900 : 500);
+            }
+        }
+
+
+        /* ---------------------------------------------------------
+           10. EVENTS
+        --------------------------------------------------------- */
+
+        function enableNodeSelection() {
+
+            document.querySelectorAll(".nd").forEach(node => {
+
+                node.addEventListener("click", () => {
+
+                    currentRun++;
+
+                    document.getElementById("pk").style.opacity = 0;
+
+                    clearState();
+                    selectNode(node.dataset.node);
+                });
+            });
+        }
+
+        traceButtons.gps.onclick = () => trace("gps");
+        traceButtons.dispatch.onclick = () => trace("dispatch");
+        traceButtons.realtime.onclick = () => trace("realtime");
+
+
+        /* ---------------------------------------------------------
+           11. INITIALIZE
+        --------------------------------------------------------- */
+
+        buildDiagram();
+
+        enableNodeSelection();
+
+        selectNode("engine");
+
+        // Automatically demonstrate the dispatch flow
+        setTimeout(() => trace("dispatch"), 1400);
+    </script>
+
+    <script src="slide.js" defer></script>
+    <script src="route.js"></script>
+
+</body>
+
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html><meta charset=utf-8><link rel=stylesheet href=theme.css><script src=slide.js defer></script>
+<style>
+.crud{filter:grayscale(1);opacity:.75}
+.crud .li{color:var(--mu)}
+.wm{position:absolute;right:10px;bottom:2px;font:900 58px 'Schibsted Grotesk';color:#0f1a2212;letter-spacing:-.05em;pointer-events:none}
+.vs{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;width:92px;flex:none}
+.vs b{width:62px;height:62px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font:900 19px 'Schibsted Grotesk';box-shadow:0 0 0 7px #f2541b22,0 8px 20px rgba(15,26,34,.25)}
+.pil{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pil h3{font-size:15px;display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.dot{width:10px;height:10px;border-radius:3px;flex:none}
+.feat{padding:9px 0;border-bottom:1px solid var(--ln)}
+.feat:last-child{border:0}
+.feat b{display:block;font-size:15px}
+.feat span{font:500 11.5px 'IBM Plex Mono';color:var(--mu);line-height:1.5;display:inline-block;margin-top:2px}
+</style>
+<h2 class=u>More than a CRUD fleet system</h2>
+<p class="s u" style="--d:.1s">A basic system <b>records</b> the fleet. Sarathi <b style="color:var(--am)">decides</b> — and explains every decision.</p>
+<div class=row style="gap:20px;align-items:stretch">
+<div class="k u crud" style="--d:.2s;width:268px;flex:none;overflow:hidden">
+<b>Basic fleet system</b>
+<div class=li>Vehicle CRUD</div>
+<div class=li>Driver CRUD</div>
+<div class=li>Basic status flags</div>
+<div class=li><s>Manual assignment</s></div>
+<div class=li>A pin on a map</div>
+<div class=wm>CRUD</div>
+</div>
+<div class="vs u" style="--d:.35s"><b>VS</b><span class="t a">adds</span></div>
+<div class=pil style="flex:1">
+<div class="k u" style="--d:.45s;border-top:3px solid var(--am)">
+<h3><span class=dot style="background:var(--am)"></span>Dispatch intelligence</h3>
+<div class=feat><b>Explainable scoring</b><span>Clear reason in plain language for every vehicle choice</span></div>
+<div class=feat><b>Reliable routing</b><span>Real road routes with automatic backup if service fails</span></div>
+<div class=feat><b>Simplified maps</b><span>Routes simplified for faster loading without losing accuracy</span></div>
+</div>
+<div class="k u" style="--d:.6s;border-top:3px solid var(--bl)">
+<h3><span class=dot style="background:var(--bl)"></span>Real-time operations</h3>
+<div class=feat><b>Secure real-time updates</b><span>Authenticated connections only, anonymous users rejected</span></div>
+<div class=feat><b>Fast data caching</b><span>Two-layer system for quick access and live updates</span></div>
+<div class=feat><b>Breakdown recovery</b><span>Send replacement vehicle directly to breakdown location</span></div>
+</div>
+<div class="k u" style="--d:.75s;border-top:3px solid var(--tl)">
+<h3><span class=dot style="background:var(--tl)"></span>Production foundations</h3>
+<div class=feat><b>Fast location search</b><span>Database optimized for quick geographic queries</span></div>
+<div class=feat><b>Secure multi-organization</b><span>7 user roles with data isolated per organization</span></div>
+<div class=feat><b>Mobile driver app</b><span>GPS tracking, duty status, fuel logs, and issue reporting</span></div>
+</div>
+</div>
+</div>
+<div class="k u" style="--d:.95s;margin-top:18px;border-color:var(--am);text-align:center;font-weight:600">No performance claims without measurements — figures will be added once measured.</div>
