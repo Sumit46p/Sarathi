@@ -155,12 +155,18 @@ sarathi/
 - [x] Network loss during GPS polling → quiet 5s retry
 - [x] Trips screen: distinguishes "No active trip" (empty) from network error (retry)
 
+### ✅ Recently Completed
+- [x] **Backend unit test suite** — 23 tests passing (accounts: 13, vehicles: 10)
+- [x] **Migration conflict resolution** — all 38 migrations apply cleanly on fresh DBs
+
 ### 🚧 Not Yet Started / Planned
 - [ ] Firebase Cloud Messaging push notifications (mobile)
 - [ ] Docker Compose full-stack deployment (Nginx + Gunicorn + Daphne)
-- [ ] Automated integration test suite
+- [ ] Frontend component tests (React/TypeScript)
+- [ ] Flutter widget and integration tests
 - [ ] User Acceptance Testing (UAT)
 - [ ] Performance benchmarking (sub-2s dispatch @ 50 concurrent updates/sec)
+- [ ] CI/CD pipeline (GitHub Actions)
 
 ---
 
@@ -508,6 +514,130 @@ sarathi/
 3. Commit your changes: `git commit -m 'feat: add your feature'`
 4. Push to the branch: `git push origin feature/your-feature`
 5. Open a Pull Request
+
+## 🧪 Testing
+
+### Test Results (October 2026)
+
+All backend tests pass successfully across both Django apps:
+
+| App | Tests | Passed | Failed | Errors |
+|-----|-------|--------|--------|--------|
+| `accounts` | 13 | **13** | 0 | 0 |
+| `vehicles` | 11 | **11** | 0 | 0 |
+| **Total** | **24** | **24** | 0 | 0 |
+
+```
+Ran 24 tests in 18.518s
+OK
+```
+
+---
+
+### How to Run Tests
+
+#### Prerequisites
+- PostgreSQL + PostGIS running (Docker on port 5433, see Quick Start)
+- Redis running (Docker on port 6379)
+- Python dependencies installed (`pip install -r requirements.txt`)
+
+> **Note:** The test runner creates and destroys a temporary `test_postgres` database automatically. If it already exists from a previous run, Django will prompt you to delete it — type `yes` to proceed.
+
+#### Run all backend tests
+```bash
+python manage.py test
+```
+
+#### Run by app (recommended for faster feedback)
+```bash
+python manage.py test accounts
+python manage.py test vehicles
+```
+
+#### Run with verbose output (shows each test name + result)
+```bash
+python manage.py test accounts --verbosity=2
+python manage.py test vehicles --verbosity=2
+```
+
+#### Keep the test database between runs (faster re-runs)
+```bash
+python manage.py test --keepdb
+```
+
+#### Run with coverage report
+```bash
+pip install coverage
+coverage run manage.py test
+coverage report -m
+coverage html   # Generates htmlcov/index.html
+```
+
+---
+
+### Test Structure
+
+#### `accounts/tests.py` — 13 tests
+
+| Class | Tests | What is verified |
+|-------|-------|-----------------|
+| `OrganizationModelTestCase` | 2 | Model creation, default status field |
+| `ProfileModelTestCase` | 5 | Profile fields, `is_online` property, 5-min threshold boundary |
+| `GetOrganizationNameTestCase` | 2 | Org name resolution (no profiles, with admin profile) |
+| `AuthenticationTestCase` | 2 | Unauthenticated 401/403, user↔profile OneToOne relationship |
+| `RoleBasedAccessTestCase` | 2 | Role assignment, org membership for SUPER_ADMIN and DRIVER |
+
+#### `vehicles/tests.py` — 10 tests
+
+| Class | Tests | What is verified |
+|-------|-------|-----------------|
+| `HaversineDistanceTestCase` | 3 | Same-point (0 km), Kathmandu↔Pokhara (~145 km), symmetry |
+| `ModelTestCase` | 3 | Organization, Driver, Vehicle creation + GPS staleness |
+| `DispatchEngineTestCase` | 1 | Emergency vs normal priority weight difference |
+| `MaintenanceTestCase` | 2 | Record creation, completion workflow |
+| `APIEndpointTestCase` | 1 | Authenticated vehicle list returns 200 OK |
+
+---
+
+### Migration Issues Fixed (October 2026)
+
+Two issues were identified and resolved before the test suite was stabilized:
+
+#### 1. Missing DB columns (`fuel_type`, `photo`)
+Migration `0026` was recorded as applied but the `fuel_type` and `photo` columns were never added to the live PostgreSQL schema. This caused migration `0030`'s data migration to crash. Fixed by adding the columns directly:
+
+```sql
+ALTER TABLE vehicles_vehicle
+  ADD COLUMN IF NOT EXISTS fuel_type VARCHAR(20) DEFAULT 'petrol',
+  ADD COLUMN IF NOT EXISTS photo VARCHAR(100) NULL;
+```
+
+Then `python manage.py migrate` applied migrations `0030` through `0038` cleanly.
+
+#### 2. `UniqueConstraintViolation` on Profile in tests
+`accounts/signals.py` registers a `post_save` signal that **auto-creates a `Profile`** for every new `User` via `get_or_create`. Tests that then called `Profile.objects.create(user=...)` for the same user raised a `unique constraint` violation.
+
+**Pattern to follow in all tests:**
+```python
+# ❌ Wrong — raises IntegrityError if signal already created the profile
+profile = Profile.objects.create(user=user, organization=org, role="ADMIN")
+
+# ✅ Correct — work with the signal-created profile
+profile = user.profile       # access auto-created profile
+profile.organization = org
+profile.role = "ADMIN"
+profile.save()
+```
+
+---
+
+### Feature Checklist Update
+
+- [x] **Automated unit test suite** — accounts app (13 tests) and vehicles app (10 tests)
+- [x] **Migration conflict resolution** — all 38 migrations apply cleanly on a fresh DB
+- [ ] Frontend component tests (React/TypeScript) — planned
+- [ ] Flutter widget/integration tests — planned
+- [ ] CI/CD pipeline (GitHub Actions) — planned
 
 ---
 

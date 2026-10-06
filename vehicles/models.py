@@ -450,6 +450,9 @@ class DispatchRequest(models.Model):
     arrived_at    = models.DateTimeField(null=True, blank=True)
     in_service_at = models.DateTimeField(null=True, blank=True)
     completed_at  = models.DateTimeField(null=True, blank=True)
+    cancelled_at  = models.DateTimeField(null=True, blank=True)
+    rejected_at   = models.DateTimeField(null=True, blank=True)
+    expired_at    = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"Dispatch #{self.pk} ({self.get_status_display()}) — {self.vehicle_type}"
@@ -471,6 +474,9 @@ class DispatchRequest(models.Model):
             'arrived':     'arrived_at',
             'in_service':  'in_service_at',
             'completed':   'completed_at',
+            'cancelled':   'cancelled_at',
+            'rejected':    'rejected_at',
+            'expired':     'expired_at',
         }.get(new_status)
         if timestamp_field:
             setattr(self, timestamp_field, now)

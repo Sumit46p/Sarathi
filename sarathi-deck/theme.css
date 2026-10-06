@@ -1,0 +1,34 @@
+@import url(https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap);
+:root{--bg:#f0f4f3;--ink:#0f1a22;--mu:#5d6b73;--bl:#0e6e8c;--tl:#1a8f6b;--am:#f2541b;--rd:#c8372d;--ln:#c9d0cc;--glow:#ff704380}
+*{box-sizing:border-box;margin:0}
+body{width:1280px;height:720px;overflow:hidden;font:500 17px 'Schibsted Grotesk',system-ui,sans-serif;color:var(--ink);background:linear-gradient(135deg,#f0f4f3 0%,#e8eeeb 50%,#dfe7e3 100%);padding:42px 60px;position:relative}
+body::before{content:'';position:absolute;inset:0;background:linear-gradient(#0f1a2008 1px,transparent 1px) 0 0/50px 50px,linear-gradient(90deg,#0f1a2008 1px,transparent 1px) 0 0/50px 50px;pointer-events:none;opacity:.4}
+h1,h2,h3{font-weight:900;letter-spacing:-.04em}
+h1{text-shadow:2px 2px 0 rgba(242,84,27,0.1)}
+h2{font-size:48px;line-height:1;margin-bottom:10px;background:linear-gradient(135deg,var(--ink) 0%,#1a2832 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.s{color:var(--mu);margin-bottom:20px;font-weight:600}
+.k{background:rgba(255,255,255,0.85);backdrop-filter:blur(10px);border:1px solid rgba(15,26,34,0.12);border-radius:8px;padding:16px 18px;position:relative;box-shadow:0 2px 12px rgba(15,26,34,0.06);transition:.3s}
+.k:hover{box-shadow:0 4px 20px rgba(15,26,34,0.1);transform:translateY(-2px)}
+.k:before{content:'';position:absolute;left:-1px;top:-1px;width:12px;height:12px;border-top:3px solid var(--am);border-left:3px solid var(--am);border-radius:2px 0 0 0}
+.t{display:inline-block;font:600 11px 'IBM Plex Mono',monospace;padding:4px 10px;border:1px solid var(--bl);color:var(--bl);border-radius:4px;background:rgba(14,110,140,0.05);transition:.2s}
+.t:hover{background:var(--bl);color:#fff}
+.g{border-color:var(--tl);color:var(--tl);background:rgba(26,143,107,0.05)}.g:hover{background:var(--tl)}
+.a{border-color:var(--am);color:var(--am);background:rgba(242,84,27,0.05)}.a:hover{background:var(--am)}
+.r{border-color:var(--rd);color:var(--rd);background:rgba(200,55,45,0.05)}.r:hover{background:var(--rd)}
+.u{opacity:0;animation:u .6s var(--d,0s) both cubic-bezier(.2,.8,.2,1)}
+@keyframes u{from{opacity:0;transform:translateY(24px) scale(0.98)}to{opacity:1;transform:none}}
+h1.u,h2.u{animation-name:wp;clip-path:inset(0 100% 0 0)}@keyframes wp{to{opacity:1;clip-path:inset(0 0 0 0)}}
+.row{display:flex;gap:18px}.gd{display:grid;gap:16px}.b{font-weight:800}
+.m{position:absolute;left:0;top:0;width:18px;height:18px;margin:-9px;background:var(--ink);border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 2px var(--ink),0 4px 12px rgba(15,26,34,0.3);animation:mv var(--t,6s) linear infinite}
+@keyframes mv{from{offset-distance:0}to{offset-distance:100%}}
+.dash{stroke-dasharray:8 8;animation:ds 1s linear infinite}@keyframes ds{to{stroke-dashoffset:-16}}
+.dr{stroke-dasharray:1400;stroke-dashoffset:1400;animation:dw 2.2s .3s forwards}@keyframes dw{to{stroke-dashoffset:0}}
+.pl{animation:pl 2s infinite}@keyframes pl{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(2);opacity:.2}}
+.mu{color:var(--mu)}.li{padding:10px 0;border-bottom:1px solid var(--ln);transition:.2s}.li:hover{padding-left:8px;color:var(--bl)}.li:last-child{border:0}
+code,.mo{font:500 13px 'IBM Plex Mono',monospace;background:rgba(14,110,140,0.08);padding:2px 6px;border-radius:3px}
+button{font:600 13px 'IBM Plex Mono',monospace;border:1px solid var(--ink);background:rgba(255,255,255,0.9);padding:10px 16px;border-radius:6px;cursor:pointer;color:var(--ink);transition:.2s;box-shadow:0 2px 8px rgba(15,26,34,0.1)}
+button:hover{background:var(--ink);color:#fff;transform:translateY(-2px);box-shadow:0 4px 16px rgba(15,26,34,0.2)}
+button.on{background:var(--am);color:#fff;border-color:var(--am);box-shadow:0 0 0 3px var(--glow)}
+a{color:var(--bl);text-decoration:none;border-bottom:2px solid transparent;transition:.2s;font-weight:700}
+a:hover{color:var(--am);border-bottom-color:var(--am)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;opacity:1!important;clip-path:none!important}}

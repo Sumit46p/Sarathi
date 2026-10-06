@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
+        migrations.AlterField(
             model_name='vehicle',
             name='fuel_type',
             field=models.CharField(
@@ -18,7 +18,7 @@ class Migration(migrations.Migration):
                 blank=True,
             ),
         ),
-        migrations.AddField(
+        migrations.AlterField(
             model_name='vehicle',
             name='photo',
             field=models.ImageField(

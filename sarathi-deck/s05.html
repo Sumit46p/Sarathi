@@ -1,0 +1,49 @@
+<!DOCTYPE html><meta charset=utf-8><link rel=stylesheet href=theme.css><script src=slide.js defer></script>
+<style>
+.win{width:1120px;margin:4px auto 0;background:#fff;border:1px solid #0f1a2222;border-radius:12px;box-shadow:0 24px 60px #0f1a2430;overflow:hidden}
+.wb{display:flex;align-items:center;gap:6px;background:#eef1f6;padding:8px 12px}
+.wb i{width:10px;height:10px;border-radius:50%;background:#c4ccd4}
+.wb i:nth-child(1){background:#f06a5f}.wb i:nth-child(2){background:#f5bf4f}.wb i:nth-child(3){background:#5fc454}
+.url{flex:1;background:#fff;border:1px solid #e0e5ec;border-radius:20px;font:500 10.5px 'IBM Plex Mono';color:var(--mu);padding:4px 12px;margin-left:6px}
+.bd{display:flex}
+.sdb{width:182px;background:#0f1a22;color:#aebac4;padding:12px 10px;font-size:11.5px;flex-shrink:0}
+.ni{padding:6px 10px;border-radius:7px;margin-bottom:1px;display:flex;gap:8px;align-items:center;transition:.2s}
+.ni:hover{background:#ffffff14;color:#fff}
+.ni.on{background:#2563eb;color:#fff;font-weight:700}
+.mn{flex:1;background:#f6f8fb;padding:12px 14px}
+.vc{background:#fff;border:1px solid #e3e8f0;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.55;transition:.25s}
+.vc:hover{transform:translateY(-3px);box-shadow:0 8px 20px #0f1a2214}
+@keyframes w{to{width:78%}}
+</style>
+<h2 class=u style="text-align:center">Managing the fleet</h2>
+<p class="s u" style="--d:.08s;text-align:center;font-size:19px">The admin portal shows vehicles, drivers, and availability status at a glance. <span class="t a">Sample data shown</span></p>
+<div class="win u" style="--d:.15s">
+<div class=wb><i></i><i></i><i></i><div class=url>🔒 sarathi.app/dashboard</div></div>
+<div class=bd>
+<div class=sdb>
+<div style="display:flex;align-items:center;gap:8px;padding:2px 8px 12px"><img src=logo.png style="width:22px;height:22px;object-fit:contain"><b style="color:#fff;font-size:14px">Sarathi</b></div>
+<div class=ni>📊 Dashboard</div>
+<div class=ni>🛰 Live Tracking</div>
+<div class=ni>🚦 Dispatch Workspace</div>
+<div class="ni on">🚗 Fleet Map</div>
+<div class=ni>🧾 Trips</div>
+<div class=ni>⛽ Fuel</div>
+<div class=ni>🔧 Maintenance</div>
+<div class=ni>⚠️ Issues</div>
+<div class=ni>📈 Analytics</div>
+<div class=ni>⚙️ Settings</div>
+</div>
+<div class=mn>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:16px">Fleet overview</b><span style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;border-radius:7px;padding:6px 12px">+ Add vehicle</span></div>
+<div class=gd style="grid-template-columns:repeat(3,1fr);gap:10px">
+<div class=vc><b style="font-family:'IBM Plex Mono'">XX-01-1234</b><br><span class=mu>Ambulance · Diesel</span><br><span class=mu>Driver A</span><br><span class="t g" style="margin-top:4px">Available</span></div>
+<div class=vc><b style="font-family:'IBM Plex Mono'">XX-02-5678</b><br><span class=mu>Logistics · EV</span><br><span class=mu>Driver B</span><br><span class=t style="margin-top:4px">Off duty</span></div>
+<div class=vc><b style="font-family:'IBM Plex Mono'">XX-03-9012</b><br><span class=mu>Rental · Petrol</span><br><span class=mu>Driver C</span><br><span class="t r" style="margin-top:4px">Admin blocked</span></div>
+</div>
+<div style="background:#0f1a22;color:#fff;border-radius:10px;padding:11px;margin-top:12px;text-align:center;font-weight:800;font-size:14px"><span class=t>is_on_duty</span> AND NOT <span class="t r">admin_blocked</span> = <span class="t g">is_available</span></div>
+<div style="margin-top:10px;font-size:11.5px;color:var(--mu)"><b style="color:var(--ink)">Categories</b> · Rental · Government · Company · Personal · Logistics · Public Transport · Commercial</div>
+</div></div></div>
+<div class=row style="width:1120px;margin:12px auto 0">
+<div class="k u" style="--d:.5s;flex:1"><b>Driver</b><div class=li style="padding:6px 0">Admin-created logins</div><div class=li style="padding:6px 0">Safety score 0–100 · harsh-driving events · last 30 days</div><div style="height:8px;background:#dde6e4;border-radius:4px;margin-top:8px"><i style="display:block;height:8px;border-radius:4px;background:var(--tl);width:0;animation:w 1.5s .9s forwards"></i></div></div>
+<div class="k u" style="--d:.65s;flex:1"><b>Vehicle</b><div class=li style="padding:6px 0">Fuel: Petrol / Diesel / EV</div><div class=li style="padding:6px 0">Custom photo on map markers</div><div class=li style="padding:6px 0">Telemetry: speed, heading, fuel</div></div>
+</div>

@@ -248,6 +248,7 @@ class DispatchRequestSerializer(serializers.ModelSerializer):
             'distance_km', 'duration_min', 'used_osrm',
             'created_by', 'created_at', 'assigned_at', 'accepted_at',
             'en_route_at', 'arrived_at', 'in_service_at', 'completed_at',
+            'cancelled_at', 'rejected_at', 'expired_at',
             'gps_lost', 'assigned_vehicle_last_location_at',
         ]
 
