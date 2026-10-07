@@ -248,9 +248,11 @@ function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number
 interface DispatchWorkspaceProps {
   fleetVehicles: Vehicle[];
   onRefreshVehicles?: () => void;
+  userRole?: string | null;
 }
 
-export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: DispatchWorkspaceProps) {
+export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles, userRole }: DispatchWorkspaceProps) {
+  const canDispatch = userRole === 'SUPER_ADMIN' || userRole === 'ORGANIZATION_ADMIN' || userRole === 'FLEET_MANAGER';
   // Main sub-tabs: 'logistics' (Normal Delivery) | 'recovery' (Emergency Breakdown Recovery) | 'active' (Fleet Operations)
   const [dispatchMode, setDispatchMode] = useState<'logistics' | 'recovery' | 'active'>('logistics');
 
@@ -905,24 +907,26 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
                   </div>
 
                   {/* Dispatch Action Button */}
-                  <button
-                    type="button"
-                    className="button button-primary dispatch-now-btn"
-                    onClick={handleConfirmLogistics}
-                    disabled={isDispatching}
-                  >
-                    {isDispatching ? (
-                      <>
-                        <RefreshCw size={16} className="spin" />
-                        <span>Dispatching Logistics Delivery...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send size={16} />
-                        <span>DISPATCH LOGISTICS DELIVERY</span>
-                      </>
-                    )}
-                  </button>
+                  {canDispatch && (
+                    <button
+                      type="button"
+                      className="button button-primary dispatch-now-btn"
+                      onClick={handleConfirmLogistics}
+                      disabled={isDispatching}
+                    >
+                      {isDispatching ? (
+                        <>
+                          <RefreshCw size={16} className="spin" />
+                          <span>Dispatching Logistics Delivery...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send size={16} />
+                          <span>DISPATCH LOGISTICS DELIVERY</span>
+                        </>
+                      )}
+                    </button>
+                  )}
 
                   {/* View Other Eligible Vehicles */}
                   {otherCandidates.length > 0 && (
@@ -1179,74 +1183,76 @@ export default function DispatchWorkspace({ fleetVehicles, onRefreshVehicles }: 
                       </div>
 
                       {/* Progress Transitions */}
-                      <div className="op-actions-bar">
-                        {op.status === 'assigned' && (
-                          <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'accepted')}>
-                            Driver Accept
-                          </button>
-                        )}
-                        {(op.status === 'assigned' || op.status === 'accepted') && (
-                          <button
-                            className="stage-btn"
-                            onClick={() => handleAdvanceStatus(op.id, op.operation_type === 'EMERGENCY_REPLACEMENT' ? 'EN_ROUTE_TO_BREAKDOWN' : 'EN_ROUTE_TO_PICKUP')}
-                          >
-                            Mark En Route
-                          </button>
-                        )}
-                        {(op.status === 'en_route' || op.status === 'EN_ROUTE_TO_PICKUP') && (
-                          <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'AT_PICKUP')}>
-                            At Pickup Site
-                          </button>
-                        )}
-                        {op.status === 'AT_PICKUP' && (
-                          <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'IN_TRANSIT')}>
-                            Depart (In Transit)
-                          </button>
-                        )}
-                        {op.status === 'EN_ROUTE_TO_BREAKDOWN' && (
-                          <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'AT_BREAKDOWN_LOCATION')}>
-                            At Breakdown Site
-                          </button>
-                        )}
-                        {op.status === 'AT_BREAKDOWN_LOCATION' && (
-                          <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'GOODS_TRANSFERRED')}>
-                            Transfer Cargo Done
-                          </button>
-                        )}
-                        {op.status === 'GOODS_TRANSFERRED' && (
-                          <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'IN_TRANSIT_TO_DESTINATION')}>
-                            Depart to Destination
-                          </button>
-                        )}
-                        {(op.status === 'IN_TRANSIT' || op.status === 'IN_TRANSIT_TO_DESTINATION') && (
-                          <button className="stage-btn complete" onClick={() => handleAdvanceStatus(op.id, 'completed')}>
-                            Delivered / Completed
-                          </button>
-                        )}
+                      {canDispatch && (
+                        <div className="op-actions-bar">
+                          {op.status === 'assigned' && (
+                            <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'accepted')}>
+                              Driver Accept
+                            </button>
+                          )}
+                          {(op.status === 'assigned' || op.status === 'accepted') && (
+                            <button
+                              className="stage-btn"
+                              onClick={() => handleAdvanceStatus(op.id, op.operation_type === 'EMERGENCY_REPLACEMENT' ? 'EN_ROUTE_TO_BREAKDOWN' : 'EN_ROUTE_TO_PICKUP')}
+                            >
+                              Mark En Route
+                            </button>
+                          )}
+                          {(op.status === 'en_route' || op.status === 'EN_ROUTE_TO_PICKUP') && (
+                            <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'AT_PICKUP')}>
+                              At Pickup Site
+                            </button>
+                          )}
+                          {op.status === 'AT_PICKUP' && (
+                            <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'IN_TRANSIT')}>
+                              Depart (In Transit)
+                            </button>
+                          )}
+                          {op.status === 'EN_ROUTE_TO_BREAKDOWN' && (
+                            <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'AT_BREAKDOWN_LOCATION')}>
+                              At Breakdown Site
+                            </button>
+                          )}
+                          {op.status === 'AT_BREAKDOWN_LOCATION' && (
+                            <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'GOODS_TRANSFERRED')}>
+                              Transfer Cargo Done
+                            </button>
+                          )}
+                          {op.status === 'GOODS_TRANSFERRED' && (
+                            <button className="stage-btn" onClick={() => handleAdvanceStatus(op.id, 'IN_TRANSIT_TO_DESTINATION')}>
+                              Depart to Destination
+                            </button>
+                          )}
+                          {(op.status === 'IN_TRANSIT' || op.status === 'IN_TRANSIT_TO_DESTINATION') && (
+                            <button className="stage-btn complete" onClick={() => handleAdvanceStatus(op.id, 'completed')}>
+                              Delivered / Completed
+                            </button>
+                          )}
 
-                        {/* Breakdown Trigger Action */}
-                        {op.operation_type === 'NORMAL_LOGISTICS' && op.status !== 'completed' && op.status !== 'VEHICLE_BREAKDOWN' && (
-                          <button
-                            className="stage-btn breakdown-trigger-btn"
-                            title="Driver reports vehicle broke down mid-journey"
-                            onClick={() => handleSimulateBreakdown(op.id)}
-                          >
-                            <AlertTriangle size={13} />
-                            <span>Report Breakdown</span>
-                          </button>
-                        )}
+                          {/* Breakdown Trigger Action */}
+                          {op.operation_type === 'NORMAL_LOGISTICS' && op.status !== 'completed' && op.status !== 'VEHICLE_BREAKDOWN' && (
+                            <button
+                              className="stage-btn breakdown-trigger-btn"
+                              title="Driver reports vehicle broke down mid-journey"
+                              onClick={() => handleSimulateBreakdown(op.id)}
+                            >
+                              <AlertTriangle size={13} />
+                              <span>Report Breakdown</span>
+                            </button>
+                          )}
 
-                        {/* Cancel / Terminate Action */}
-                        <button
-                          type="button"
-                          className="stage-btn cancel-btn"
-                          title="Cancel this dispatch operation"
-                          onClick={() => handleCancelOperation(op.id)}
-                        >
-                          <X size={12} />
-                          <span>Cancel Trip</span>
-                        </button>
-                      </div>
+                          {/* Cancel / Terminate Action */}
+                          <button
+                            type="button"
+                            className="stage-btn cancel-btn"
+                            title="Cancel this dispatch operation"
+                            onClick={() => handleCancelOperation(op.id)}
+                          >
+                            <X size={12} />
+                            <span>Cancel Trip</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -62,6 +62,7 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     organization_name = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField()
 
     def get_organization_name(self, obj):
         try:
@@ -69,9 +70,15 @@ class UserSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
+    def get_role(self, obj):
+        try:
+            return obj.profile.role
+        except Exception:
+            return None
+
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'organization_name')
+        fields = ('id', 'username', 'email', 'organization_name', 'role')
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(

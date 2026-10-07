@@ -1,18 +1,309 @@
-<!DOCTYPE html><meta charset=utf-8><link rel=stylesheet href=theme.css><script src=slide.js defer></script><script src=route.js></script>
-<style>.nd rect{fill:#fbfbf9;stroke:var(--ink);stroke-width:1.2;cursor:pointer;transition:.3s}.nd text{pointer-events:none;font:700 14px 'Schibsted Grotesk';text-anchor:middle}.nd.on rect{fill:var(--ink)}.nd.on text{fill:#fff}.nd.dn rect{fill:#dff0ea;stroke:var(--tl)}.nd.bad rect{stroke:var(--rd);stroke-dasharray:4 3}.nd:hover rect{stroke:var(--am)}
-.ln2{stroke:var(--ink);stroke-width:1.4;fill:none}.ln2.bd{stroke:var(--rd);stroke-dasharray:5 5}#tk{transition:transform .7s cubic-bezier(.6,0,.3,1);fill:var(--am)}</style>
-<h2 class=u>Dispatch lifecycle</h2><p class="s u" style="--d:.1s;font-size:19px">Every dispatch request follows a clear path from creation to completion. Click any state to see details.</p>
-<svg id=a viewBox="0 0 1160 320" width=1160></svg>
-<div class="k" id=d style="font-size:19px;min-height:64px;margin-top:6px"></div>
-<script>
-const M=[['pending','Request created. Waiting for the dispatch engine.'],['assigned','The engine assigns a vehicle and the driver is notified.'],['accepted','The driver (or dispatcher) accepts. First accept wins.'],['en_route','The driver departs for the scene or pickup.'],['arrived','The driver arrives at the scene or pickup.'],['in_service','Cargo loaded or service commenced.'],['completed','Mission completed.']];
-const X=i=>8+i*166,Y=90,Bx={rejected:[60,'Driver rejects the assignment.'],expired:[270,'Driver timeout: no response in time.'],cancelled:[640,'An authorized dispatcher can cancel any non-terminal state.']};
-let s='';M.forEach((m,i)=>{if(i)s+=`<line class=ln2 x1=${X(i-1)+130} y1=${Y+30} x2=${X(i)} y2=${Y+30} />`});
-s+=`<path class="ln2" d="M${X(1)+40} ${Y+60}V200H120V215M${X(1)+90} ${Y+60}V200H330V215" /><path class="ln2 bd" d="M${X(0)+65} ${Y+60}V255H640M${X(5)+65} ${Y+60}V255H640" /><path class="ln2 bd" d="M${X(1)+65} ${Y+60}V255M${X(2)+65} ${Y+60}V255M${X(3)+65} ${Y+60}V255M${X(4)+65} ${Y+60}V255" />`;
-M.forEach((m,i)=>s+=`<g class=nd data-k=${m[0]} data-m="${m[1]}" data-i=${i}><rect x=${X(i)} y=${Y} width=130 height=60 rx=3 /><text x=${X(i)+65} y=${Y+36}>${m[0]}</text></g>`);
-for(const k in Bx)s+=`<g class="nd bad" data-k=${k} data-m="${Bx[k][1]}" data-i=-1><rect x=${Bx[k][0]} y=${k=='cancelled'?255:215} width=130 height=50 rx=3 /><text x=${Bx[k][0]+65} y=${k=='cancelled'?285:245}>${k}</text></g>`;
-a.innerHTML=s+`<circle id=tk r=9 cx=0 cy=0 style="transform:translate(${X(0)+65}px,${Y-18}px)" />`;
-let c=0,h;const nd=[...document.querySelectorAll('.nd')];
-function set(k){const g=nd.find(x=>x.dataset.k==k),i=+g.dataset.i;nd.forEach(x=>x.classList.remove('on'));nd.forEach(x=>{const j=+x.dataset.i;x.classList.toggle('dn',j>=0&&i>=0&&j<i)});g.classList.add('on');d.innerHTML=`<b class=mo>${k}</b> &nbsp;${g.dataset.m}`;const r=g.querySelector('rect');tk.style.transform=`translate(${+r.getAttribute('x')+65}px,${+r.getAttribute('y')-18}px)`}
-nd.forEach(g=>g.onclick=()=>{clearInterval(h);set(g.dataset.k)});set('pending');h=setInterval(()=>{c=(c+1)%7;set(M[c][0])},1900)
-</script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="theme.css">
+    <script src="slide.js" defer></script>
+
+    <style>
+        .trust-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            border: 1px solid #d9dfe2;
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 13px;
+            background: #fff;
+        }
+
+        .trust-table th {
+            background: var(--am);
+            color: #fff;
+            font-family: "IBM Plex Mono";
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .7px;
+            text-align: left;
+            padding: 12px 13px;
+        }
+
+        .trust-table td {
+            padding: 11px 13px;
+            border-bottom: 1px solid #e1e5e7;
+            color: #17232a;
+            background: #fff;
+        }
+
+        .trust-table tr:nth-child(even) td {
+            background: #f7f9fa;
+        }
+
+        .trust-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .trust-table td:first-child {
+            font-weight: 750;
+        }
+
+        .security-point {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 10px;
+            font-size: 13px;
+            line-height: 1.45;
+            color: #26333a;
+        }
+
+        .security-point::before {
+            content: "→";
+            color: var(--am);
+            font-family: "IBM Plex Mono";
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- CATEGORY -->
+<p class="s u"
+   style="
+      --d:.05s;
+      text-align:center;
+      color:var(--am);
+      font-family:'IBM Plex Mono';
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:1.8px;
+      margin:8px 0 8px;
+   ">
+    TRUST BOUNDARIES
+</p>
+
+<!-- MAIN HEADING -->
+<h2 class="u"
+    style="
+       --d:.12s;
+       text-align:center;
+       font-size:40px;
+       line-height:1.12;
+       margin:0 auto;
+       max-width:1050px;
+       color:#17232a;
+    ">
+    Security is built around identity, roles,
+    <span style="color:var(--am)">and tenant isolation</span>
+</h2>
+
+<!-- SUBTITLE -->
+<p class="s u"
+   style="
+      --d:.18s;
+      text-align:center;
+      color:#5d6b73;
+      font-size:13px;
+      margin:10px auto 20px;
+   ">
+    Authentication and organization scoping define who can see and change operational data.
+</p>
+
+
+<!-- MAIN CONTENT -->
+<div class="k u"
+     style="
+        --d:.25s;
+        width:1120px;
+        margin:0 auto;
+        padding:26px 30px;
+        box-sizing:border-box;
+     ">
+
+    <div style="
+        display:grid;
+        grid-template-columns:390px 1fr;
+        gap:34px;
+        align-items:start;
+    ">
+
+        <!-- LEFT: SECURITY CONTROLS -->
+        <div>
+
+            <div class="u"
+                 style="
+                    --d:.3s;
+                    font-family:'IBM Plex Mono';
+                    color:var(--am);
+                    font-size:10px;
+                    font-weight:700;
+                    letter-spacing:1.4px;
+                    margin-bottom:13px;
+                 ">
+                SECURITY CONTROLS
+            </div>
+
+            <div class="u security-point" style="--d:.34s;">
+                JWT access and refresh tokens
+            </div>
+
+            <div class="u security-point" style="--d:.38s;">
+                Rate limits and CORS controls
+            </div>
+
+            <div class="u security-point" style="--d:.42s;">
+                Forced first-login password change
+            </div>
+
+            <div class="u security-point" style="--d:.46s;">
+                Session jitter to prevent synchronized request spikes
+            </div>
+
+
+            <!-- Small technical strip -->
+            <div class="u"
+                 style="
+                    --d:.52s;
+                    margin-top:20px;
+                    padding:12px 14px;
+                    border:1px solid #d9dfe2;
+                    border-left:3px solid var(--am);
+                    background:#f8fafb;
+                    border-radius:6px;
+                 ">
+
+                <div style="
+                    font-family:'IBM Plex Mono';
+                    font-size:9px;
+                    letter-spacing:1px;
+                    color:#7a878d;
+                    margin-bottom:5px;
+                ">
+                    TRUST MODEL
+                </div>
+
+                <div style="
+                    font-size:12px;
+                    line-height:1.5;
+                    color:#26333a;
+                ">
+                    Identity → Role → Organization scope
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- RIGHT: PERMISSION MATRIX -->
+        <div class="u" style="--d:.35s;">
+
+            <div style="
+                display:flex;
+                align-items:center;
+                justify-content:space-between;
+                margin-bottom:11px;
+            ">
+                <span style="
+                    font-family:'IBM Plex Mono';
+                    font-size:10px;
+                    font-weight:700;
+                    letter-spacing:1.4px;
+                    color:var(--am);
+                ">
+                    PERMISSION MATRIX
+                </span>
+
+                <span style="
+                    font-family:'IBM Plex Mono';
+                    font-size:9px;
+                    color:#7a878d;
+                ">
+                    ROLE-BASED ACCESS
+                </span>
+            </div>
+
+
+            <table class="trust-table">
+
+                <thead>
+                    <tr>
+                        <th>ROLE</th>
+                        <th>FLEET</th>
+                        <th>DISPATCH</th>
+                        <th>TELEMETRY</th>
+                        <th>ADMIN</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    <tr>
+                        <td>Admin</td>
+                        <td>Manage</td>
+                        <td>Manage</td>
+                        <td>View</td>
+                        <td>Manage</td>
+                    </tr>
+
+                    <tr>
+                        <td>Dispatcher</td>
+                        <td>View</td>
+                        <td>Manage</td>
+                        <td>View</td>
+                        <td>Scoped</td>
+                    </tr>
+
+                    <tr>
+                        <td>Driver</td>
+                        <td>Own</td>
+                        <td>Own trip</td>
+                        <td>Send</td>
+                        <td>None</td>
+                    </tr>
+
+                    <tr>
+                        <td>Viewer</td>
+                        <td>View</td>
+                        <td>View</td>
+                        <td>View</td>
+                        <td>None</td>
+                    </tr>
+
+                </tbody>
+
+            </table>
+
+
+            <!-- Table note -->
+            <div style="
+                display:flex;
+                align-items:center;
+                gap:9px;
+                margin-top:12px;
+                padding-top:11px;
+                border-top:1px solid #d9dfe2;
+                font-family:'IBM Plex Mono';
+                font-size:9.5px;
+                line-height:1.5;
+                color:#69777e;
+            ">
+                <span style="
+                    color:var(--am);
+                    font-size:13px;
+                ">◆</span>
+
+                Organization scoping keeps fleets, drivers, alerts,
+                and operational records isolated.
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+</body>
+</html>

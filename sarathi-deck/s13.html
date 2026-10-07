@@ -1,0 +1,284 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="theme.css">
+    <script src="slide.js" defer></script>
+
+    <style>
+        .stack-grid {
+            width: 1120px;
+            max-width: 100%;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0;
+            border: 1px solid #d9dfe2;
+            background: #fff;
+        }
+
+        .stack-col {
+            padding: 22px 24px 20px;
+            min-height: 315px;
+        }
+
+        .stack-col + .stack-col {
+            border-left: 1px solid #d9dfe2;
+        }
+
+        .col-header {
+            padding-bottom: 16px;
+            margin-bottom: 18px;
+            border-bottom: 1px solid #d9dfe2;
+        }
+
+        .col-category {
+            font-family: "IBM Plex Mono";
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.4px;
+            color: var(--am);
+            margin: 0 0 7px;
+        }
+
+        .col-heading {
+            font-family: "Schibsted Grotesk";
+            font-size: 17px;
+            line-height: 1.25;
+            font-weight: 750;
+            color: #17232a;
+            margin: 0;
+        }
+
+        .stack-item {
+            padding: 0 0 16px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #edf0f1;
+        }
+
+        .stack-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: 0;
+        }
+
+        .item-label {
+            font-family: "IBM Plex Mono";
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1.1px;
+            color: var(--am);
+            margin: 0 0 5px;
+        }
+
+        .item-title {
+            font-family: "Schibsted Grotesk";
+            font-size: 15px;
+            line-height: 1.25;
+            font-weight: 750;
+            color: #17232a;
+            margin: 0 0 4px;
+        }
+
+        .item-desc {
+            font-size: 11.5px;
+            line-height: 1.45;
+            color: #5d6b73;
+            margin: 0;
+        }
+
+        .tech-footer {
+            width: 1120px;
+            max-width: 100%;
+            margin: 12px auto 0;
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tech-tag {
+            padding: 5px 9px;
+            border: 1px solid #d9dfe2;
+            border-radius: 4px;
+            background: #fff;
+            color: #69777e;
+            font-family: "IBM Plex Mono";
+            font-size: 8.5px;
+            font-weight: 700;
+            letter-spacing: .6px;
+        }
+    </style>
+</head>
+
+<body>
+
+<p class="s u"
+   style="
+      --d:.05s;
+      text-align:center;
+      color:var(--am);
+      font-family:'IBM Plex Mono';
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:1.8px;
+      margin:8px 0 8px;
+   ">
+    TECHNOLOGY STACK
+</p>
+
+<h2 class="u"
+    style="
+       --d:.12s;
+       text-align:center;
+       font-size:40px;
+       line-height:1.08;
+       margin:0 auto;
+       max-width:1050px;
+       color:#17232a;
+       font-weight:750;
+    ">
+    A focused stack connects
+    <span style="color:var(--am)">every layer of Sarathi</span>
+</h2>
+
+<p class="s u"
+   style="
+      --d:.18s;
+      text-align:center;
+      color:#5d6b73;
+      font-size:13px;
+      margin:10px auto 20px;
+   ">
+    From operator interfaces and driver mobility to routing, real-time data, and deployment.
+</p>
+
+<div class="stack-grid k u" style="--d:.25s;">
+
+    <!-- EXPERIENCE -->
+    <div class="stack-col u" style="--d:.30s;">
+
+        <div class="col-header">
+            <p class="col-category">EXPERIENCE</p>
+            <h3 class="col-heading">
+                Interfaces that move work forward
+            </h3>
+        </div>
+
+        <div class="stack-item">
+            <p class="item-label">WEB</p>
+            <h4 class="item-title">React · TypeScript · Vite</h4>
+            <p class="item-desc">
+                Typed dispatcher console for fleet operations,
+                maps, trips, and live vehicle state.
+            </p>
+        </div>
+
+        <div class="stack-item">
+            <p class="item-label">MOBILE</p>
+            <h4 class="item-title">Flutter · Dart</h4>
+            <p class="item-desc">
+                Driver tasks, status updates, navigation,
+                and proof of service.
+            </p>
+        </div>
+
+    </div>
+
+
+    <!-- INTELLIGENCE -->
+    <div class="stack-col u" style="--d:.36s;">
+
+        <div class="col-header">
+            <p class="col-category">INTELLIGENCE</p>
+            <h3 class="col-heading">
+                Decisions shaped by live context
+            </h3>
+        </div>
+
+        <div class="stack-item">
+            <p class="item-label">BACKEND</p>
+            <h4 class="item-title">Django · Django REST Framework</h4>
+            <p class="item-desc">
+                APIs and domain services for dispatch,
+                vehicles, drivers, and operations.
+            </p>
+        </div>
+
+        <div class="stack-item">
+            <p class="item-label">ROUTING</p>
+            <h4 class="item-title">OSRM · PostGIS</h4>
+            <p class="item-desc">
+                Road distance, travel time, ETA, and
+                location-aware dispatch decisions.
+            </p>
+        </div>
+
+        <div class="stack-item">
+            <p class="item-label">REAL-TIME</p>
+            <h4 class="item-title">Redis · WebSockets</h4>
+            <p class="item-desc">
+                Live field events propagate to the
+                dispatcher operating picture.
+            </p>
+        </div>
+
+    </div>
+
+
+    <!-- DATA & PLATFORM -->
+    <div class="stack-col u" style="--d:.42s;">
+
+        <div class="col-header">
+            <p class="col-category">DATA &amp; PLATFORM</p>
+            <h3 class="col-heading">
+                Foundations for connected operations
+            </h3>
+        </div>
+
+        <div class="stack-item">
+            <p class="item-label">DATABASE</p>
+            <h4 class="item-title">PostgreSQL · PostGIS</h4>
+            <p class="item-desc">
+                Relational fleet data with spatial
+                queries and location-aware records.
+            </p>
+        </div>
+
+        <div class="stack-item">
+            <p class="item-label">SECURITY</p>
+            <h4 class="item-title">JWT · RBAC · CORS</h4>
+            <p class="item-desc">
+                Authentication, role-based permissions,
+                and organization-level isolation.
+            </p>
+        </div>
+
+        <div class="stack-item">
+            <p class="item-label">INFRASTRUCTURE</p>
+            <h4 class="item-title">Docker · AWS</h4>
+            <p class="item-desc">
+                Containerized services with a path toward
+                production deployment and scaling.
+            </p>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="tech-footer u" style="--d:.55s;">
+    <span class="tech-tag">DJANGO 5.2</span>
+    <span class="tech-tag">POSTGRESQL</span>
+    <span class="tech-tag">POSTGIS</span>
+    <span class="tech-tag">REDIS</span>
+    <span class="tech-tag">OSRM</span>
+    <span class="tech-tag">REACT</span>
+    <span class="tech-tag">FLUTTER</span>
+    <span class="tech-tag">DOCKER</span>
+</div>
+
+</body>
+</html>
+
