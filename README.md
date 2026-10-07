@@ -27,10 +27,19 @@ sarathi/
 │       ├── widgets/         # Reusable widgets (truck loader animation, etc.)
 │       ├── services/        # API service layer
 │       └── theme.dart       # Design system / color tokens
-├── docker-compose.redis.yml # Redis 7 with AOF persistence
 ├── requirements.txt         # Python dependencies
 └── manage.py
 ```
+
+---
+
+## 🏢 Setting Up a New Organization (Multi-Tenancy)
+Sarathi is built as a multi-tenant SaaS. To set up a completely isolated new organization:
+
+1. **Register the Admin:** Go to the frontend register page (`http://localhost:5173/register`) and create a new account (e.g., `school_admin`), typing the new organization's name (e.g., `school`) in the Organization Name field. 
+   *(Note: For security, the system defaults all new signups to the read-only `VIEWER` role).*
+2. **Elevate the Role:** Log in to the Django Admin panel (`http://localhost:8000/admin`) using a superuser account (e.g., `admin`). Go to **Accounts > Profiles**, find the new `school_admin`, and change their Role from `Viewer` to `Organization Admin`.
+3. **Isolated Workspace:** When `school_admin` logs into the React frontend, they will see an entirely blank workspace. Any vehicles, drivers, or dispatch operations they create will be exclusively visible to members of the `school` organization.
 
 ---
 
@@ -40,7 +49,12 @@ sarathi/
 - [x] JWT authentication (`djangorestframework-simplejwt`)
 - [x] Login accepts **username or email**
 - [x] Organization scoping — each admin sees only their own fleet/drivers
-- [x] Role-based profiles: `admin`, `dispatcher`, `viewer`, `driver`
+- [x] Role-based profiles: `ORGANIZATION_ADMIN`, `FLEET_MANAGER`, `DRIVER`, `VIEWER`, `AUDITOR`
+- [x] **RBAC enforcement** — `accounts/permissions.py` gates all API write operations by role:
+  - Fleet CRUD → Admin only
+  - Dispatch create/accept → Dispatcher (FLEET_MANAGER) or Admin
+  - GPS submission / duty toggle → Driver only
+  - All GET endpoints → Viewer or higher
 - [x] Auth rate limiting: login (30/min), register (10/hr), password reset (5/hr)
 - [x] Case-insensitive organization name matching
 - [x] Driver and Admin organization profile validation enforced on login and registration
@@ -156,7 +170,8 @@ sarathi/
 - [x] Trips screen: distinguishes "No active trip" (empty) from network error (retry)
 
 ### ✅ Recently Completed
-- [x] **Backend unit test suite** — 23 tests passing (accounts: 13, vehicles: 10)
+- [x] **Role-Based Access Control (RBAC)** — `accounts/permissions.py` with 7 composable DRF permission classes; enforced across all fleet, dispatch, telemetry, and maintenance endpoints
+- [x] **Backend unit test suite** — 24 tests passing (accounts: 13, vehicles: 11) — all pass with RBAC active
 - [x] **Migration conflict resolution** — all 38 migrations apply cleanly on fresh DBs
 
 ### 🚧 Not Yet Started / Planned

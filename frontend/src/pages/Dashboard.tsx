@@ -251,6 +251,9 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [unreadIssuesCount, setUnreadIssuesCount] = useState(0);
   const [unreadMaintenanceCount, setUnreadMaintenanceCount] = useState(0);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  
+  const canManageFleet = userRole === 'SUPER_ADMIN' || userRole === 'ORGANIZATION_ADMIN';
   
   const { 
     notifications, 
@@ -462,7 +465,8 @@ export default function Dashboard() {
 
     const load = async () => {
       try {
-        await api.get('/auth/me/');
+        const res = await api.get('/auth/me/');
+        setUserRole(res.data.role);
       } catch (error) {
         console.error('Failed to fetch user profile', error);
       }
@@ -799,7 +803,7 @@ export default function Dashboard() {
 
         <div className={`content-area ${(activeTab === 'dispatch' || activeTab === 'live_tracking') ? 'dispatch-content' : ''}`}>
           {activeTab === 'dashboard' && <section className="tab-content" aria-labelledby="overview-heading">
-            <div className="page-heading"><div><h2 id="overview-heading">Fleet readiness</h2><p>Live operational status across your Nepal fleet.</p></div><button id="add-vehicle-button" className="button button-primary" onClick={() => { setVehicleFormError(null); setShowAddModal(true); }}><Plus size={16} />Add vehicle</button></div>
+            <div className="page-heading"><div><h2 id="overview-heading">Fleet readiness</h2><p>Live operational status across your Nepal fleet.</p></div>{canManageFleet && <button id="add-vehicle-button" className="button button-primary" onClick={() => { setVehicleFormError(null); setShowAddModal(true); }}><Plus size={16} />Add vehicle</button>}</div>
             <div className="metrics-grid stagger">
               <article className="metric-card"><div className="metric-heading"><span>Fleet size</span><Truck size={17} /></div><strong>{initialLoading ? '—' : <CountUp value={totalVehicles} />}</strong><p>Total registered vehicles</p></article>
               <article className="metric-card"><div className="metric-heading"><span>Dispatch ready</span><Activity size={17} /></div><strong>{initialLoading ? '—' : <CountUp value={availableVehicles} />}</strong><p><span className="trend-positive"><CircleDot size={12} />Available now</span></p></article>
@@ -815,10 +819,20 @@ export default function Dashboard() {
                 return <tr key={vehicle.id} className="clickable-row" onClick={() => { setSelectedVehicleId(vehicle.id); setShowVehiclePanel(true); }}>
                   <td><div className="primary-cell"><div className="entity-icon">{vehicle.photo_url ? <img src={vehicle.photo_url} alt={vehicle.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Truck size={17} />}</div><div><strong>{vehicle.name}</strong>{vehicle.driver && openIssueDriverIds.has(vehicle.driver as number) && <span className="issue-warning-badge" title="Open driver issue"><AlertTriangle size={13} /></span>}<span className="mono">{vehicle.number_plate || 'No registration'}</span></div></div></td>
                   <td><span className="type-label">{formatType(vehicle.vehicle_type)}</span></td>
-                  <td><select className="table-select" value={vehicle.driver || ''} onChange={event => handleAssignDriver(vehicle.id, event.target.value)} aria-label={`Assign driver to ${vehicle.name}`}><option value="">Unassigned</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></td>
+                  <td>
+                    {canManageFleet ? (
+                      <select className="table-select" value={vehicle.driver || ''} onChange={event => handleAssignDriver(vehicle.id, event.target.value)} aria-label={`Assign driver to ${vehicle.name}`}><option value="">Unassigned</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select>
+                    ) : (
+                      <span className="muted">{vehicle.driver_name || 'Unassigned'}</span>
+                    )}
+                  </td>
                   <td><span className={`status-badge ${statusInfo.className}`}><span />{statusInfo.label}</span></td>
                    <td>{vehicle.location ? <span className="coordinate"><MapPin size={13} />{formatLocation(vehicle.location)}</span> : <span className="muted">Not reported</span>}</td>
-                  <td><div className="row-actions" onClick={e => e.stopPropagation()}><label className="toggle-switch" title={vehicle.admin_blocked ? 'Set available' : 'Block vehicle'}><input type="checkbox" checked={!vehicle.admin_blocked} onChange={() => handleToggleAvailability(vehicle)} /><span className="toggle-slider" /></label><button className="icon-button danger" onClick={() => handleDeleteVehicle(vehicle.id)} title="Delete vehicle" aria-label={`Delete ${vehicle.name}`}><Trash2 size={15} /></button></div></td>
+                  <td>
+                    {canManageFleet && (
+                      <div className="row-actions" onClick={e => e.stopPropagation()}><label className="toggle-switch" title={vehicle.admin_blocked ? 'Set available' : 'Block vehicle'}><input type="checkbox" checked={!vehicle.admin_blocked} onChange={() => handleToggleAvailability(vehicle)} /><span className="toggle-slider" /></label><button className="icon-button danger" onClick={() => handleDeleteVehicle(vehicle.id)} title="Delete vehicle" aria-label={`Delete ${vehicle.name}`}><Trash2 size={15} /></button></div>
+                    )}
+                  </td>
                 </tr>;
               })}</tbody></table></div>}
           </section>}
@@ -827,11 +841,12 @@ export default function Dashboard() {
             <DispatchWorkspace
               fleetVehicles={vehicles}
               onRefreshVehicles={fetchVehicles}
+              userRole={userRole}
             />
           )}
 
           {activeTab === 'drivers' && <section className="tab-content" aria-labelledby="drivers-heading">
-            <div className="page-heading"><div><h2 id="drivers-heading">Driver directory</h2><p>Manage credentials and assignment-ready personnel.</p></div><button id="add-driver-button" className="button button-primary" onClick={() => { setDriverFormError(null); setShowAddDriverModal(true); }}><Plus size={16} />Add driver</button></div>
+            <div className="page-heading"><div><h2 id="drivers-heading">Driver directory</h2><p>Manage credentials and assignment-ready personnel.</p></div>{canManageFleet && <button id="add-driver-button" className="button button-primary" onClick={() => { setDriverFormError(null); setShowAddDriverModal(true); }}><Plus size={16} />Add driver</button>}</div>
             <div className="section-toolbar"><div><h2>All drivers</h2><span>{filteredDrivers.length} records</span></div><div className="search-field"><Search size={15} /><input id="driver-search" value={driverQuery} onChange={event => setDriverQuery(event.target.value)} placeholder="Search drivers" aria-label="Search drivers" /></div></div>
             {initialLoading ? <div className="list-skeleton">{[1, 2, 3].map(item => <div className="skeleton-row" key={item} />)}</div> : filteredDrivers.length === 0 ? renderEmpty(drivers.length ? 'No matching drivers' : 'No drivers registered', drivers.length ? 'Try a different name, phone, or license number.' : 'Add a driver to begin assigning fleet units.') : <div className="driver-grid stagger">{filteredDrivers.map(driver => {
               const assignedVehicles = vehicles.filter(v => 
@@ -842,7 +857,7 @@ export default function Dashboard() {
               const vehicleLabel = assignedVehicles.length > 0 
                 ? assignedVehicles.map(v => `${v.name} (${v.number_plate || 'No plate'})`).join(', ')
                 : 'No vehicle assigned';
-              return <article className="driver-card" key={driver.id}><div className="driver-card-head"><div className="avatar">{driver.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase()}</div><span className={`status-badge ${driver.is_active ? 'available' : 'neutral'}`}><span />{driver.is_active ? 'Active' : 'Inactive'}</span><button className="icon-button danger" onClick={() => handleDeleteDriver(driver.id)} title="Delete driver" aria-label={`Delete ${driver.name}`}><Trash2 size={15} /></button></div><h3>{driver.name}</h3><div className="driver-detail"><Phone size={14} /><span>{driver.phone_number || 'No phone number'}</span></div><div className="driver-detail"><ShieldCheck size={14} /><span className="mono">{driver.license_number}</span></div><div className="driver-card-foot"><span title={vehicleLabel} style={{ fontWeight: assignedVehicles.length > 0 ? 600 : 400, color: assignedVehicles.length > 0 ? 'var(--primary)' : 'inherit' }}>{vehicleLabel}</span><Truck size={15} /></div></article>;
+              return <article className="driver-card" key={driver.id}><div className="driver-card-head"><div className="avatar">{driver.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase()}</div><span className={`status-badge ${driver.is_active ? 'available' : 'neutral'}`}><span />{driver.is_active ? 'Active' : 'Inactive'}</span>{canManageFleet && <button className="icon-button danger" onClick={() => handleDeleteDriver(driver.id)} title="Delete driver" aria-label={`Delete ${driver.name}`}><Trash2 size={15} /></button>}</div><h3>{driver.name}</h3><div className="driver-detail"><Phone size={14} /><span>{driver.phone_number || 'No phone number'}</span></div><div className="driver-detail"><ShieldCheck size={14} /><span className="mono">{driver.license_number}</span></div><div className="driver-card-foot"><span title={vehicleLabel} style={{ fontWeight: assignedVehicles.length > 0 ? 600 : 400, color: assignedVehicles.length > 0 ? 'var(--primary)' : 'inherit' }}>{vehicleLabel}</span><Truck size={15} /></div></article>;
             })}</div>}
           </section>}
 

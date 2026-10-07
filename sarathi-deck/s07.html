@@ -1,11 +1,175 @@
-<!DOCTYPE html><meta charset=utf-8><link rel=stylesheet href=theme.css><script src=slide.js defer></script><script src=route.js></script>
-<style>input[type=range]{accent-color:#f2541b;width:150px}</style>
-<h2 class=u>From location to road route</h2><p class="s u" style="--d:.1s;font-size:20px">The routing service gives us detailed road data. We simplify it to make maps load faster.</p>
-<div class=row style="gap:22px"><div class="k u" style="--d:.2s;padding:0;overflow:hidden;width:700px;height:470px"><svg id=sv viewBox="0 0 700 470" width=700></svg></div>
-<div class=gd style="flex:1;align-content:start"><div class="k u" style="--d:.4s"><div class=mo style="line-height:2">raw points: <b id=nr></b><br>simplified: <b id=ns style="color:var(--am)"></b> <span id=pc class=mu></span><br>progress_percent: <b id=pp></b><br>eta_min: -- · remaining_distance_km: --</div></div>
-<div class="k u" style="--d:.5s"><b>Simplify route</b><div class=mo style="margin:10px 0;font-size:14px">Detail level <input id=ep type=range min=0 max=12 step=.5 value=2.5> <span id=ev></span></div><label class=mo style="font-size:14px"><input type=checkbox id=rw checked> Show all original points</label><p class=mu style="font-size:14px;margin-top:10px;line-height:1.6">Sarathi automatically removes unnecessary points while keeping the route accurate (within about 55 meters).</p></div>
-<div class="k u" style="--d:.6s;font-size:15px;line-height:2"><b>Routing features</b><div class=li>Routes go through: vehicle → pickup → destination</div><div class=li>System prefers direct routes without detours</div><div class=li>Routes are cached for 30 seconds to improve speed</div><div class=li>Backup method if main routing service is unavailable</div></div></div></div>
-<script>const[A,B]=[R.W[0],R.W.at(-1)];const raw=R.raw;let P=rdp(raw,2.5);
-function draw(){const e=+ep.value;P=rdp(raw,e);ev.textContent=e;nr.textContent=raw.length;ns.textContent=P.length;pc.textContent='('+Math.round((1-P.length/raw.length)*100)+'% fewer)';
-sv.innerHTML=mapBg(700,470)+`<path d="${D(raw)}" fill=none stroke=#fff stroke-width=11 stroke-linecap=round /><g fill=#5d6b73 opacity=${rw.checked?.8:0}>${raw.map(p=>`<circle cx=${p[0]} cy=${p[1]} r=1.7 />`).join('')}</g><path d="${D(P)}" fill=none stroke=#f2541b stroke-width=3.5 stroke-linejoin=round />${P.map(p=>`<circle cx=${p[0]} cy=${p[1]} r=3 fill=#fff stroke=#f2541b stroke-width=1.5 />`).join('')}<circle cx=${A[0]} cy=${A[1]} r=8 fill=#0e6e8c /><circle cx=300 cy=190 r=8 fill=#f2541b /><rect x=${B[0]-8} y=${B[1]-8} width=16 height=16 fill=#0f1a22 /><text x=62 y=432 font-size=12 fill=#0f1a22>Vehicle</text><text x=312 y=184 font-size=12 fill=#0f1a22>Pickup</text><text x=570 y=64 font-size=12 fill=#0f1a22>Destination</text><g id=mk><path d="M-11 -8L11 0L-11 8L-6 0Z" fill=#0f1a22 stroke=#fff stroke-width=2 /></g>`}
-ep.oninput=rw.onchange=draw;draw();const t0=performance.now();(function f(t){const q=((t-t0)/10000)%1,p=at(P,q);mk.setAttribute('transform',`translate(${p.x} ${p.y}) rotate(${p.a})`);pp.textContent=Math.round(q*100)+' %';requestAnimationFrame(f)})(t0)</script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="theme.css">
+    <script src="slide.js" defer></script>
+
+    <style>
+        .arrow-bar {
+            background: var(--am);
+            clip-path: polygon(
+                0% 0%,
+                calc(100% - 22px) 0%,
+                100% 50%,
+                calc(100% - 22px) 100%,
+                0% 100%
+            );
+            display: flex;
+            align-items: center;
+            padding-left: 24px;
+            color: #fff;
+            font-family: "Schibsted Grotesk";
+            font-weight: 800;
+            font-size: 14px;
+            height: 43px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- CATEGORY -->
+<p class="s u"
+   style="
+      --d:.05s;
+      text-align:center;
+      color:var(--am);
+      font-family:'IBM Plex Mono';
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:1.8px;
+      margin:8px 0 8px;
+   ">
+    REAL-TIME CONTROL
+</p>
+
+<!-- MAIN HEADING — OUTSIDE THE BOX -->
+<h2 class="u"
+    style="
+       --d:.12s;
+       text-align:center;
+       font-size:40px;
+       line-height:1.12;
+       margin:0 auto;
+       max-width:1050px;
+       color:#17232a;
+    ">
+    Real-time telemetry turns the map into an
+    <span style="color:var(--am)">operating picture</span>
+</h2>
+
+<!-- SUBTITLE -->
+<p class="s u"
+   style="
+      --d:.18s;
+      text-align:center;
+      color:#5d6b73;
+      font-size:13px;
+      margin:10px auto 18px;
+   ">
+    Signals from the field become current, actionable context for dispatch.
+</p>
+
+
+<!-- TELEMETRY PIPELINE BOX -->
+<div class="k u"
+     style="
+        --d:.25s;
+        width:1120px;
+        margin:0 auto;
+        padding:24px 30px 26px;
+        box-sizing:border-box;
+     ">
+
+    <!-- Small technical label -->
+    <div class="u"
+         style="
+            --d:.3s;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            margin-bottom:18px;
+         ">
+
+        <span style="
+            font-family:'IBM Plex Mono';
+            font-size:10px;
+            font-weight:700;
+            letter-spacing:1.4px;
+            color:var(--am);
+        ">
+            TELEMETRY FLOW
+        </span>
+
+        <span style="
+            font-family:'IBM Plex Mono';
+            font-size:10px;
+            color:#7a878d;
+        ">
+            FIELD → DISPATCH
+        </span>
+
+    </div>
+
+
+    <!-- Pipeline -->
+    <div style="
+        display:flex;
+        flex-direction:column;
+        gap:10px;
+    ">
+
+        <!-- Event Ingress -->
+        <div class="u arrow-bar"
+             style="--d:.35s; width:78%;">
+            Event Ingress
+        </div>
+
+        <!-- Django Processing -->
+        <div class="u arrow-bar"
+             style="--d:.4s; width:84%;">
+            Django Processing
+        </div>
+
+        <!-- Redis Channels -->
+        <div class="u arrow-bar"
+             style="--d:.45s; width:90%;">
+            Redis Channels
+        </div>
+
+        <!-- Dispatcher Dashboard -->
+        <div class="u arrow-bar"
+             style="--d:.5s; width:96%;">
+            Dispatcher Dashboard
+        </div>
+
+    </div>
+
+
+    <!-- Bottom technical note -->
+    <div class="u"
+         style="
+            --d:.6s;
+            margin-top:18px;
+            padding-top:12px;
+            border-top:1px solid #d9dfe2;
+            display:flex;
+            justify-content:flex-end;
+         ">
+
+        <span style="
+            font-family:'IBM Plex Mono';
+            font-size:10px;
+            color:#69777e;
+        ">
+            real-time signal propagation
+        </span>
+
+    </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,226 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="theme.css">
+    <script src="slide.js" defer></script>
+
+    <style>
+        .future-grid {
+            width: 1120px;
+            max-width: 100%;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+
+        .future-card {
+            background: #fff;
+            border: 1px solid #d9dfe2;
+            border-radius: 7px;
+            padding: 14px 15px;
+            min-height: 88px;
+        }
+
+        .future-number {
+            font-family: "IBM Plex Mono";
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--am);
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .future-title {
+            font-family: "Schibsted Grotesk";
+            font-size: 14px;
+            font-weight: 750;
+            line-height: 1.25;
+            color: #17232a;
+            margin: 0 0 5px;
+        }
+
+        .future-desc {
+            font-size: 10.5px;
+            line-height: 1.4;
+            color: #69777e;
+            margin: 0;
+        }
+
+        .closing {
+            width: 1120px;
+            max-width: 100%;
+            margin: 18px auto 0;
+            padding: 18px 24px;
+            border-top: 1px solid #d9dfe2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .closing-left {
+            display: flex;
+            align-items: center;
+            gap: 13px;
+        }
+
+        .closing-mark {
+            width: 34px;
+            height: 34px;
+            border: 2px solid var(--am);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--am);
+            font-family: "IBM Plex Mono";
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .closing-text {
+            font-family: "IBM Plex Mono";
+            font-size: 10px;
+            color: #69777e;
+            letter-spacing: .8px;
+        }
+
+        .closing-right {
+            text-align: right;
+        }
+
+        .thank-you {
+            font-family: "Schibsted Grotesk";
+            font-size: 25px;
+            line-height: 1;
+            font-weight: 750;
+            color: #17232a;
+            margin: 0 0 5px;
+        }
+
+        .questions {
+            font-family: "IBM Plex Mono";
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--am);
+            letter-spacing: 1.4px;
+        }
+    </style>
+</head>
+
+<body>
+
+<p class="s u"
+   style="
+      --d:.05s;
+      text-align:center;
+      color:var(--am);
+      font-family:'IBM Plex Mono';
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:1.8px;
+      margin:8px 0 7px;
+   ">
+    FUTURE SCOPE
+</p>
+
+<h2 class="u"
+    style="
+       --d:.12s;
+       text-align:center;
+       font-size:40px;
+       line-height:1.08;
+       margin:0 auto;
+       max-width:1050px;
+       color:#17232a;
+       font-weight:750;
+    ">
+    From a working platform to
+    <span style="color:var(--am)">production intelligence</span>
+</h2>
+
+<p class="s u"
+   style="
+      --d:.18s;
+      text-align:center;
+      color:#5d6b73;
+      font-size:13px;
+      margin:9px auto 19px;
+   ">
+    The foundation is in place. The next step is deeper automation, prediction, and scale.
+</p>
+
+
+<div class="future-grid">
+
+    <div class="future-card k u" style="--d:.25s;">
+        <div class="future-number">01</div>
+        <h3 class="future-title">Predictive Maintenance</h3>
+        <p class="future-desc">
+            Predict failures before breakdowns using vehicle history and telemetry.
+        </p>
+    </div>
+
+
+    <div class="future-card k u" style="--d:.31s;">
+        <div class="future-number">02</div>
+        <h3 class="future-title">AI Dispatch</h3>
+        <p class="future-desc">
+            Learn from historical trips to improve vehicle ranking and ETA decisions.
+        </p>
+    </div>
+
+
+    <div class="future-card k u" style="--d:.37s;">
+        <div class="future-number">03</div>
+        <h3 class="future-title">Advanced Telematics</h3>
+        <p class="future-desc">
+            Integrate richer vehicle sensors, fuel data, and driving behaviour.
+        </p>
+    </div>
+
+
+    <div class="future-card k u" style="--d:.43s;">
+        <div class="future-number">04</div>
+        <h3 class="future-title">Production Scale</h3>
+        <p class="future-desc">
+            Multi-region deployment, stronger observability, and resilient infrastructure.
+        </p>
+    </div>
+
+</div>
+
+
+<div class="closing u" style="--d:.55s;">
+
+    <div class="closing-left">
+
+        <div class="closing-mark">
+            S
+        </div>
+
+        <div class="closing-text">
+            SARATHI · SMART VEHICLE DISPATCH SYSTEM
+        </div>
+
+    </div>
+
+
+    <div class="closing-right">
+
+        <div class="thank-you">
+            Thank you.
+        </div>
+
+        <div class="questions">
+            QUESTIONS?
+        </div>
+
+    </div>
+
+</div>
+
+</body>
+</html>

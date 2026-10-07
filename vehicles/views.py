@@ -1,6 +1,15 @@
 from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
+from accounts.permissions import (
+    IsAdminRole,
+    IsDispatcherOrAdmin,
+    IsDriver,
+    IsDriverOrAdmin,
+    IsViewerOrHigher,
+    ReadOnlyOrAdmin,
+    ReadOnlyOrDispatcher,
+)
 from rest_framework.response import Response
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
@@ -310,10 +319,12 @@ def _auto_create_next_record(record: MaintenanceRecord) -> MaintenanceRecord | N
 class VehicleListCreateView(generics.ListCreateAPIView):
     """
     GET  /api/vehicles/      — list all vehicles with current location
-    POST /api/vehicles/      — create a new vehicle (for testing without admin)
+    POST /api/vehicles/      — create a new vehicle (Admin only)
+
+    RBAC: GET → Viewer or higher | POST → Admin only
     """
     serializer_class = VehicleSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyOrAdmin]
 
     def get_queryset(self):
         return Vehicle.objects.filter(owner__in=get_org_user_ids(self.request.user))
@@ -351,9 +362,21 @@ class VehicleDetailView(generics.RetrieveUpdateDestroyAPIView):
     GET    /api/vehicles/<id>/  — detail of one vehicle
     PATCH  /api/vehicles/<id>/  — partial update (toggle is_available, edit details)
     DELETE /api/vehicles/<id>/  — remove a vehicle
+
+    RBAC: GET → Viewer or higher | PATCH/DELETE → Admin only
+    Note: Assigned drivers may still PATCH is_available via the update() logic below.
     """
     serializer_class = VehicleSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyOrAdmin]
+
+    def get_permissions(self):
+        """Drivers can PATCH is_available on their own vehicle; everything else requires Admin."""
+        from accounts.permissions import IsDriver
+        if self.request.method == 'PATCH':
+            # Allow Drivers to patch (the update() method below further restricts
+            # which fields a driver may touch)
+            return [IsAuthenticated(), IsDriverOrAdmin()]
+        return super().get_permissions()
 
     def get_queryset(self):
         user = self.request.user
@@ -392,9 +415,11 @@ class DriverListCreateView(generics.ListCreateAPIView):
     """
     GET  /api/drivers/      — list all drivers
     POST /api/drivers/      — create a new driver
+
+    RBAC: GET → Dispatcher or Admin | POST → Admin only
     """
     serializer_class = DriverSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyOrAdmin]
 
     def get_queryset(self):
         return Driver.objects.filter(owner__in=get_org_user_ids(self.request.user))
@@ -420,9 +445,11 @@ class DriverDetailView(generics.RetrieveUpdateDestroyAPIView):
     GET    /api/drivers/<id>/  — detail of one driver
     PATCH  /api/drivers/<id>/  — partial update
     DELETE /api/drivers/<id>/  — remove a driver AND its linked User account
+
+    RBAC: GET → Dispatcher or Admin | PATCH/DELETE → Admin only
     """
     serializer_class = DriverSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyOrAdmin]
 
     def get_queryset(self):
         return Driver.objects.filter(owner__in=get_org_user_ids(self.request.user))
@@ -733,7 +760,7 @@ def verify_driver_identity(request):
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsDriver])
 def driver_duty(request):
     """
     PATCH /api/drivers/me/duty/
@@ -816,7 +843,7 @@ def driver_duty(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsDriver])
 def driver_gps_lost(request):
     """
     POST /api/drivers/me/gps-lost/
@@ -872,7 +899,7 @@ ACCEPTED_DISPATCH_STATUSES = ['accepted', 'en_route', 'arrived', 'completed']
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsDriver])
 def driver_dispatch(request):
     """
     GET /api/drivers/me/dispatch/
@@ -910,7 +937,7 @@ def driver_dispatch(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsDriver])
 def driver_dispatch_transition(request):
     """
     POST /api/drivers/me/dispatch/transition/
@@ -1082,7 +1109,7 @@ def driver_dispatch_transition(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsViewerOrHigher])
 def vehicle_dispatch(request, pk):
     """
     GET /api/vehicles/<pk>/dispatch/
@@ -1113,7 +1140,7 @@ def vehicle_dispatch(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsDispatcherOrAdmin])
 def dispatch_transition(request, pk):
     """
     POST /api/vehicles/<pk>/dispatch/transition/
@@ -1258,7 +1285,7 @@ def dispatch_transition(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsDriver])
 def update_location(request, pk):
     """
     POST /api/vehicles/<id>/update-location/
@@ -1369,7 +1396,7 @@ def update_location(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdminRole])
 def assign_driver(request, pk):
     """
     POST /api/vehicles/<id>/assign-driver/
@@ -1406,7 +1433,7 @@ def assign_driver(request, pk):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsDispatcherOrAdmin])
 def nearest_vehicles(request):
     """
     GET /api/vehicles/nearest/?lat=..&lng=..&type=..
@@ -1462,7 +1489,7 @@ def nearest_vehicles(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsDispatcherOrAdmin])
 def dispatch_vehicle(request):
     """
     POST /api/dispatch/
@@ -1577,12 +1604,11 @@ class MaintenanceRecordListCreateView(generics.ListCreateAPIView):
     """
     GET  /api/maintenance/      — list all maintenance records
     POST /api/maintenance/      — create a new maintenance record
-    
-    For staff users (is_staff=True), returns records for their organization.
-    For admin users, returns all records.
+
+    RBAC: GET → Viewer or higher | POST → Admin only
     """
     serializer_class = MaintenanceRecordSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyOrAdmin]
 
     def get_queryset(self):
         user = self.request.user
@@ -1596,9 +1622,11 @@ class MaintenanceRecordDetailView(generics.RetrieveUpdateDestroyAPIView):
     GET    /api/maintenance/<id>/  — detail of one maintenance record
     PATCH  /api/maintenance/<id>/  — partial update
     DELETE /api/maintenance/<id>/  — remove a maintenance record
+
+    RBAC: GET → Viewer or higher | PATCH/DELETE → Admin only
     """
     serializer_class = MaintenanceRecordSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyOrAdmin]
 
     def get_queryset(self):
         user = self.request.user
