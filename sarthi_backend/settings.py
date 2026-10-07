@@ -253,12 +253,12 @@ REST_FRAMEWORK = {
     # Per-endpoint rate limits. Keyed by IP for anonymous requests
     # (login/register/reset) and by user id for authenticated requests.
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '60/min',
-        'user': '300/min',
-        'login': '30/min',
-        'register': '10/hour',
-        'reset_password': '5/hour',
-        'verify_identity': '20/hour',
+        'anon': '300/min',
+        'user': '600/min',
+        'login': '100/min',
+        'register': '50/hour',
+        'reset_password': '30/hour',
+        'verify_identity': '100/hour',
     }
 }
 
