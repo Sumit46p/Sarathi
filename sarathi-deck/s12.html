@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,285 +6,295 @@
     <script src="slide.js" defer></script>
 
     <style>
-        .architecture {
+        .modules-grid {
             width: 1120px;
             max-width: 100%;
-            height: 390px;
             margin: 0 auto;
-            padding: 24px 34px;
             display: grid;
-            grid-template-columns: 430px 1fr;
-            gap: 34px;
-            align-items: center;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
         }
 
-        .left-copy {
-            align-self: center;
+        .module-card {
+            background: #ffffff;
+            border: 1px solid #d9dfe2;
+            border-radius: 8px;
+            padding: 20px 20px 18px;
         }
 
-        .left-copy .lead {
-            font-size: 13px;
-            line-height: 1.55;
-            color: #5d6b73;
-            margin: 0 0 14px;
+        .module-section {
+            position: relative;
         }
 
-        .left-copy .support {
-            font-size: 12px;
-            line-height: 1.5;
-            color: #7a878d;
-            margin: 0;
-        }
-
-        .api-strip {
-            margin-top: 18px;
-            padding-top: 13px;
+        .module-section + .module-section {
+            margin-top: 20px;
+            padding-top: 18px;
             border-top: 1px solid #d9dfe2;
         }
 
-        .api-label {
-            font-family: "IBM Plex Mono";
-            font-size: 9.5px;
-            font-weight: 700;
-            letter-spacing: 1.2px;
-            color: var(--am);
-            margin-bottom: 7px;
-        }
-
-        .api-text {
-            font-family: "IBM Plex Mono";
-            font-size: 10px;
-            line-height: 1.5;
-            color: #69777e;
-        }
-
-        .system-visual {
-            position: relative;
-            width: 520px;
-            height: 330px;
-            justify-self: end;
-        }
-
-        .rings {
-            position: absolute;
-            inset: 0;
+        .icon-wrap {
+            width: 32px;
+            height: 32px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
+            color: var(--am);
         }
 
-        .rings svg {
-            width: 360px;
-            height: 330px;
+        .icon-wrap svg {
+            width: 27px;
+            height: 27px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
         }
 
-        .platform-label {
+        .module-title {
+            margin: 0 0 6px;
+            font-family: "Schibsted Grotesk";
+            font-size: 18px;
+            line-height: 1.2;
+            font-weight: 750;
+            color: #17232a;
+        }
+
+        .module-desc {
+            margin: 0;
+            font-size: 12.5px;
+            line-height: 1.5;
+            color: #5d6b73;
+        }
+
+        .module-number {
             position: absolute;
-            left: 78px;
-            bottom: 42px;
+            top: 0;
+            right: 0;
             font-family: "IBM Plex Mono";
             font-size: 9px;
             font-weight: 700;
-            letter-spacing: 1.4px;
-            color: var(--am);
+            color: #a1abb0;
+            letter-spacing: 1px;
         }
 
-        .hub {
-            position: absolute;
-            left: 190px;
-            top: 95px;
-            width: 126px;
-            height: 126px;
-            border-radius: 50%;
-            background: var(--am);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            color: #fff;
-            padding: 16px;
-            box-shadow: 0 8px 20px rgba(242,84,27,.16);
-        }
-
-        .hub h3 {
-            font-family: "Schibsted Grotesk";
-            font-size: 13px;
-            line-height: 1.2;
-            font-weight: 750;
-            margin: 0 0 5px;
-        }
-
-        .hub p {
-            font-family: "IBM Plex Mono";
-            font-size: 8.5px;
-            line-height: 1.35;
-            margin: 0;
-            opacity: .9;
-        }
-
-        .node-card {
-            position: absolute;
-            width: 158px;
-            min-height: 61px;
-            background: #fff;
+        .module-tag {
+            display: inline-block;
+            margin-top: 9px;
+            padding: 3px 6px;
             border: 1px solid #d9dfe2;
-            border-left: 3px solid var(--am);
-            border-radius: 7px;
-            padding: 9px 11px;
-        }
-
-        .node-card h4 {
-            font-family: "Schibsted Grotesk";
-            font-size: 12.5px;
-            font-weight: 750;
-            color: #17232a;
-            margin: 0 0 4px;
-        }
-
-        .node-card p {
-            font-size: 9.5px;
-            line-height: 1.35;
-            color: #69777e;
-            margin: 0;
-        }
-
-        .card-dispatch {
-            top: 20px;
-            left: 0;
-        }
-
-        .card-events {
-            bottom: 20px;
-            left: 0;
-        }
-
-        .card-vehicle {
-            top: 35px;
-            right: 0;
-        }
-
-        .card-api {
-            bottom: 35px;
-            right: 0;
+            border-radius: 4px;
+            font-family: "IBM Plex Mono";
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: .8px;
+            color: var(--am);
+            background: #fafbfb;
         }
     </style>
 </head>
 
 <body>
 
+<!-- CATEGORY -->
 <p class="s u"
-   style="--d:.05s;text-align:center;color:var(--am);font-family:'IBM Plex Mono';font-size:11px;font-weight:700;letter-spacing:1.8px;margin:8px 0 8px;">
-    DATA MODEL
+   style="
+      --d:.05s;
+      text-align:center;
+      color:var(--am);
+      font-family:'IBM Plex Mono';
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:1.8px;
+      margin:8px 0 8px;
+   ">
+    OPERATIONAL MODULES
 </p>
 
+<!-- HEADING -->
 <h2 class="u"
-    style="--d:.12s;text-align:center;font-size:40px;line-height:1.12;margin:0 auto;max-width:1050px;color:#17232a;">
-    The data model keeps the
-    <span style="color:var(--am)">operating picture connected</span>
+    style="
+       --d:.12s;
+       text-align:center;
+       font-size:34px;
+       line-height:1.12;
+       margin:0 auto;
+       max-width:1050px;
+       color:#17232a;
+    ">
+    Operational modules convert
+    <span style="color:var(--am)">events into action</span>
 </h2>
 
+<!-- SUBTITLE -->
 <p class="s u"
-   style="--d:.18s;text-align:center;color:#5d6b73;font-size:13px;margin:10px auto 20px;">
-    Core entities connect fleet operations, spatial data, events, and the API surface.
+   style="
+      --d:.18s;
+      text-align:center;
+      color:#5d6b73;
+      font-size:13px;
+      margin:10px auto 20px;
+   ">
+    Connected fleet operations keep field events, vehicles, and decisions in one system.
 </p>
 
-<div class="k u architecture" style="--d:.25s;">
 
-    <!-- LEFT: MODEL DESCRIPTION -->
-    <div class="left-copy u" style="--d:.3s;">
+<!-- MODULE GRID -->
+<div class="modules-grid">
 
-        <p class="lead">
-            Organization and User anchor Driver, Vehicle, Dispatch,
-            LocationRecord, FuelLog, MaintenanceRecord, alerts,
-            routes, rentals, and notifications.
-        </p>
+    <!-- COLUMN 1 -->
+    <div class="module-card k u" style="--d:.25s;">
 
-        <p class="support">
-            Modular services, real-time messaging, spatial data,
-            and room for planned production infrastructure.
-        </p>
+        <!-- FUEL -->
+        <div class="module-section">
 
-        <div class="api-strip">
-            <div class="api-label">REST API SURFACE</div>
-            <div class="api-text">
-                authentication · vehicles · drivers · dispatch · GPS ·
-                trips · emergency · analytics · fuel prices · expense reporting
+            <span class="module-number">01</span>
+
+            <div class="icon-wrap">
+                <svg viewBox="0 0 24 24">
+                    <path d="M3 2v20h18V2H3zm16 18H5V4h14v16z"/>
+                    <path d="M7 6h10v2H7V6zm0 4h10v2H7v-2zm0 4h6v2H7v-2z"/>
+                </svg>
             </div>
+
+            <h3 class="module-title">Fuel</h3>
+
+            <p class="module-desc">
+                Liters or kWh, amount, odometer, notes, receipt images.
+            </p>
+
+            <span class="module-tag">EXPENSE TRACKING</span>
+
+        </div>
+
+
+        <!-- EMERGENCIES -->
+        <div class="module-section">
+
+            <span class="module-number">02</span>
+
+            <div class="icon-wrap">
+                <svg viewBox="0 0 24 24">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+            </div>
+
+            <h3 class="module-title">Emergencies</h3>
+
+            <p class="module-desc">
+                Operational escalation when field events require attention.
+            </p>
+
+            <span class="module-tag">FIELD ALERTS</span>
+
         </div>
 
     </div>
 
-    <!-- RIGHT: ARCHITECTURE VISUAL -->
-    <div class="system-visual u" style="--d:.34s;">
 
-        <div class="rings">
-            <svg viewBox="0 0 420 400"
-                 fill="none"
-                 xmlns="http://www.w3.org/2000/svg">
+    <!-- COLUMN 2 -->
+    <div class="module-card k u" style="--d:.33s;">
 
-                <!-- Outer system boundary -->
-                <circle cx="210"
-                        cy="200"
-                        r="175"
-                        stroke="#b8c2c7"
-                        stroke-width="1.2"
-                        stroke-dasharray="4 5"/>
+        <!-- MAINTENANCE -->
+        <div class="module-section">
 
-                <!-- Inner operating boundary -->
-                <circle cx="210"
-                        cy="200"
-                        r="145"
-                        stroke="var(--am)"
-                        stroke-width="1.5"
-                        opacity=".55"/>
+            <span class="module-number">03</span>
 
-                <!-- Connection points -->
-                <circle cx="318"
-                        cy="115"
-                        r="7"
-                        fill="#fff"
-                        stroke="var(--am)"
-                        stroke-width="2.5"/>
+            <div class="icon-wrap">
+                <svg viewBox="0 0 24 24">
+                    <path d="M5 17h1.5a2.5 2.5 0 0 0 5 0H16a2.5 2.5 0 0 0 5 0h1v-4l-2-5H4l-2 5v4h1a2.5 2.5 0 0 0 2.5 0z"/>
+                    <path d="M4.5 12h15l1.5 3H3l1.5-3z"/>
+                    <circle cx="6.5" cy="16" r="1"/>
+                    <circle cx="17.5" cy="16" r="1"/>
+                </svg>
+            </div>
 
-                <circle cx="245"
-                        cy="305"
-                        r="7"
-                        fill="#fff"
-                        stroke="var(--am)"
-                        stroke-width="2.5"/>
-            </svg>
+            <h3 class="module-title">Maintenance</h3>
+
+            <p class="module-desc">
+                Recurring work by time or kilometers, with proof of completion.
+            </p>
+
+            <span class="module-tag">SERVICE HISTORY</span>
+
         </div>
 
-        <div class="platform-label">
-            SARATHI PLATFORM
+
+        <!-- ROUTES -->
+        <div class="module-section">
+
+            <span class="module-number">04</span>
+
+            <div class="icon-wrap">
+                <svg viewBox="0 0 24 24">
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                    <path d="M4 22v-7"/>
+                </svg>
+            </div>
+
+            <h3 class="module-title">Routes</h3>
+
+            <p class="module-desc">
+                Real-road routing through OSRM and location-aware dispatch.
+            </p>
+
+            <span class="module-tag">OSRM ROUTING</span>
+
         </div>
 
-        <!-- CENTRAL ENTITY -->
-        <div class="hub u" style="--d:.48s;">
-            <h3>Organization &amp; User</h3>
-            <p>Central entities for fleet operations</p>
+    </div>
+
+
+    <!-- COLUMN 3 -->
+    <div class="module-card k u" style="--d:.41s;">
+
+        <!-- ANALYTICS -->
+        <div class="module-section">
+
+            <span class="module-number">05</span>
+
+            <div class="icon-wrap">
+                <svg viewBox="0 0 24 24">
+                    <path d="M3 3v18h18"/>
+                    <path d="M7 14l3-3 4 4 5-6"/>
+                </svg>
+            </div>
+
+            <h3 class="module-title">Analytics</h3>
+
+            <p class="module-desc">
+                Vehicle efficiency, driver performance, safety, and expense PDF reporting.
+            </p>
+
+            <span class="module-tag">KPI / REPORTING</span>
+
         </div>
 
-        <!-- CONNECTED DOMAINS -->
-        <div class="node-card card-dispatch u" style="--d:.55s;">
-            <h4>Dispatch</h4>
-            <p>Links drivers, vehicles, trips, location records</p>
-        </div>
 
-        <div class="node-card card-events u" style="--d:.62s;">
-            <h4>Operational Events</h4>
-            <p>Alerts, routes, rentals, notifications flow</p>
-        </div>
+        <!-- RENTALS -->
+        <div class="module-section">
 
-        <div class="node-card card-vehicle u" style="--d:.69s;">
-            <h4>Vehicle Records</h4>
-            <p>Fuel and maintenance history tied to vehicles</p>
-        </div>
+            <span class="module-number">06</span>
 
-        <div class="node-card card-api u" style="--d:.76s;">
-            <h4>REST API Surface</h4>
-            <p>Auth, vehicles, drivers, trips, analytics</p>
+            <div class="icon-wrap">
+                <svg viewBox="0 0 24 24">
+                    <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9L18 10H6l-2.5 1.1C2.7 11.3 2 12.1 2 13v3c0 .6.4 1 1 1h2"/>
+                    <path d="M5 11l1.5-4.5h11L19 11"/>
+                    <circle cx="7" cy="17" r="2"/>
+                    <circle cx="17" cy="17" r="2"/>
+                </svg>
+            </div>
+
+            <h3 class="module-title">Rentals</h3>
+
+            <p class="module-desc">
+                Operational records remain part of the connected fleet picture.
+            </p>
+
+            <span class="module-tag">FLEET RECORDS</span>
+
         </div>
 
     </div>
@@ -294,4 +303,3 @@
 
 </body>
 </html>
-

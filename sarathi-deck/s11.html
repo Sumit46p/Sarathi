@@ -6,297 +6,318 @@
     <script src="slide.js" defer></script>
 
     <style>
-        .modules-grid {
+        .bm-wrap {
             width: 1120px;
             max-width: 100%;
             margin: 0 auto;
+        }
+
+        /* ── TOP ROW: Customer → Platform → Value ─────────────────── */
+        .model-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
+            grid-template-columns: 230px 1fr 230px;
+            gap: 10px;
+            align-items: stretch;
         }
 
-        .module-card {
-            background: #ffffff;
-            border: 1px solid #d9dfe2;
+        .side-card {
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(15,26,34,.12);
             border-radius: 8px;
-            padding: 20px 20px 18px;
+            padding: 18px 18px;
+            position: relative;
+            box-shadow: 0 2px 12px rgba(15,26,34,.06);
         }
 
-        .module-section {
+        .side-card::before {
+            content: '';
+            position: absolute;
+            left: -1px; top: -1px;
+            width: 12px; height: 12px;
+            border-top: 3px solid var(--am);
+            border-left: 3px solid var(--am);
+            border-radius: 2px 0 0 0;
+        }
+
+        .core-card {
+            background: rgba(255,255,255,0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(15,26,34,.12);
+            border-radius: 8px;
+            padding: 20px 22px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: 0 2px 12px rgba(15,26,34,.06);
+        }
+
+        /* connector lines on sides of core card */
+        .core-card::before,
+        .core-card::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 10px; height: 1px;
+            background: #b8c2c7;
+        }
+        .core-card::before { left: -10px; }
+        .core-card::after  { right: -10px; }
+
+        .eyebrow {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1.4px;
+            color: var(--am);
+            margin-bottom: 9px;
+        }
+
+        .side-title {
+            font-family: 'Schibsted Grotesk', sans-serif;
+            font-size: 17px;
+            font-weight: 800;
+            color: #17232a;
+            letter-spacing: -.03em;
+            margin: 0 0 9px;
+        }
+
+        .side-text {
+            font-size: 11px;
+            line-height: 1.55;
+            color: #5d6b73;
+            margin: 0;
+        }
+
+        .core-title {
+            font-family: 'Schibsted Grotesk', sans-serif;
+            font-size: 22px;
+            line-height: 1.1;
+            font-weight: 900;
+            color: #17232a;
+            letter-spacing: -.04em;
+            margin: 0 0 6px;
+        }
+
+        .core-title span { color: var(--am); }
+
+        .core-sub {
+            font-size: 11.5px;
+            line-height: 1.45;
+            color: #69777e;
+            margin: 0 0 13px;
+        }
+
+        .core-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .core-tag {
+            padding: 3px 7px;
+            border: 1px solid rgba(15,26,34,.15);
+            border-radius: 4px;
+            background: rgba(242,84,27,.05);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 7.5px;
+            font-weight: 700;
+            letter-spacing: .7px;
+            color: var(--am);
+        }
+
+        /* ── REVENUE ROW ──────────────────────────────────────────── */
+        .revenue-strip {
+            width: 100%;
+            margin-top: 10px;
+            padding: 14px 18px;
+            box-sizing: border-box;
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(15,26,34,.12);
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(15,26,34,.06);
             position: relative;
         }
 
-        .module-section + .module-section {
-            margin-top: 20px;
-            padding-top: 18px;
-            border-top: 1px solid #d9dfe2;
+        .revenue-strip::before {
+            content: '';
+            position: absolute;
+            left: -1px; top: -1px;
+            width: 12px; height: 12px;
+            border-top: 3px solid var(--am);
+            border-left: 3px solid var(--am);
+            border-radius: 2px 0 0 0;
         }
 
-        .icon-wrap {
-            width: 32px;
-            height: 32px;
-            margin-bottom: 10px;
+        .revenue-grid {
+            display: grid;
+            grid-template-columns: 130px 1fr 1fr 1fr;
+            gap: 14px;
+            align-items: center;
+        }
+
+        .revenue-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1.3px;
+            color: var(--am);
+        }
+
+        .revenue-item {
+            border-left: 1px solid #d9dfe2;
+            padding-left: 14px;
+        }
+
+        .revenue-item-title {
+            font-family: 'Schibsted Grotesk', sans-serif;
+            font-size: 12.5px;
+            font-weight: 800;
+            color: #17232a;
+            margin-bottom: 4px;
+        }
+
+        .revenue-item-desc {
+            font-size: 10px;
+            line-height: 1.4;
+            color: #69777e;
+        }
+
+        /* ── BOTTOM LINE ─────────────────────────────────────────── */
+        .bottom-line {
+            margin-top: 10px;
+            text-align: center;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9.5px;
+            color: #7a878d;
+            letter-spacing: .3px;
+        }
+
+        .bottom-line strong {
+            color: var(--am);
+        }
+
+        /* ── ARROW SVG between cards ─────────────────────────────── */
+        .arrow-col {
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--am);
-        }
-
-        .icon-wrap svg {
-            width: 27px;
-            height: 27px;
-            stroke: currentColor;
-            fill: none;
-            stroke-width: 1.8;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-        }
-
-        .module-title {
-            margin: 0 0 6px;
-            font-family: "Schibsted Grotesk";
-            font-size: 18px;
-            line-height: 1.2;
-            font-weight: 750;
-            color: #17232a;
-        }
-
-        .module-desc {
-            margin: 0;
-            font-size: 12.5px;
-            line-height: 1.5;
-            color: #5d6b73;
-        }
-
-        .module-number {
-            position: absolute;
-            top: 0;
-            right: 0;
-            font-family: "IBM Plex Mono";
-            font-size: 9px;
-            font-weight: 700;
-            color: #a1abb0;
-            letter-spacing: 1px;
-        }
-
-        .module-tag {
-            display: inline-block;
-            margin-top: 9px;
-            padding: 3px 6px;
-            border: 1px solid #d9dfe2;
-            border-radius: 4px;
-            font-family: "IBM Plex Mono";
-            font-size: 8px;
-            font-weight: 700;
-            letter-spacing: .8px;
-            color: var(--am);
-            background: #fafbfb;
         }
     </style>
 </head>
 
 <body>
 
-<!-- CATEGORY -->
+<!-- EYEBROW CATEGORY -->
 <p class="s u"
-   style="
-      --d:.05s;
-      text-align:center;
-      color:var(--am);
-      font-family:'IBM Plex Mono';
-      font-size:11px;
-      font-weight:700;
-      letter-spacing:1.8px;
-      margin:8px 0 8px;
-   ">
-    OPERATIONAL MODULES
+   style="--d:.05s;text-align:center;color:var(--am);font-family:'IBM Plex Mono';font-size:11px;font-weight:700;letter-spacing:1.8px;margin:0 0 7px;">
+    BUSINESS MODEL
 </p>
 
-<!-- HEADING -->
+<!-- MAIN HEADLINE -->
 <h2 class="u"
-    style="
-       --d:.12s;
-       text-align:center;
-       font-size:34px;
-       line-height:1.12;
-       margin:0 auto;
-       max-width:1050px;
-       color:#17232a;
-    ">
-    Operational modules convert
-    <span style="color:var(--am)">events into action</span>
+    style="--d:.12s;text-align:center;font-size:38px;line-height:1.08;margin:0 auto 7px;max-width:1000px;">
+    Sarathi turns fleet operations into a
+    <span style="color:var(--am)">recurring B2B service</span>
 </h2>
 
 <!-- SUBTITLE -->
 <p class="s u"
-   style="
-      --d:.18s;
-      text-align:center;
-      color:#5d6b73;
-      font-size:13px;
-      margin:10px auto 20px;
-   ">
-    Connected fleet operations keep field events, vehicles, and decisions in one system.
+   style="--d:.18s;text-align:center;color:#5d6b73;font-size:12.5px;margin:0 auto 16px;">
+    Organizations subscribe to one platform for dispatch, tracking, and connected fleet intelligence.
 </p>
 
+<div class="bm-wrap">
 
-<!-- MODULE GRID -->
-<div class="modules-grid">
+    <!-- CUSTOMER → PLATFORM → VALUE -->
+    <div class="model-grid">
 
-    <!-- COLUMN 1 -->
-    <div class="module-card k u" style="--d:.25s;">
-
-        <!-- FUEL -->
-        <div class="module-section">
-
-            <span class="module-number">01</span>
-
-            <div class="icon-wrap">
-                <svg viewBox="0 0 24 24">
-                    <path d="M3 2v20h18V2H3zm16 18H5V4h14v16z"/>
-                    <path d="M7 6h10v2H7V6zm0 4h10v2H7v-2zm0 4h6v2H7v-2z"/>
-                </svg>
-            </div>
-
-            <h3 class="module-title">Fuel</h3>
-
-            <p class="module-desc">
-                Liters or kWh, amount, odometer, notes, receipt images.
+        <!-- CUSTOMER SIDE -->
+        <div class="side-card k u" style="--d:.25s;">
+            <div class="eyebrow">WHO BUYS</div>
+            <h3 class="side-title">Fleet-owning organizations</h3>
+            <p class="side-text">
+                Logistics &amp; transport operators,
+                rental fleets, corporate vehicle pools,
+                public-service agencies, and
+                emergency-response units.
             </p>
-
-            <span class="module-tag">EXPENSE TRACKING</span>
-
         </div>
 
-
-        <!-- EMERGENCIES -->
-        <div class="module-section">
-
-            <span class="module-number">02</span>
-
-            <div class="icon-wrap">
-                <svg viewBox="0 0 24 24">
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                </svg>
-            </div>
-
-            <h3 class="module-title">Emergencies</h3>
-
-            <p class="module-desc">
-                Operational escalation when field events require attention.
+        <!-- SARATHI PLATFORM CORE -->
+        <div class="core-card u" style="--d:.33s;">
+            <div class="eyebrow">B2B SAAS · MULTI-TENANT · ROLE-BASED</div>
+            <h3 class="core-title">Intelligent <span>Fleet Management</span></h3>
+            <p class="core-sub">
+                A connected operating layer for smart dispatch,
+                real-time GPS visibility, driver coordination,
+                maintenance, fuel, and analytics — all in one platform.
             </p>
+            <div class="core-tags">
+                <span class="core-tag">SMART DISPATCH</span>
+                <span class="core-tag">GPS / TELEMETRY</span>
+                <span class="core-tag">MAINTENANCE</span>
+                <span class="core-tag">FUEL MANAGEMENT</span>
+                <span class="core-tag">EMERGENCY SOS</span>
+                <span class="core-tag">ANALYTICS</span>
+                <span class="core-tag">RBAC</span>
+                <span class="core-tag">MULTI-TENANT</span>
+            </div>
+        </div>
 
-            <span class="module-tag">FIELD ALERTS</span>
-
+        <!-- VALUE SIDE -->
+        <div class="side-card k u" style="--d:.40s;">
+            <div class="eyebrow">WHAT THEY GET</div>
+            <h3 class="side-title">Operational excellence</h3>
+            <p class="side-text">
+                Faster dispatch, higher vehicle utilization,
+                real-time visibility, centralized records,
+                and data-driven fleet decisions.
+            </p>
         </div>
 
     </div>
 
+    <!-- REVENUE MODEL STRIP -->
+    <div class="revenue-strip u" style="--d:.50s;">
+        <div class="revenue-grid">
 
-    <!-- COLUMN 2 -->
-    <div class="module-card k u" style="--d:.33s;">
+            <div class="revenue-label">REVENUE<br>MODEL</div>
 
-        <!-- MAINTENANCE -->
-        <div class="module-section">
-
-            <span class="module-number">03</span>
-
-            <div class="icon-wrap">
-                <svg viewBox="0 0 24 24">
-                    <path d="M5 17h1.5a2.5 2.5 0 0 0 5 0H16a2.5 2.5 0 0 0 5 0h1v-4l-2-5H4l-2 5v4h1a2.5 2.5 0 0 0 2.5 0z"/>
-                    <path d="M4.5 12h15l1.5 3H3l1.5-3z"/>
-                    <circle cx="6.5" cy="16" r="1"/>
-                    <circle cx="17.5" cy="16" r="1"/>
-                </svg>
+            <div class="revenue-item">
+                <div class="revenue-item-title">Starter</div>
+                <div class="revenue-item-desc">
+                    Fleet tracking, GPS monitoring,
+                    basic dispatch and driver management.
+                </div>
             </div>
 
-            <h3 class="module-title">Maintenance</h3>
-
-            <p class="module-desc">
-                Recurring work by time or kilometers, with proof of completion.
-            </p>
-
-            <span class="module-tag">SERVICE HISTORY</span>
-
-        </div>
-
-
-        <!-- ROUTES -->
-        <div class="module-section">
-
-            <span class="module-number">04</span>
-
-            <div class="icon-wrap">
-                <svg viewBox="0 0 24 24">
-                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-                    <path d="M4 22v-7"/>
-                </svg>
+            <div class="revenue-item">
+                <div class="revenue-item-title">Professional</div>
+                <div class="revenue-item-desc">
+                    Intelligent dispatch engine, telemetry,
+                    maintenance, fuel logs, and analytics.
+                </div>
             </div>
 
-            <h3 class="module-title">Routes</h3>
-
-            <p class="module-desc">
-                Real-road routing through OSRM and location-aware dispatch.
-            </p>
-
-            <span class="module-tag">OSRM ROUTING</span>
+            <div class="revenue-item">
+                <div class="revenue-item-title">Enterprise</div>
+                <div class="revenue-item-desc">
+                    Custom integrations, advanced analytics,
+                    telematics hardware, and dedicated support.
+                </div>
+            </div>
 
         </div>
-
     </div>
 
-
-    <!-- COLUMN 3 -->
-    <div class="module-card k u" style="--d:.41s;">
-
-        <!-- ANALYTICS -->
-        <div class="module-section">
-
-            <span class="module-number">05</span>
-
-            <div class="icon-wrap">
-                <svg viewBox="0 0 24 24">
-                    <path d="M3 3v18h18"/>
-                    <path d="M7 14l3-3 4 4 5-6"/>
-                </svg>
-            </div>
-
-            <h3 class="module-title">Analytics</h3>
-
-            <p class="module-desc">
-                Vehicle efficiency, driver performance, safety, and expense PDF reporting.
-            </p>
-
-            <span class="module-tag">KPI / REPORTING</span>
-
-        </div>
-
-
-        <!-- RENTALS -->
-        <div class="module-section">
-
-            <span class="module-number">06</span>
-
-            <div class="icon-wrap">
-                <svg viewBox="0 0 24 24">
-                    <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9L18 10H6l-2.5 1.1C2.7 11.3 2 12.1 2 13v3c0 .6.4 1 1 1h2"/>
-                    <path d="M5 11l1.5-4.5h11L19 11"/>
-                    <circle cx="7" cy="17" r="2"/>
-                    <circle cx="17" cy="17" r="2"/>
-                </svg>
-            </div>
-
-            <h3 class="module-title">Rentals</h3>
-
-            <p class="module-desc">
-                Operational records remain part of the connected fleet picture.
-            </p>
-
-            <span class="module-tag">FLEET RECORDS</span>
-
-        </div>
-
+    <!-- COMMERCIALIZATION NOTE -->
+    <div class="bottom-line u" style="--d:.60s;">
+        <strong>RECURRING :</strong> Monthly &amp; annual subscriptions
+        &nbsp;·&nbsp;
+        <strong>OPTIONAL :</strong> Onboarding &nbsp;·&nbsp; Custom integrations &nbsp;·&nbsp; Telematics hardware
     </div>
 
 </div>
